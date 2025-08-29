@@ -31,7 +31,7 @@ Thumbs.db
 .env
 .env.local
 .env.*.local
-
+.env.deploy
 # Optional lock files (if not using them)
 # yarn.lock
 # package-lock.json
