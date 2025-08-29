@@ -4,6 +4,7 @@ import { detectVersion, posixJoin } from "../core/utils.js";
 import { buildArtifact } from "../core/packager.js";
 import { connect, close, ensureRemoteDirs, exec, uploadFile, listDirs, removePath } from "../core/ssh.js";
 import { log } from "../core/logger.js";
+import {linkShared} from "../features/shared.js";
 
 export async function deploy(opts: { env?: string; artifact?: string; version?: string }) {
     const cwd = process.cwd();
@@ -44,7 +45,26 @@ export async function deploy(opts: { env?: string; artifact?: string; version?: 
     try {
         await ensureRemoteDirs(bundle.ssh, releases, tmp);
         await uploadFile(bundle.sftp, artifactPath!, remoteTar);
-        await exec(bundle.ssh, `mkdir -p "${releaseDir}" && tar -xzf "${remoteTar}" -C "${releaseDir}" && rm -f "${remoteTar}" && ln -sfn "${releaseDir}" "${currentLink}"`);
+
+        // 1️⃣ Extract release
+        const extract = log.spinner("Extracting release");
+        const { code, stderr } = await exec(
+            bundle.ssh,
+            `mkdir -p "${releaseDir}" && tar -xzf "${remoteTar}" -C "${releaseDir}" && rm -f "${remoteTar}"`
+        );
+        if (code !== 0) throw new Error(stderr || "remote extract failed");
+        extract.succeed(`Extracted ${version}`);
+
+        // 2️⃣ Link shared items
+        if (cfg.shared?.length) {
+            const spinShared = log.spinner("Linking shared items");
+            await linkShared(bundle.ssh, remoteRoot, releaseDir, cfg.shared, cfg.sharedDefaults);
+            spinShared.succeed("Linked shared items");
+        }
+
+        // 3️⃣ Switch current symlink
+        await exec(bundle.ssh, `ln -sfn "${releaseDir}" "${currentLink}"`);
+        log.ok(`Activated ${version}`);
 
         // Clean old releases
         const keep = env.keepVersions ?? 5;

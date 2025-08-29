@@ -30,6 +30,8 @@ export type DployConfig = {
     include?: string[];
     exclude?: string[];
     copy?: CopyEntry[];
+    shared?: string[];
+    sharedDefaults?: Record<string, string>;
     environments: Record<string, EnvConfig>;
 };
 
