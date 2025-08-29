@@ -16,8 +16,8 @@ export async function build(opts: { version?: string }) {
         const { artifactPath } = await buildArtifact({
             cwd,
             buildDir: cfg.buildDir,
-            copy: cfg.copy ?? [],
             version,
+            cfg,
         });
         spin.succeed(`Built ${path.basename(artifactPath)}`);
     } catch (e: any) {
