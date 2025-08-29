@@ -1,0 +1,18 @@
+{
+  "buildDir": "build",
+  "strategy": "hybrid",
+  "allowed": ["\"include\" | \"exclude\" | \"copy\" | \"hybrid\""],
+  "include": ["dist/**", "public/**"],
+  "exclude": ["**/*.test.js", "node_modules/**"],
+  "copy": [
+    { "from": "package.json", "to": "package.json" },
+    { "from": ".env.example", "to": ".env", "optional": true }
+  ],
+  "environments": {
+    "production": {
+      "deployTo": "/var/www/myapp",
+      "keepVersions": 5,
+      "healthCheckPath": "/health"
+    }
+  }
+}

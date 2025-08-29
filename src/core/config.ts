@@ -20,10 +20,16 @@ export type EnvConfig = {
     baseUrl?: string; // e.g., https://example.com
 };
 
+export type Strategy = "include" | "exclude" | "copy" | "hybrid";
+
+
 export type DployConfig = {
     buildDir: string;
     cleanAfterDeploy?: boolean;
-    copy?: CopyEntry[]; // current feature strategy
+    strategy?: Strategy;
+    include?: string[];
+    exclude?: string[];
+    copy?: CopyEntry[];
     environments: Record<string, EnvConfig>;
 };
 

@@ -17,8 +17,13 @@ export async function deploy(opts: { env?: string; artifact?: string; version?: 
     // Build or use provided artifact
     let artifactPath = opts.artifact ? path.resolve(opts.artifact) : undefined;
     if (!artifactPath) {
-        const { artifactPath: built } = await buildArtifact({ cwd, buildDir: cfg.buildDir, copy: cfg.copy ?? [], version });
-        artifactPath = built;
+        const result = await buildArtifact({
+            cwd,
+            buildDir: cfg.buildDir,
+            version,
+            cfg,
+        });
+        artifactPath = result.artifactPath;
     }
 
     const remoteRoot = env.deployTo;
