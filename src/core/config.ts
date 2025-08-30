@@ -30,6 +30,9 @@ export type DployConfig = {
     include?: string[];
     exclude?: string[];
     copy?: CopyEntry[];
+    shared?: string[];
+    sharedDefaults?: Record<string, string>;
+    hooks?: Partial<Record<"preBuild" | "postBuild" | "preDeploy" | "postDeploy", string[]>>; // NEW
     environments: Record<string, EnvConfig>;
 };
 
@@ -46,13 +49,20 @@ export async function loadConfig(cwd = process.cwd()): Promise<DployConfig> {
     const envPath = path.join(cwd, ".env.deploy");
     dotenv.config({ path: envPath, override: true });
 
-
-    const cfg: DployConfig = {
-        buildDir: raw.buildDir ?? "build",
-        cleanAfterDeploy: raw.cleanAfterDeploy ?? true,
-        copy: raw.copy ?? [],
-        environments: raw.environments ?? {},
+    const defaults: Partial<DployConfig> = {
+        buildDir: "build",
+        cleanAfterDeploy: true,
+        copy: [],
+        include: [],
+        exclude: [],
+        shared: [],
+        sharedDefaults: {},
+        hooks: {},
+        environments: {},
     };
+
+    const cfg: DployConfig = { ...defaults, ...raw };
+
 
 
 // Inject env vars defaults per environment
