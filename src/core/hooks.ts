@@ -12,17 +12,19 @@ export async function runLocalHooks(phase: string, hooks?: string[]) {
         return;
     }
 
-    log.info(`Running local ${phase} hooks...`);
+    log.info(chalk.blue(`Running local ${phase} hooks...`));
     log.debug(`Local ${phase} hooks: ${JSON.stringify(hooks)}`);
 
     for (const cmd of hooks) {
-        log.info(`→ ${cmd}`);
+        log.info(chalk.inverse(` → ${cmd} `));
+
         try {
             execSync(cmd, {
                 stdio: "inherit",
                 shell: os.platform() === "win32" ? process.env.ComSpec || "cmd.exe" : "/bin/bash",
             });
             log.debug(`Local hook command completed successfully: ${cmd}`);
+            log.info(chalk.inverse(` → Hook command completed successfully: ${cmd} `));
         } catch (error) {
             log.debug(`Local hook command failed: ${cmd}, error: ${error}`);
             throw error;
@@ -42,7 +44,7 @@ export async function runRemoteHooks(
         return;
     }
 
-    log.info(chalk.cyan(`[remote] Running ${phase} hooks...`));
+    log.info(chalk.blue(`[remote] Running ${phase} hooks...`));
     log.debug(`Remote ${phase} hooks: ${JSON.stringify(hooks)}`);
     if (cwd) log.debug(`Remote hook working directory: ${cwd}`);
 
@@ -50,7 +52,7 @@ export async function runRemoteHooks(
         const fullCmd = cwd ? `cd "${cwd}" && ${cmd}` : cmd;
 
         // Command itself
-        log.info(chalk.yellow(`[remote] → ${fullCmd}`));
+        log.info(chalk.inverse(`[remote] → ${fullCmd} `));
 
         const { code, stdout, stderr } = await exec(ssh, fullCmd);
 
@@ -68,6 +70,8 @@ export async function runRemoteHooks(
             throw new Error(
                 chalk.redBright(`[remote] Hook failed: ${cmd}`)
             );
+        }else {
+            log.info(chalk.inverse(`[remote] → Remote hook command completed successfully: ${cmd} `));
         }
 
         log.debug(`Remote hook command completed successfully: ${cmd}`);
