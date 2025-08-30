@@ -46,7 +46,7 @@ export async function loadConfig(cwd = process.cwd()): Promise<DployConfig> {
 
 
 // .env.deploy (optional)
-    const envPath = path.join(cwd, ".env.deploy");
+    const envPath = path.join(cwd, ".env.dploy");
     dotenv.config({ path: envPath, override: true });
 
     const defaults: Partial<DployConfig> = {
