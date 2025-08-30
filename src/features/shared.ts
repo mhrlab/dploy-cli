@@ -26,7 +26,8 @@ export async function linkShared(
 
         // Ensure parent directory for sharedPath exists
         log.debug(`Ensuring parent directory exists for: ${sharedPath}`);
-        await exec(ssh, `mkdir -p "$(dirname \\"${sharedPath}\\")"`);
+        await exec(ssh, `mkdir -p "$(dirname '${sharedPath}')"`);
+
 
         // Check if shared already exists
         log.debug(`Checking if shared item exists: ${sharedPath}`);
