@@ -1,24 +1,33 @@
 import path from "node:path";
-import {loadConfig, getEnvName} from "../core/config.js";
-import {detectVersion, posixJoin} from "../core/utils.js";
-import {buildArtifact} from "../core/packager.js";
-import {connect, close, ensureRemoteDirs, exec, uploadFile, listDirs, removePath} from "../core/ssh.js";
-import {log} from "../core/logger.js";
-import {linkShared} from "../features/shared.js";
-import {runRemoteHooks} from "../core/hooks.js";
+import { loadConfig, getEnvName } from "../core/config.js";
+import { detectVersion, posixJoin } from "../core/utils.js";
+import { buildArtifact } from "../core/packager.js";
+import { connect, close, ensureRemoteDirs, exec, uploadFile, listDirs, removePath } from "../core/ssh.js";
+import { log } from "../core/logger.js";
+import { linkShared } from "../features/shared.js";
+import { runRemoteHooks } from "../core/hooks.js";
 
 export async function deploy(opts: { env?: string; artifact?: string; version?: string }) {
+    log.debug(`Deploy command started with options: ${JSON.stringify(opts)}`);
+
     const cwd = process.cwd();
     const cfg = await loadConfig(cwd);
     const envName = getEnvName(opts.env);
+    log.verbose(`Using environment: ${envName}`);
+
     const env = cfg.environments[envName];
     if (!env) throw new Error(`Unknown environment: ${envName}`);
 
     const version = detectVersion(opts.version);
+    log.verbose(`Deployment version: ${version}`);
+
+    log.info(`Starting deployment to ${envName} environment (${env.host})`);
 
     // Build or use provided artifact
     let artifactPath = opts.artifact ? path.resolve(opts.artifact) : undefined;
     if (!artifactPath) {
+        log.verbose(`No artifact provided, building from source`);
+        log.info(`Building deployment artifact...`);
         const result = await buildArtifact({
             cwd,
             buildDir: cfg.buildDir,
@@ -26,7 +35,13 @@ export async function deploy(opts: { env?: string; artifact?: string; version?: 
             cfg,
         });
         artifactPath = result.artifactPath;
+        log.debug(`Built artifact path: ${artifactPath}`);
+    } else {
+        log.verbose(`Using provided artifact: ${artifactPath}`);
+        log.info(`Using provided artifact: ${path.basename(artifactPath)}`);
     }
+
+    log.verbose(`Preparing for artifact uploading to remote server.`);
 
     const remoteRoot = env.deployTo;
     const releases = posixJoin(remoteRoot, "releases");
@@ -35,6 +50,9 @@ export async function deploy(opts: { env?: string; artifact?: string; version?: 
     const releaseDir = posixJoin(releases, version);
     const remoteTar = posixJoin(tmp, `release-${version}.tar.gz`);
 
+    log.debug(`Remote paths - Root: ${remoteRoot}, Releases: ${releases}, Current: ${currentLink}, Tmp: ${tmp}`);
+    log.debug(`Release directory: ${releaseDir}, Remote tar: ${remoteTar}`);
+    log.verbose(`SSH connection config - Host: ${env.host}, Port: ${env.port || 22}, User: ${env.username}`);
     const spin = log.spinner(`Connecting to ${env.username}@${env.host}`);
     const bundle = await connect(env).catch((e) => {
         spin.fail("SSH connect failed");
@@ -44,52 +62,78 @@ export async function deploy(opts: { env?: string; artifact?: string; version?: 
     spin.succeed("Connected");
 
     try {
+        log.verbose(`Ensuring remote directories exist`);
         await ensureRemoteDirs(bundle.ssh, releases, tmp);
+
+        log.verbose(`Uploading artifact to remote server`);
+        log.info(`Uploading deployment artifact...`);
         await uploadFile(bundle.sftp, artifactPath!, remoteTar);
 
         // Extract release
-        const extract = log.spinner("Extracting release");
-        const {code, stderr} = await exec(
+        log.debug(`Executing extract command: mkdir -p "${releaseDir}" && tar -xzf "${remoteTar}" -C "${releaseDir}" && rm -f "${remoteTar}"`);
+        const extract = log.spinner("Extracting release...");
+
+        const { code, stderr } = await exec(
             bundle.ssh,
             `mkdir -p "${releaseDir}" && tar -xzf "${remoteTar}" -C "${releaseDir}" && rm -f "${remoteTar}"`
         );
         if (code !== 0) throw new Error(stderr || "remote extract failed");
         extract.succeed(`Extracted ${version}`);
 
-
         // run PreDeploy hooks
+        log.verbose(`Running pre-deploy hooks after extraction.`);
         await runRemoteHooks(bundle.ssh, "preDeploy", cfg.hooks?.preDeploy, releaseDir);
-
 
         // Link shared items
         if (cfg.shared?.length) {
-            const spinShared = log.spinner("Linking shared items");
+            log.verbose(`Linking ${cfg.shared.length} shared items`);
+            log.debug(`Shared items: ${JSON.stringify(cfg.shared)}`);
+            const spinShared = log.spinner("Linking shared items...");
             await linkShared(bundle.ssh, remoteRoot, releaseDir, cfg.shared, cfg.sharedDefaults);
-            spinShared.succeed("Linked shared items");
+            spinShared.succeed(`Linking completed for ${cfg.shared.length} shared items`);
+        } else {
+            log.verbose(`No shared items to link`);
         }
 
         // Switch current symlink
+        log.verbose(`Switching current symlink to new release`);
+        log.info(`Activating new release...`);
         await exec(bundle.ssh, `ln -sfn "${releaseDir}" "${currentLink}"`);
         log.ok(`Activated ${version}`);
 
         // Clean old releases
         const keep = env.keepVersions ?? 5;
+        log.verbose(`Cleaning old releases, keeping ${keep} versions`);
+
         const existing = await listDirs(bundle.sftp, releases);
+        log.debug(`Existing releases: ${JSON.stringify(existing)}`);
+
         const sorted = existing.sort();
         const toDelete = sorted.filter((r) => r !== version).slice(0, Math.max(0, sorted.length - keep));
-        for (const r of toDelete) {
-            await removePath(bundle.ssh, posixJoin(releases, r));
+
+        if (toDelete.length > 0) {
+            log.verbose(`Deleting ${toDelete.length} old releases: ${toDelete.join(', ')}`);
+            log.info(`Cleaning up old releases...`);
+            for (const r of toDelete) {
+                log.debug(`Removing release: ${r}`);
+                await removePath(bundle.ssh, posixJoin(releases, r));
+            }
+        } else {
+            log.verbose(`No old releases to delete`);
         }
 
         if (cfg.cleanAfterDeploy) {
+            log.verbose(`Cleaning temporary files`);
             await exec(bundle.ssh, `rm -rf "${tmp}"`);
         }
 
         log.ok(`Deployed ${version} to ${envName}`);
 
         // run PostDeploy hooks
+        log.verbose(`Running post-deploy hooks`);
         await runRemoteHooks(bundle.ssh, "postDeploy", cfg.hooks?.postDeploy, releaseDir);
     } finally {
+        log.verbose(`Closing SSH connection`);
         await close(bundle);
     }
 }

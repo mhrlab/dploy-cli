@@ -2,6 +2,7 @@ import fs from "fs-extra";
 import path from "node:path";
 import * as dotenv from "dotenv";
 import { expandTilde } from "./utils.js";
+import { log } from "./logger.js";
 
 
 export type CopyEntry = { from: string; to: string; optional?: boolean };
@@ -38,16 +39,31 @@ export type DployConfig = {
 
 
 export async function loadConfig(cwd = process.cwd()): Promise<DployConfig> {
+    log.debug(`Loading configuration from : ${cwd}`);
+
     const configPath = path.join(cwd, "dploy.config.json");
+    log.verbose(`Looking & loading for config file: ${configPath}`);
+  
     if (!(await fs.pathExists(configPath))) {
         throw new Error(`Missing dploy.config.json at ${configPath}`);
     }
+
     const raw = await fs.readJSON(configPath);
+    log.debug(`Raw config loaded: ${JSON.stringify(raw)}`);
+
+    // .env.deploy (optional)
+    const envPath = path.join(cwd, ".env.dploy");
 
 
-// .env.deploy (optional)
-    const envPath = path.join(cwd, ".env.deploy");
-    dotenv.config({ path: envPath, override: true });
+    log.debug(`Looking for environment file: ${envPath}`);
+
+    if (await fs.pathExists(envPath)) {
+        log.verbose(`Loading environment variables from: ${envPath}`);
+        dotenv.config({ path: envPath, override: true });
+    } else {
+        log.warn(`No .env.dploy file found @ ${envPath}`);
+    }
+
 
     const defaults: Partial<DployConfig> = {
         buildDir: "build",
@@ -62,10 +78,10 @@ export async function loadConfig(cwd = process.cwd()): Promise<DployConfig> {
     };
 
     const cfg: DployConfig = { ...defaults, ...raw };
+    log.debug(`Configuration merged with defaults`);
 
-
-
-// Inject env vars defaults per environment
+    // Inject env vars defaults per environment
+    log.verbose(`Processing environment configurations`);
     for (const [name, env] of Object.entries(cfg.environments)) {
         env.port = env.port ?? Number(resolveEnvVar(name, "PORT") ?? 22);
         env.host = env.host ?? resolveEnvVar(name, "HOST");
@@ -76,15 +92,28 @@ export async function loadConfig(cwd = process.cwd()): Promise<DployConfig> {
         );
         env.baseUrl = env.baseUrl ?? resolveEnvVar(name, "BASE_URL");
         env.keepVersions = env.keepVersions ?? 5;
+
+        log.verbose(`Environment ${name}: ${env.host}:${env.port} -> User:${env.username} -> ${env.deployTo} (keep: ${env.keepVersions})`);
+        log.debug(`Environment ${name} \n config: ${JSON.stringify({
+            host: env.host,
+            port: env.port,
+            username: env.username,
+            hasPassword: !!env.password,
+            hasPrivateKey: !!env.privateKeyPath,
+            deployTo: env.deployTo,
+            keepVersions: env.keepVersions
+        })}`);
     }
 
-
+    log.verbose(`Configuration loading completed`);
     return cfg;
 }
 
 
 export function getEnvName(cliEnv?: string): string {
-    return cliEnv ?? process.env.DPLOY_ENV ?? "production";
+    const envName = cliEnv ?? process.env.DPLOY_ENV ?? "production";
+    log.debug(`Resolved environment name: ${envName} (cli: ${cliEnv}, env: ${process.env.DPLOY_ENV})`);
+    return envName;
 }
 
 function resolveEnvVar(env: string, key: string): string | undefined {
@@ -93,12 +122,19 @@ function resolveEnvVar(env: string, key: string): string | undefined {
 
     // 1. Try environment-specific variable
     const scoped = process.env[`DPLOY_${upperEnv}_${upperKey}`];
-    if (scoped) return scoped;
+    if (scoped) {
+        log.debug(`Found scoped env var DPLOY_${upperEnv}_${upperKey}: ${scoped}`);
+        return scoped;
+    }
 
     // 2. Fallback: global variable
     const global = process.env[`DPLOY_${upperKey}`];
-    if (global) return global;
+    if (global) {
+        log.debug(`Found global env var DPLOY_${upperKey}: ${global}`);
+        return global;
+    }
 
+    log.debug(`No env var found for ${key} in environment ${env}`);
     return undefined;
 }
 
