@@ -54,6 +54,7 @@ export async function loadConfig(cwd = process.cwd()): Promise<DployConfig> {
     // .env.deploy (optional)
     const envPath = path.join(cwd, ".env.dploy");
 
+
     log.debug(`Looking for environment file: ${envPath}`);
 
     if (await fs.pathExists(envPath)) {
@@ -62,6 +63,7 @@ export async function loadConfig(cwd = process.cwd()): Promise<DployConfig> {
     } else {
         log.warn(`No .env.dploy file found @ ${envPath}`);
     }
+
 
     const defaults: Partial<DployConfig> = {
         buildDir: "build",
