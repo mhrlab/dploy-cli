@@ -6,16 +6,28 @@ import { rollback } from "../src/commands/rollback.js";
 import { list } from "../src/commands/list.js";
 import { clean } from "../src/commands/clean.js";
 import { health } from "../src/commands/health.js";
-import {init} from "../src/commands/init.js";
+import { init } from "../src/commands/init.js";
+import { setLogLevel } from "../src/core/logger.js";
 
 
 const program = new Command();
+
+// Global verbose flag
+program
+    .option('-v, --verbose', 'Enable verbose logging')
+    .option('-d, --debug', 'Enable debug logging');
 
 
 program
     .name("dploy")
     .description("Universal deployment tool (current features MVP)")
     .version("0.1.0");
+
+// Set log levels before any command execution
+program.hook('preAction', (thisCommand) => {
+    const options = thisCommand.opts();
+    setLogLevel(!!options.debug, !!options.verbose);
+});
 
 
 program
