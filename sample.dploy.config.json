@@ -8,12 +8,13 @@
     { "from": "package.json", "to": "package.json" },
     { "from": ".env.example", "to": ".env", "optional": true }
   ],
-  "shared": [
-    "storage",
-    ".env"
-  ],
-  "sharedDefaults": {
-    ".env": ".env.example"
+  "shared": ["storage", ".env"],
+  "sharedDefaults": { ".env": ".env.example" },
+  "hooks": {
+    "preBuild": ["echo 'Cleaning cache'"],
+    "postBuild": ["echo 'Build finished'"],
+    "preDeploy": ["echo 'About to deploy'"],
+    "postDeploy": ["npm install --production", "pm2 restart myapp"]
   },
   "environments": {
     "production": {

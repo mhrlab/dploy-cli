@@ -5,7 +5,6 @@ import { detectVersion } from "../core/utils.js";
 import { log } from "../core/logger.js";
 import {runLocalHooks} from "../core/hooks.js";
 
-
 export async function build(opts: { version?: string }) {
     const cwd = process.cwd();
     const cfg = await loadConfig(cwd);
@@ -21,10 +20,13 @@ export async function build(opts: { version?: string }) {
             cfg,
         });
         spin.succeed(`Built ${path.basename(artifactPath)}`);
+
+        await runLocalHooks("postBuild", cfg.hooks?.postBuild);
+
+        return { artifactPath };
     } catch (e: any) {
         spin.fail("Build failed");
         log.err(e.message || String(e));
         process.exit(1);
     }
-    await runLocalHooks("postBuild", cfg.hooks?.postBuild);
 }
