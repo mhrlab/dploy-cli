@@ -3,15 +3,18 @@ import { loadConfig } from "../core/config.js";
 import { buildArtifact } from "../core/packager.js";
 import { detectVersion } from "../core/utils.js";
 import { log } from "../core/logger.js";
-import {runLocalHooks} from "../core/hooks.js";
+import { runLocalHooks } from "../core/hooks.js";
 
 export async function build(opts: { version?: string }) {
     const cwd = process.cwd();
     const cfg = await loadConfig(cwd);
     const version = detectVersion(opts.version);
+
+    log.info(`Starting build process for version ${version}`);
+
     await runLocalHooks("preBuild", cfg.hooks?.preBuild);
 
-    const spin = log.spinner("Building artifact");
+    log.info("Building artifact...");
     try {
         const { artifactPath } = await buildArtifact({
             cwd,
@@ -19,13 +22,13 @@ export async function build(opts: { version?: string }) {
             version,
             cfg,
         });
-        spin.succeed(`Built ${path.basename(artifactPath)}`);
+        log.ok(`Built ${path.basename(artifactPath)}`);
 
         await runLocalHooks("postBuild", cfg.hooks?.postBuild);
 
+        log.info(`Build completed successfully: ${path.basename(artifactPath)}`);
         return { artifactPath };
     } catch (e: any) {
-        spin.fail("Build failed");
         log.err(e.message || String(e));
         process.exit(1);
     }

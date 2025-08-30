@@ -1,6 +1,7 @@
 import { Client } from "ssh2";
 import { posixJoin } from "../core/utils.js";
 import { exec } from "../core/ssh.js";
+import { log } from "../core/logger.js";
 
 export async function linkShared(
     ssh: Client,
@@ -27,12 +28,10 @@ export async function linkShared(
             const defaultSource = sharedDefaults?.[item];
             if (defaultSource) {
                 // seed from artifact release
+                const defaultSourcePath = posixJoin(releaseDir, defaultSource);
                 await exec(
                     ssh,
-                    `if [ -e "${posixJoin(releaseDir, defaultSource)}" ]; then cp -r "${posixJoin(
-                        releaseDir,
-                        defaultSource
-                    )}" "${sharedPath}"; else touch "${sharedPath}"; fi`
+                    `if [ -e "${defaultSourcePath}" ]; then cp -r "${defaultSourcePath}" "${sharedPath}"; else touch "${sharedPath}"; fi`
                 );
             } else {
                 // create empty dir or file

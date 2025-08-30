@@ -9,23 +9,29 @@ export async function health(opts: { env?: string }) {
 
     const base = env.baseUrl || process.env.DPLOY_BASE_URL;
     const path = env.healthCheckPath || "/health";
-    if (!base) throw new Error("Missing baseUrl");
+    if (!base) {
+        throw new Error("Missing baseUrl");
+    }
 
     const url = new URL(path, base).toString();
-    log.info(`GET ${url}`);
+    log.info(`Performing health check: GET ${url}`);
     try {
         const res = await fetch(url);
         const text = await res.text();
         if (res.ok) {
-            log.ok(`Health OK (${res.status})`);
-            console.log(text);
+            log.ok(`Health check passed (${res.status})`);
+            if (text.trim()) {
+                console.log(text);
+            }
         } else {
-            log.warn(`Health not OK (${res.status})`);
-            console.log(text);
+            log.warn(`Health check failed (${res.status})`);
+            if (text.trim()) {
+                console.log(text);
+            }
             process.exitCode = 1;
         }
     } catch (e: any) {
-        log.err(e.message || String(e));
+        log.err(`Health check failed: ${e.message || String(e)}`);
         process.exit(1);
     }
 }

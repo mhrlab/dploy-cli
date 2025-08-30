@@ -2,7 +2,7 @@
 import fs from "fs-extra";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import {log} from "../core/logger.js";
+import { log } from "../core/logger.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // dist/src/commands → go back 3 levels → project root → templates
@@ -18,7 +18,7 @@ export async function init(opts: { template?: string }) {
     // console.log("Looking for template:", src);
 
     if (!(await fs.pathExists(src))) {
-        log.err(`Template '${template}' not found @ ${src}`);
+        log.err(`Template file for '${template}' template not found.`);
         process.exit(1);
     }
 

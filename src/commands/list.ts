@@ -10,6 +10,7 @@ export async function list(opts: { env?: string }) {
     if (!env) throw new Error(`Unknown environment: ${envName}`);
     const releases = posixJoin(env.deployTo, "releases");
 
+    log.info(`Connecting to ${env.username}@${env.host} to list releases`);
     const spin = log.spinner("Connecting");
     const bundle = await connect(env).catch((e) => {
         spin.fail("SSH connect failed");
@@ -23,8 +24,10 @@ export async function list(opts: { env?: string }) {
         if (!dirs.length) {
             log.warn("No releases found");
         } else {
-            log.ok("Releases:");
-            for (const d of dirs.sort()) console.log("  -", d);
+            log.ok(`Found ${dirs.length} release(s):`);
+            for (const d of dirs.sort()) {
+                console.log("  -", d);
+            }
         }
     } finally {
         await close(bundle);

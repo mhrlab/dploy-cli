@@ -45,7 +45,7 @@ export async function loadConfig(cwd = process.cwd()): Promise<DployConfig> {
     const raw = await fs.readJSON(configPath);
 
 
-// .env.deploy (optional)
+    // .env.deploy (optional)
     const envPath = path.join(cwd, ".env.dploy");
     dotenv.config({ path: envPath, override: true });
 

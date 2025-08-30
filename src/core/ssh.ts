@@ -3,6 +3,7 @@ import SFTPClient from "ssh2-sftp-client";
 import fs from "fs-extra";
 import path from "node:path";
 import { EnvConfig } from "./config.js";
+import { log } from "./logger.js";
 
 export type SSHBundle = {
     ssh: Client;
@@ -23,8 +24,12 @@ export async function connect(env: EnvConfig): Promise<SSHBundle> {
 
     await new Promise<void>((resolve, reject) => {
         ssh
-            .on("ready", () => resolve())
-            .on("error", reject)
+            .on("ready", () => {
+                resolve();
+            })
+            .on("error", (err) => {
+                reject(err);
+            })
             .connect(connectConfig);
     });
 
@@ -34,18 +39,22 @@ export async function connect(env: EnvConfig): Promise<SSHBundle> {
 }
 
 export async function close(bundle: SSHBundle) {
-    await bundle.sftp.end().catch(() => {});
+    await bundle.sftp.end().catch(() => { });
     bundle.ssh.end();
 }
 
 export function exec(ssh: Client, command: string): Promise<{ code: number; stdout: string; stderr: string }> {
     return new Promise((resolve, reject) => {
         ssh.exec(command, (err, stream) => {
-            if (err) return reject(err);
+            if (err) {
+                return reject(err);
+            }
             let stdout = "";
             let stderr = "";
             stream
-                .on("close", (code: number) => resolve({ code: code ?? 0, stdout, stderr }))
+                .on("close", (code: number) => {
+                    resolve({ code: code ?? 0, stdout, stderr });
+                })
                 .on("data", (d: Buffer) => (stdout += d.toString()))
                 .stderr.on("data", (d: Buffer) => (stderr += d.toString()));
         });
@@ -59,13 +68,14 @@ export async function ensureRemoteDirs(ssh: Client, ...dirs: string[]) {
 
 export async function uploadFile(sftp: SFTPClient, localPath: string, remotePath: string) {
     const remoteDir = path.posix.dirname(remotePath);
-    await sftp.mkdir(remoteDir, true).catch(() => {});
+    await sftp.mkdir(remoteDir, true).catch(() => { });
     await sftp.fastPut(localPath, remotePath);
 }
 
 export async function listDirs(sftp: SFTPClient, remotePath: string): Promise<string[]> {
     const list = await sftp.list(remotePath).catch(() => []);
-    return list.filter((e) => e.type === "d").map((e) => e.name);
+    const dirs = list.filter((e) => e.type === "d").map((e) => e.name);
+    return dirs;
 }
 
 export async function removePath(ssh: Client, remotePath: string) {

@@ -4,6 +4,7 @@ import * as tar from "tar";
 import { CopyEntry } from "./config.js";
 import { resolveFiles } from "./strategy.js";
 import { DployConfig } from "./config.js";
+import { log } from "./logger.js";
 
 
 export type BuildResult = {
@@ -27,6 +28,8 @@ export async function buildArtifact(options: {
 
 
     const files = await resolveFiles(cwd, cfg);
+    log.info(`Copying ${files.length} files to staging directory...`);
+
     for (const f of files) {
         await fs.ensureDir(path.dirname(path.join(stagingDir, f.to)));
         await fs.copy(f.from, path.join(stagingDir, f.to), { dereference: true });
@@ -37,6 +40,7 @@ export async function buildArtifact(options: {
     const artifactPath = path.join(outDir, artifactName);
 
 
+    log.info(`Creating deployment archive...`);
     await tar.create({ gzip: true, file: artifactPath, cwd: stagingDir, portable: true, noMtime: true }, ["."]);
     return { artifactPath, stagingDir };
 }

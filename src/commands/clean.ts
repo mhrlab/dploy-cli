@@ -12,18 +12,21 @@ export async function clean(opts: { env?: string }) {
     const releases = posixJoin(env.deployTo, "releases");
     const keep = env.keepVersions ?? 5;
 
+    log.info(`Connecting to ${env.username}@${env.host} to clean old releases`);
     const bundle = await connect(env);
     try {
         const dirs = (await listDirs(bundle.sftp, releases)).sort();
         const toDelete = dirs.slice(0, Math.max(0, dirs.length - keep));
         if (!toDelete.length) {
-            log.ok("Nothing to clean");
+            log.ok("Nothing to clean - all releases are within the keep limit");
             return;
         }
+
+        log.info(`Cleaning ${toDelete.length} old release(s) to keep ${keep} latest`);
         for (const r of toDelete) {
             await removePath(bundle.ssh, posixJoin(releases, r));
         }
-        log.ok(`Cleaned ${toDelete.length} release(s)`);
+        log.ok(`Successfully cleaned ${toDelete.length} release(s)`);
     } finally {
         await close(bundle);
     }

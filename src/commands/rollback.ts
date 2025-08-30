@@ -12,6 +12,7 @@ export async function rollback(opts: { env?: string }) {
     const releasesDir = posixJoin(env.deployTo, "releases");
     const currentLink = posixJoin(env.deployTo, "current");
 
+    log.info(`Connecting to ${env.username}@${env.host} to perform rollback`);
     const bundle = await connect(env);
     try {
         const { stdout } = await exec(bundle.ssh, `readlink -f "${currentLink}" || true`);
@@ -19,7 +20,7 @@ export async function rollback(opts: { env?: string }) {
 
         const releases = (await listDirs(bundle.sftp, releasesDir)).sort();
         if (releases.length < 2) {
-            log.warn("Not enough releases to rollback");
+            log.warn(`Not enough releases to rollback (found ${releases.length}, need at least 2)`);
             return;
         }
 
@@ -32,12 +33,14 @@ export async function rollback(opts: { env?: string }) {
             }
         }
         if (!target) {
-            log.warn("No previous release found");
+            log.warn("No previous release found to rollback to");
             return;
         }
 
+        const targetVersion = target.split("/").pop();
+        log.info(`Rolling back from current to: ${targetVersion}`);
         await exec(bundle.ssh, `ln -sfn "${target}" "${currentLink}"`);
-        log.ok(`Rolled back to ${target.split("/").pop()}`);
+        log.ok(`Successfully rolled back to ${targetVersion}`);
     } finally {
         await close(bundle);
     }
