@@ -21,7 +21,7 @@ program
 program
     .name("dploy")
     .description("Universal deployment tool (current features MVP)")
-    .version("0.1.1");
+    .version("0.1.2");
 
 // Set log levels before any command execution
 program.hook('preAction', (thisCommand) => {
