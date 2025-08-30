@@ -5,6 +5,7 @@ import { buildArtifact } from "../core/packager.js";
 import { connect, close, ensureRemoteDirs, exec, uploadFile, listDirs, removePath } from "../core/ssh.js";
 import { log } from "../core/logger.js";
 import {linkShared} from "../features/shared.js";
+import {runRemoteHooks} from "../core/hooks.js";
 
 export async function deploy(opts: { env?: string; artifact?: string; version?: string }) {
     const cwd = process.cwd();
@@ -41,6 +42,9 @@ export async function deploy(opts: { env?: string; artifact?: string; version?: 
         process.exit(1);
     });
     spin.succeed("Connected");
+
+    // run PreDeploy hooks
+    await runRemoteHooks(bundle.ssh, "preDeploy", cfg.hooks?.preDeploy, releaseDir);
 
     try {
         await ensureRemoteDirs(bundle.ssh, releases, tmp);
@@ -80,6 +84,9 @@ export async function deploy(opts: { env?: string; artifact?: string; version?: 
         }
 
         log.ok(`Deployed ${version} to ${envName}`);
+
+        // run PostDeploy hooks
+        await runRemoteHooks(bundle.ssh, "postDeploy", cfg.hooks?.postDeploy, releaseDir);
     } finally {
         await close(bundle);
     }
