@@ -8,10 +8,13 @@ import chalk from "chalk";
 
 export async function runLocalHooks(phase: string, hooks?: string[]) {
     if (!hooks?.length) {
+        log.verbose(`No local ${phase} hooks configured`);
         return;
     }
 
     log.info(`Running local ${phase} hooks...`);
+    log.debug(`Local ${phase} hooks: ${JSON.stringify(hooks)}`);
+
     for (const cmd of hooks) {
         log.info(`→ ${cmd}`);
         try {
@@ -19,7 +22,9 @@ export async function runLocalHooks(phase: string, hooks?: string[]) {
                 stdio: "inherit",
                 shell: os.platform() === "win32" ? process.env.ComSpec || "cmd.exe" : "/bin/bash",
             });
+            log.debug(`Local hook command completed successfully: ${cmd}`);
         } catch (error) {
+            log.debug(`Local hook command failed: ${cmd}, error: ${error}`);
             throw error;
         }
     }
@@ -33,10 +38,13 @@ export async function runRemoteHooks(
     cwd?: string
 ) {
     if (!hooks?.length) {
+        log.verbose(`No remote ${phase} hooks configured`);
         return;
     }
 
     log.info(chalk.cyan(`[remote] Running ${phase} hooks...`));
+    log.debug(`Remote ${phase} hooks: ${JSON.stringify(hooks)}`);
+    if (cwd) log.debug(`Remote hook working directory: ${cwd}`);
 
     for (const cmd of hooks) {
         const fullCmd = cwd ? `cd "${cwd}" && ${cmd}` : cmd;
@@ -47,16 +55,21 @@ export async function runRemoteHooks(
         const { code, stdout, stderr } = await exec(ssh, fullCmd);
 
         if (stdout) {
+            log.debug(`Remote hook stdout: ${stdout}`);
             process.stdout.write(`${stdout}`);
         }
         if (stderr) {
+            log.debug(`Remote hook stderr: ${stderr}`);
             process.stderr.write(chalk.red(`[remote] ${stderr}`));
         }
 
         if (code !== 0) {
+            log.debug(`Remote hook failed with code ${code}: ${cmd}`);
             throw new Error(
                 chalk.redBright(`[remote] Hook failed: ${cmd}`)
             );
         }
+
+        log.debug(`Remote hook command completed successfully: ${cmd}`);
     }
 }
