@@ -1,0 +1,23 @@
+{
+  "buildDir": "build",
+  "strategy": "include",
+  "include": ["app/**", "bootstrap/**", "config/**", "public/**", "resources/**", "routes/**", "vendor/**", "artisan", "composer.json", "composer.lock"],
+  "shared": ["storage", ".env"],
+  "sharedDefaults": { ".env": ".env.example" },
+  "hooks": {
+    "postDeploy": [
+      "composer install --no-dev --optimize-autoloader",
+      "php artisan migrate --force",
+      "php artisan config:cache",
+      "php artisan route:cache"
+    ]
+  },
+  "environments": {
+    "production": {
+      "host": "myserver.com",
+      "username": "deploy",
+      "deployTo": "/var/www/laravel-app",
+      "keepVersions": 3
+    }
+  }
+}
