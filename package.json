@@ -4,8 +4,12 @@
   "private": false,
   "type": "module",
   "bin": {
-    "dploy": "dist/bin/dploy.js"
+    "dploy": "./dist/bin/dploy.js"
   },
+  "files": [
+    "dist",
+    "templates"
+  ],
   "scripts": {
     "build": "tsc",
     "dev": "tsc -w",
