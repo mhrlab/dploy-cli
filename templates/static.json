@@ -1,0 +1,16 @@
+{
+  "buildDir": "build",
+  "strategy": "include",
+  "include": ["dist/**"],
+  "hooks": {
+    "postBuild": ["npm run build"]
+  },
+  "environments": {
+    "production": {
+      "host": "myserver.com",
+      "username": "deploy",
+      "deployTo": "/var/www/static-site",
+      "keepVersions": 2
+    }
+  }
+}

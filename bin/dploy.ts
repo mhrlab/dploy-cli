@@ -6,6 +6,7 @@ import { rollback } from "../src/commands/rollback.js";
 import { list } from "../src/commands/list.js";
 import { clean } from "../src/commands/clean.js";
 import { health } from "../src/commands/health.js";
+import {init} from "../src/commands/init.js";
 
 
 const program = new Command();
@@ -16,6 +17,11 @@ program
     .description("Universal deployment tool (current features MVP)")
     .version("0.1.0");
 
+
+program
+    .command("init [template]")
+    .description("Initialize a new dploy.config.json from templates")
+    .action((template) => init({ template }));
 
 program
     .command("build")
