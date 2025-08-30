@@ -1,0 +1,22 @@
+{
+  "for": "Node.js + PM2",
+  "buildDir": "build",
+  "strategy": "include",
+  "include": ["dist/**", "package.json", "package-lock.json"],
+  "shared": [".env"],
+  "sharedDefaults": { ".env": ".env.example" },
+  "hooks": {
+    "postDeploy": [
+      "npm install --production",
+      "pm2 restart ecosystem.config.js"
+    ]
+  },
+  "environments": {
+    "production": {
+      "host": "myserver.com",
+      "username": "deploy",
+      "deployTo": "/var/www/myapp",
+      "keepVersions": 5
+    }
+  }
+}
