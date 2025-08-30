@@ -67,12 +67,14 @@ export async function loadConfig(cwd = process.cwd()): Promise<DployConfig> {
 
 // Inject env vars defaults per environment
     for (const [name, env] of Object.entries(cfg.environments)) {
-        env.port = env.port ?? (process.env.DPLOY_PORT ? Number(process.env.DPLOY_PORT) : 22);
-        env.host = env.host ?? process.env.DPLOY_HOST;
-        env.username = env.username ?? process.env.DPLOY_USER;
-        env.password = env.password ?? process.env.DPLOY_PASSWORD;
-        env.privateKeyPath = expandTilde(env.privateKeyPath ?? process.env.DPLOY_PRIVATE_KEY);
-        env.baseUrl = env.baseUrl ?? process.env.DPLOY_BASE_URL;
+        env.port = env.port ?? Number(resolveEnvVar(name, "PORT") ?? 22);
+        env.host = env.host ?? resolveEnvVar(name, "HOST");
+        env.username = env.username ?? resolveEnvVar(name, "USER");
+        env.password = env.password ?? resolveEnvVar(name, "PASSWORD");
+        env.privateKeyPath = expandTilde(
+            env.privateKeyPath ?? resolveEnvVar(name, "PRIVATE_KEY")
+        );
+        env.baseUrl = env.baseUrl ?? resolveEnvVar(name, "BASE_URL");
         env.keepVersions = env.keepVersions ?? 5;
     }
 
@@ -84,3 +86,19 @@ export async function loadConfig(cwd = process.cwd()): Promise<DployConfig> {
 export function getEnvName(cliEnv?: string): string {
     return cliEnv ?? process.env.DPLOY_ENV ?? "production";
 }
+
+function resolveEnvVar(env: string, key: string): string | undefined {
+    const upperEnv = env.toUpperCase();
+    const upperKey = key.toUpperCase();
+
+    // 1. Try environment-specific variable
+    const scoped = process.env[`DPLOY_${upperEnv}_${upperKey}`];
+    if (scoped) return scoped;
+
+    // 2. Fallback: global variable
+    const global = process.env[`DPLOY_${upperKey}`];
+    if (global) return global;
+
+    return undefined;
+}
+
