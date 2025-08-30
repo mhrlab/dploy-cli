@@ -11,6 +11,7 @@
 * [Usage](#usage)
 * [Configuration](#configuration)
 * [Hooks](#hooks)
+* [Logging](#logging)
 * [Template Setup](#template-setup)
 * [Development Setup](#development-setup)
 * [Contributing](#contributing)
@@ -43,6 +44,7 @@ npx dploy-cli
 * **Rollback Support**: Roll back to a previous release with a single command.
 * **Health Check**: Optionally set a health check URL for verifying the deployment status.
 * **Hooks**: Supports pre/post hooks to run custom commands before and after the build or deploy process.
+* **Comprehensive Logging**: Verbose and debug logging for better visibility and troubleshooting.
 
 ---
 
@@ -176,6 +178,69 @@ In the `dploy.config.json`:
   }
 }
 ```
+
+---
+
+## Logging
+
+The CLI supports two levels of detailed logging to help with debugging and monitoring:
+
+### Verbose Logging (`-v, --verbose`)
+Shows step-by-step process information including:
+- File operations and transfers
+- Directory creation
+- Hook execution
+- Configuration loading
+- SSH connection details
+- Command execution progress
+
+### Debug Logging (`-d, --debug`)
+Shows technical details including:
+- Variable values and configurations
+- Command execution details
+- File paths and resolutions
+- Error details and stack traces
+- SSH command output
+- Internal state information
+
+### Usage Examples
+
+```bash
+# Normal deployment
+dploy deploy
+
+# Verbose logging - shows process steps
+dploy deploy -v
+
+# Debug logging - shows technical details
+dploy deploy -d
+
+# Both verbose and debug (debug includes verbose)
+dploy deploy -v -d
+```
+
+### Log Output Examples
+
+**Verbose output:**
+```
+ >: Working directory: /path/to/project
+ >: Using environment: production
+```
+
+**Debug output:**
+```
+?: Deploy command started with options: {"env":"production"}
+?: SSH connection config: {"host":"server.com","port":22,"username":"deploy","hasPassword":false,"hasPrivateKey":true}
+```
+
+### Log Levels
+
+- **Info** (`log.info`): Important user-facing information
+- **OK** (`log.ok`): Successful operations
+- **Warn** (`log.warn`): Warning messages
+- **Error** (`log.err`): Error messages
+- **Verbose** (`log.verbose`): Detailed process information (requires `-v` flag)
+- **Debug** (`log.debug`): Technical details (requires `-d` flag)
 
 ---
 
