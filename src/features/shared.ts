@@ -63,11 +63,15 @@ export async function linkShared(
         }
 
         // Always remove release copy and link to shared
+        // Strip trailing slash for symlink paths to avoid ln command issues
+        const cleanSharedPath = sharedPath.replace(/\/$/, '');
+        const cleanReleasePath = releasePath.replace(/\/$/, '');
+
         log.verbose(`Removing release copy and creating symlink for: ${item}`);
-        log.debug(`Removing: ${releasePath}, Linking to: ${sharedPath}`);
+        log.debug(`Removing: ${cleanReleasePath}, Linking to: ${cleanSharedPath}`);
         await exec(
             ssh,
-            `rm -rf "${releasePath}" && ln -sfn "${sharedPath}" "${releasePath}"`
+            `rm -rf "${cleanReleasePath}" && ln -sfn "${cleanSharedPath}" "${cleanReleasePath}"`
         );
         log.debug(`Successfully linked shared item: ${item}`);
     }
