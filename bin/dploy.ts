@@ -21,7 +21,9 @@ program
     .command("build")
     .description("Build and package the project (copy strategy)")
     .option("-v, --version <ver>", "Override version string")
-    .action(build);
+    .action(async (opts) => {
+        await build(opts); // ignore returned artifactPath
+    });
 
 
 program

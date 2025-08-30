@@ -1,9 +1,11 @@
 import path from "node:path";
-import { loadConfig, getEnvName } from "../core/config.js";
-import { detectVersion, posixJoin } from "../core/utils.js";
-import { buildArtifact } from "../core/packager.js";
-import { connect, close, ensureRemoteDirs, exec, uploadFile, listDirs, removePath } from "../core/ssh.js";
-import { log } from "../core/logger.js";
+import {loadConfig, getEnvName} from "../core/config.js";
+import {detectVersion, posixJoin} from "../core/utils.js";
+import {buildArtifact} from "../core/packager.js";
+import {connect, close, ensureRemoteDirs, exec, uploadFile, listDirs, removePath} from "../core/ssh.js";
+import {log} from "../core/logger.js";
+import {linkShared} from "../features/shared.js";
+import {runRemoteHooks} from "../core/hooks.js";
 
 export async function deploy(opts: { env?: string; artifact?: string; version?: string }) {
     const cwd = process.cwd();
@@ -44,7 +46,31 @@ export async function deploy(opts: { env?: string; artifact?: string; version?: 
     try {
         await ensureRemoteDirs(bundle.ssh, releases, tmp);
         await uploadFile(bundle.sftp, artifactPath!, remoteTar);
-        await exec(bundle.ssh, `mkdir -p "${releaseDir}" && tar -xzf "${remoteTar}" -C "${releaseDir}" && rm -f "${remoteTar}" && ln -sfn "${releaseDir}" "${currentLink}"`);
+
+        // Extract release
+        const extract = log.spinner("Extracting release");
+        const {code, stderr} = await exec(
+            bundle.ssh,
+            `mkdir -p "${releaseDir}" && tar -xzf "${remoteTar}" -C "${releaseDir}" && rm -f "${remoteTar}"`
+        );
+        if (code !== 0) throw new Error(stderr || "remote extract failed");
+        extract.succeed(`Extracted ${version}`);
+
+
+        // run PreDeploy hooks
+        await runRemoteHooks(bundle.ssh, "preDeploy", cfg.hooks?.preDeploy, releaseDir);
+
+
+        // Link shared items
+        if (cfg.shared?.length) {
+            const spinShared = log.spinner("Linking shared items");
+            await linkShared(bundle.ssh, remoteRoot, releaseDir, cfg.shared, cfg.sharedDefaults);
+            spinShared.succeed("Linked shared items");
+        }
+
+        // Switch current symlink
+        await exec(bundle.ssh, `ln -sfn "${releaseDir}" "${currentLink}"`);
+        log.ok(`Activated ${version}`);
 
         // Clean old releases
         const keep = env.keepVersions ?? 5;
@@ -60,6 +86,9 @@ export async function deploy(opts: { env?: string; artifact?: string; version?: 
         }
 
         log.ok(`Deployed ${version} to ${envName}`);
+
+        // run PostDeploy hooks
+        await runRemoteHooks(bundle.ssh, "postDeploy", cfg.hooks?.postDeploy, releaseDir);
     } finally {
         await close(bundle);
     }
