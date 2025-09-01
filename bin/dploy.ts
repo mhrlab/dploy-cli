@@ -8,6 +8,7 @@ import { clean } from "../src/commands/clean.js";
 import { health } from "../src/commands/health.js";
 import { init } from "../src/commands/init.js";
 import { setLogLevel } from "../src/core/logger.js";
+import {getAppVersion} from "../src/core/utils.js";
 
 
 const program = new Command();
@@ -21,7 +22,7 @@ program
 program
     .name("dploy")
     .description("Universal deployment tool (current features MVP)")
-    .version("0.1.3");
+    .version(getAppVersion());
 
 // Set log levels before any command execution
 program.hook('preAction', (thisCommand) => {

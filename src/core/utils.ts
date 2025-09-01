@@ -1,6 +1,9 @@
 import { execSync } from "node:child_process";
 import { homedir } from "node:os";
 import path from "node:path";
+import { readFileSync } from "fs";
+import { fileURLToPath } from "url";
+import { dirname, join } from "path";
 
 
 export function expandTilde(p?: string): string | undefined {
@@ -32,4 +35,30 @@ export function detectVersion(override?: string): string {
 
 export function posixJoin(...parts: string[]): string {
     return parts.join("/").replace(/\\/g, "/");
+}
+
+/**
+ * Reads the version from the project's package.json file.
+ * This is designed for an ES module environment.
+ * @returns {string} The version string from package.json, or 'unknown' if not found.
+ */
+export function getAppVersion(): string {
+    try {
+        // Determine the directory of the current module's file.
+        const __filename = fileURLToPath(import.meta.url);
+        const __dirname = dirname(__filename);
+
+        // Construct the path to the package.json file, which is assumed to be
+        // one directory level up from the current file.
+        const packageJsonPath = join(__dirname, '..','..', '..', 'package.json');
+
+        // Read the file and parse the JSON.
+        const packageJson = JSON.parse(readFileSync(packageJsonPath, 'utf8'));
+
+        // Return the version.
+        return packageJson.version;
+    } catch (error: any) {
+        console.error("Error reading package.json:", error.message);
+        return "unknown";
+    }
 }
