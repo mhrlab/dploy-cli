@@ -12,7 +12,7 @@ export async function cleanupReleases(bundle: SSHBundle, releasesDir: string, ke
         const toDelete = sortedReleases.slice(0, Math.max(0, sortedReleases.length - keep));
 
         if (!toDelete.length) {
-            log.ok("Nothing to clean - all releases are within the keep limit");
+            log.info("Nothing to clean - all releases are within the keep limit");
             return;
         }
 

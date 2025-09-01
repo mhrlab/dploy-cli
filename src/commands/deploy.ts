@@ -5,7 +5,8 @@ import { buildArtifact } from "../features/packager.js";
 import { connect, close, ensureRemoteDirs, exec, uploadFile, listDirs, removePath } from "../core/ssh.js";
 import { log } from "../core/logger.js";
 import { linkShared } from "../features/shared.js";
-import { runRemoteHooks } from "../core/hooks.js";
+import {runLocalHooks, runRemoteHooks} from "../core/hooks.js";
+import {cleanupReleases} from "../features/cleaner.js";
 
 export async function deploy(opts: { env?: string; artifact?: string; version?: string }) {
     log.debug(`Deploy command started with options: ${JSON.stringify(opts)}`);
@@ -21,13 +22,16 @@ export async function deploy(opts: { env?: string; artifact?: string; version?: 
     const version = detectVersion(opts.version);
     log.verbose(`Deployment version: ${version}`);
 
-    log.info(`Starting deployment to ${envName} environment (${env.host})`);
+    log.info(`Starting deployment to [${envName}] environment (${env.host})`);
 
     // Build or use provided artifact
     let artifactPath = opts.artifact ? path.resolve(opts.artifact) : undefined;
     if (!artifactPath) {
-        log.verbose(`No artifact provided, building from source`);
-        log.info(`Building deployment artifact...`);
+        log.info(`No artifact provided, building from source`);
+
+        log.verbose(`Running pre-build hooks`);
+        await runLocalHooks("preBuild", cfg.hooks?.preBuild);
+
         const result = await buildArtifact({
             cwd,
             buildDir: cfg.buildDir,
@@ -35,7 +39,11 @@ export async function deploy(opts: { env?: string; artifact?: string; version?: 
             cfg,
         });
         artifactPath = result.artifactPath;
-        log.debug(`Built artifact path: ${artifactPath}`);
+
+        log.debug(`Artifact built successfully: ${artifactPath}`);
+        log.verbose(`Running post-build hooks`);
+        await runLocalHooks("postBuild", cfg.hooks?.postBuild);
+
     } else {
         log.verbose(`Using provided artifact: ${artifactPath}`);
         log.info(`Using provided artifact: ${path.basename(artifactPath)}`);
@@ -98,40 +106,25 @@ export async function deploy(opts: { env?: string; artifact?: string; version?: 
         // Switch current symlink
         log.verbose(`Switching current symlink to new release`);
         log.info(`Activating new release...`);
+
         await exec(bundle.ssh, `ln -sfn "${releaseDir}" "${currentLink}"`);
+
         log.ok(`Activated ${version}`);
-
-        // Clean old releases
-        const keep = env.keepVersions ?? 5;
-        log.verbose(`Cleaning old releases, keeping ${keep} versions`);
-
-        const existing = await listDirs(bundle.sftp, releases);
-        log.debug(`Existing releases: ${JSON.stringify(existing)}`);
-
-        const sorted = existing.sort();
-        const toDelete = sorted.filter((r) => r.name !== version).slice(0, Math.max(0, sorted.length - keep));
-
-        if (toDelete.length > 0) {
-            log.verbose(`Deleting ${toDelete.length} old releases: ${toDelete.join(', ')}`);
-            log.info(`Cleaning up old releases...`);
-            for (const r of toDelete) {
-                log.debug(`Removing release: ${r}`);
-                await removePath(bundle.ssh, posixJoin(releases, r.name));
-            }
-        } else {
-            log.verbose(`No old releases to delete`);
-        }
-
-        if (cfg.cleanAfterDeploy) {
-            log.verbose(`Cleaning temporary files`);
-            await exec(bundle.ssh, `rm -rf "${tmp}"`);
-        }
-
-        log.ok(`Deployed ${version} to ${envName}`);
+        log.ok(`Deployed ${version} to [${envName}]`);
 
         // run PostDeploy hooks
         log.verbose(`Running post-deploy hooks`);
         await runRemoteHooks(bundle.ssh, "postDeploy", cfg.hooks?.postDeploy, releaseDir);
+
+        // Clean old releases
+        const keep = env.keepVersions ?? 5;
+        log.verbose(`Cleaning old releases, keeping ${keep} versions`);
+        await cleanupReleases(bundle, releases, keep, true);
+        if (cfg.cleanAfterDeploy) {
+            log.verbose(`Cleaning temporary uploaded directory & files`);
+            await exec(bundle.ssh, `rm -rf "${tmp}"`);
+        }
+
     } finally {
         log.verbose(`Closing SSH connection`);
         await close(bundle);
