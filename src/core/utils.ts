@@ -39,7 +39,6 @@ export function posixJoin(...parts: string[]): string {
 
 /**
  * Reads the version from the project's package.json file.
- * This is designed for an ES module environment.
  * @returns {string} The version string from package.json, or 'unknown' if not found.
  */
 export function getAppVersion(): string {

@@ -11,6 +11,10 @@
     "dist",
     "templates"
   ],
+  "author": {
+    "name": "Hemant Kumar Meena",
+    "url": "https://github.com/mhrlab"
+  },
   "scripts": {
     "build": "tsc",
     "dev": "tsc -w",
