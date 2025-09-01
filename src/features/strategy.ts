@@ -14,7 +14,7 @@ export async function resolveFiles(cwd: string, cfg: DployConfig): Promise<{ fro
     if (strategy === "copy" || strategy === "hybrid") {
         log.verbose(`Processing copy strategy entries`);
         if (cfg.copy?.length) {
-            log.info(`Processing ${cfg.copy.length} copy entries...`);
+            log.verbose(`Processing ${cfg.copy.length} copy entries...`);
         }
         for (const entry of cfg.copy ?? []) {
             const fromAbs = path.join(cwd, entry.from);
@@ -44,7 +44,7 @@ export async function resolveFiles(cwd: string, cfg: DployConfig): Promise<{ fro
 
         if (include.length) {
             log.debug(`Globbing files with include patterns`);
-            log.info(`Finding files matching include patterns...`);
+            log.verbose(`Finding files matching include patterns...`);
             const files = await fg(include, { cwd, dot: true, ignore: exclude });
             log.verbose(`Found ${files.length} files matching include patterns`);
 
@@ -61,7 +61,7 @@ export async function resolveFiles(cwd: string, cfg: DployConfig): Promise<{ fro
         log.debug(`Exclude patterns: ${JSON.stringify(exclude)}`);
 
         log.debug(`Globbing all files except exclude patterns`);
-        log.info(`Finding all files (excluding patterns)...`);
+        log.verbose(`Finding all files (excluding patterns)...`);
         const files = await fg(["**/*"], { cwd, dot: true, ignore: exclude });
         log.verbose(`Found ${files.length} files after excluding patterns`);
 

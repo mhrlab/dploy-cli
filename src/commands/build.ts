@@ -20,20 +20,21 @@ export async function build(opts: { version?: string }) {
     log.info("Building artifact...");
     try {
         log.verbose(`Starting artifact build process`);
-        const { artifactPath } = await buildArtifact({
+        const {artifactPath} = await buildArtifact({
             cwd,
             buildDir: cfg.buildDir,
             version,
             cfg,
         });
-        log.ok(`Built ${path.basename(artifactPath)}`);
-        log.debug(`Artifact built successfully: ${artifactPath}`);
 
+        log.debug(`Artifact built successfully: ${artifactPath}`);
         log.verbose(`Running post-build hooks`);
+
         await runLocalHooks("postBuild", cfg.hooks?.postBuild);
 
         log.info(`Build completed successfully: ${path.basename(artifactPath)}`);
-        return { artifactPath };
+
+        return {artifactPath};
     } catch (e: any) {
         log.err(e.message || String(e));
         log.debug(`Build error details: ${e.stack || e}`);
