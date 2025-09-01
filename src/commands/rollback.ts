@@ -2,6 +2,7 @@ import { loadConfig, getEnvName } from "../core/config.js";
 import { connect, close, listDirs, exec } from "../core/ssh.js";
 import { log } from "../core/logger.js";
 import { posixJoin } from "../core/utils.js";
+import inquirer from "inquirer";
 
 export async function rollback(opts: { env?: string }) {
     log.debug(`Rollback command started with options: ${JSON.stringify(opts)}`);
@@ -25,33 +26,35 @@ export async function rollback(opts: { env?: string }) {
         log.debug(`Current symlink target: ${currentTarget}`);
 
         log.verbose(`Listing available releases`);
-        const releases = (await listDirs(bundle.sftp, releasesDir)).sort();
-        log.debug(`Available releases: ${JSON.stringify(releases)}`);
+        // list releases with timestamps
+        const releases = await listDirs(bundle.sftp, releasesDir);
+        const sortedReleases = releases.sort((a, b) => b.mtime.getTime() - a.mtime.getTime());
 
-        if (releases.length < 2) {
-            log.warn(`Not enough releases to rollback (found ${releases.length}, need at least 2)`);
+        if (sortedReleases.length < 2) {
+            log.warn(`Not enough releases to rollback (found ${sortedReleases.length}, need at least 2)`);
             return;
         }
 
-        log.verbose(`Finding previous release to rollback to`);
-        let target: string | undefined;
-        for (let i = releases.length - 1; i >= 0; i--) {
-            const candidate = posixJoin(releasesDir, releases[i]);
-            log.debug(`Checking candidate: ${candidate} vs current: ${currentTarget}`);
-            if (!currentTarget || candidate !== currentTarget) {
-                target = candidate;
-                log.debug(`Selected rollback target: ${target}`);
-                break;
+        // build choices for prompt
+        const choices = sortedReleases.map(r => ({
+            name: `${r.name} (${r.mtime.toLocaleString()})${currentTarget.endsWith(r.name) ? " [current]" : ""}`,
+            value: posixJoin(releasesDir, r.name),
+            disabled: currentTarget.endsWith(r.name) ? "Already active" : false
+        }));
+
+        // prompt user
+        const { target } = await inquirer.prompt([
+            {
+                type: "list",
+                name: "target",
+                message: "Select a release to rollback to:",
+                choices
             }
-        }
+        ]);
 
-        if (!target) {
-            log.warn("No previous release found to rollback to");
-            return;
-        }
-
+        // switch symlink
         const targetVersion = target.split("/").pop();
-        log.info(`Rolling back from current to: ${targetVersion}`);
+        log.info(`Rolling back to: ${targetVersion}`);
         await exec(bundle.ssh, `ln -sfn "${target}" "${currentLink}"`);
         log.ok(`Successfully rolled back to ${targetVersion}`);
     } finally {

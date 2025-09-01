@@ -98,11 +98,20 @@ export async function uploadFile(sftp: SFTPClient, localPath: string, remotePath
     await sftp.fastPut(localPath, remotePath);
     log.verbose(`File upload completed`);
 }
+export type RemoteDir = {
+    name: string;
+    mtime: Date;
+};
 
-export async function listDirs(sftp: SFTPClient, remotePath: string): Promise<string[]> {
+export async function listDirs(sftp: SFTPClient, remotePath: string): Promise<RemoteDir[]> {
     log.debug(`Listing directories in: ${remotePath}`);
     const list = await sftp.list(remotePath).catch(() => []);
-    const dirs = list.filter((e) => e.type === "d").map((e) => e.name);
+    const dirs: RemoteDir[] = list
+        .filter((e) => e.type === "d")
+        .map((e) => ({
+            name: e.name,
+            mtime: new Date((e.modifyTime || e.accessTime) ?? Date.now()) // ssh2-sftp-client gives modifyTime in ms
+        }));
     log.debug(`Found directories: ${JSON.stringify(dirs)}`);
     return dirs;
 }

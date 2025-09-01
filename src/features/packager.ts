@@ -1,15 +1,16 @@
 import fs from "fs-extra";
 import path from "node:path";
 import * as tar from "tar";
-import { CopyEntry } from "./config.js";
 import { resolveFiles } from "./strategy.js";
-import { DployConfig } from "./config.js";
-import { log } from "./logger.js";
+import { DployConfig } from "../core/config.js";
+import { log } from "../core/logger.js";
+import {getReadableFileSize} from "../core/utils.js";
 
 
 export type BuildResult = {
     artifactPath: string; // path to .tar.gz
     stagingDir: string; // temp staging dir
+    sizeBytes: number; // size of artifact
 };
 
 export async function buildArtifact(options: {
@@ -39,6 +40,7 @@ export async function buildArtifact(options: {
     log.verbose(`Resolving files to include in artifact`);
     const files = await resolveFiles(cwd, cfg);
     log.debug(`Resolved ${files.length} files to copy`);
+    log.verbose(`Copying ${files.length} files to staging directory...`);
     log.info(`Copying ${files.length} files to staging directory...`);
 
     for (const f of files) {
@@ -54,7 +56,11 @@ export async function buildArtifact(options: {
     log.debug(`Creating tar archive with gzip compression`);
     log.info(`Creating deployment archive...`);
     await tar.create({ gzip: true, file: artifactPath, cwd: stagingDir, portable: true, noMtime: true }, ["."]);
-
+    const stats = fs.statSync(artifactPath);
+    const sizeBytes = stats.size;
     log.verbose(`Artifact created successfully: ${artifactPath}`);
-    return { artifactPath, stagingDir };
+
+    log.ok(`Built ${path.basename(artifactPath)} [ ${getReadableFileSize(sizeBytes)} ]`);
+
+    return { artifactPath, stagingDir, sizeBytes };
 }
