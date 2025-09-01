@@ -27,7 +27,9 @@ export async function list(opts: { env?: string }) {
 
     try {
         log.verbose(`Listing releases in: ${releases}`);
-        const dirs = await listDirs(bundle.sftp, releases);
+        const dirs_list = await listDirs(bundle.sftp, releases);
+        const dirs = dirs_list.sort((a, b) => b.mtime.getTime() - a.mtime.getTime());
+
         log.debug(`Found ${dirs.length} releases: ${JSON.stringify(dirs)}`);
 
         if (!dirs.length) {

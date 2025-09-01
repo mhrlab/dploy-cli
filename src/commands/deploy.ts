@@ -109,14 +109,14 @@ export async function deploy(opts: { env?: string; artifact?: string; version?: 
         log.debug(`Existing releases: ${JSON.stringify(existing)}`);
 
         const sorted = existing.sort();
-        const toDelete = sorted.filter((r) => r !== version).slice(0, Math.max(0, sorted.length - keep));
+        const toDelete = sorted.filter((r) => r.name !== version).slice(0, Math.max(0, sorted.length - keep));
 
         if (toDelete.length > 0) {
             log.verbose(`Deleting ${toDelete.length} old releases: ${toDelete.join(', ')}`);
             log.info(`Cleaning up old releases...`);
             for (const r of toDelete) {
                 log.debug(`Removing release: ${r}`);
-                await removePath(bundle.ssh, posixJoin(releases, r));
+                await removePath(bundle.ssh, posixJoin(releases, r.name));
             }
         } else {
             log.verbose(`No old releases to delete`);
