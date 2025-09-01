@@ -1,9 +1,9 @@
 import fs from "fs-extra";
 import path from "node:path";
 import * as tar from "tar";
-import { resolveFiles } from "../features/strategy.js";
-import { DployConfig } from "./config.js";
-import { log } from "./logger.js";
+import { resolveFiles } from "./strategy.js";
+import { DployConfig } from "../core/config.js";
+import { log } from "../core/logger.js";
 
 
 export type BuildResult = {

@@ -1,6 +1,6 @@
 import path from "node:path";
 import { loadConfig } from "../core/config.js";
-import { buildArtifact } from "../core/packager.js";
+import { buildArtifact } from "../features/packager.js";
 import { detectVersion } from "../core/utils.js";
 import { log } from "../core/logger.js";
 import { runLocalHooks } from "../core/hooks.js";

@@ -1,7 +1,7 @@
 import path from "node:path";
 import { loadConfig, getEnvName } from "../core/config.js";
 import { detectVersion, posixJoin } from "../core/utils.js";
-import { buildArtifact } from "../core/packager.js";
+import { buildArtifact } from "../features/packager.js";
 import { connect, close, ensureRemoteDirs, exec, uploadFile, listDirs, removePath } from "../core/ssh.js";
 import { log } from "../core/logger.js";
 import { linkShared } from "../features/shared.js";
