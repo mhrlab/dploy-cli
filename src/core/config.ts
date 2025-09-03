@@ -5,6 +5,12 @@ import { expandTilde } from "./utils.js";
 import { log } from "./logger.js";
 
 
+export const configFiles = {
+    "config_json": "deploy.config.json", // can be indexed contain just setup & strategy
+    "env_example": ".env.dploy.example", // example file for create main .env.dploy file
+    "gitignore": [ ".env.dploy" ], // list all files those need to add in .gitignore
+}
+
 export type CopyEntry = { from: string; to: string; optional?: boolean };
 
 

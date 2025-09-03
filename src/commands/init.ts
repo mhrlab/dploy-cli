@@ -1,8 +1,9 @@
-#!/usr/bin/env node
 import fs from "fs-extra";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { log } from "../core/logger.js";
+import { configFiles } from "../core/config.js";
+import { updateGitignore } from "../core/utils.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // dist/src/commands → go back 3 levels → project root → templates
@@ -13,7 +14,7 @@ export async function init(opts: { template?: string }) {
 
     const template = opts.template || "node"; // default to node
     const src = path.join(templatesDir, `${template}.json`);
-    const dest = path.resolve(process.cwd(), "dploy.config.json");
+    const dest = path.resolve(process.cwd(), configFiles.config_json);
     log.debug(`Template source: ${src}, Destination: ${dest}`);
 
     log.verbose(`Checking if template exists`);
@@ -26,30 +27,44 @@ export async function init(opts: { template?: string }) {
     log.verbose(`Checking if config file already exists`);
     if (await fs.pathExists(dest)) {
         log.debug(`Config file already exists: ${dest}`);
-        log.err(`dploy.config.json already exists in this project`);
+        log.err(`${configFiles.config_json} already exists in this project`);
         process.exit(1);
     }
 
+    let setup_success: boolean = false;
+
     // Copy config
-    log.info(`Creating dploy.config.json from '${template}' template`);
-    await fs.copy(src, dest);
-    log.ok(`Created dploy.config.json from '${template}' template`);
+    try {
+        log.info(`Creating ${configFiles.config_json} from '${template}' template`);
+        await fs.copy(src, dest);
+        log.ok(`Created ${configFiles.config_json} from '${template}' template`);
+        setup_success = true;
+    }catch (e){
+        log.err(`Error creating ${configFiles.config_json} from '${template}' template`);
+    }
 
     // Also export .env.dploy.example if available
-    const envSrc = path.join(templatesDir, ".env.dploy.example");
-    const envDest = path.resolve(process.cwd(), ".env.dploy.example");
+    const envSrc = path.join(templatesDir,configFiles.env_example);
+    const envDest = path.resolve(process.cwd(), configFiles.env_example);
     log.debug(`Environment example source: ${envSrc}, Destination: ${envDest}`);
 
     log.verbose(`Checking if environment example template exists`);
     if (await fs.pathExists(envSrc)) {
         if (!(await fs.pathExists(envDest))) {
-            log.info(`Creating .env.dploy.example`);
+            log.info(`Creating ${configFiles.env_example}`);
             await fs.copy(envSrc, envDest);
-            log.ok(`Created .env.dploy.example`);
+            log.ok(`Created ${configFiles.env_example}`);
+            setup_success = true;
         } else {
-            log.warn(`.env.dploy.example already exists, skipped`);
+            log.warn(`${configFiles.env_example} already exists, skipped`);
         }
     } else {
-        log.verbose(`No .env.dploy.example template found`);
+        log.verbose(`No ${configFiles.env_example} template found`);
     }
+
+    if (setup_success) {
+        log.verbose("Adding files to .gitignore to prevent from git indexing.");
+        await updateGitignore();
+    }
+
 }
