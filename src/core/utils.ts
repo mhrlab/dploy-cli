@@ -6,6 +6,7 @@ import { readFileSync } from "fs";
 import { fileURLToPath } from "url";
 import { dirname, join } from "path";
 import { configFiles } from "./config.js";
+import {log} from "./logger.js";
 
 
 export function expandTilde(p?: string): string | undefined {
@@ -78,8 +79,8 @@ export function getAppVersion(): string {
 
 
 /**
- * Ignore configs files from indexing in git via adding them in `.gitignore`
- * keep it flexible for future exclude logic
+ * Ignore config files from git indexing by adding them to `.gitignore`.
+ * Designed to stay flexible for future exclude logic.
  */
 export async function updateGitignore() {
     const gitignore = path.resolve(process.cwd(), ".gitignore");
@@ -87,7 +88,9 @@ export async function updateGitignore() {
 
     // If file does not exist → create with all entries
     if (!(await fs.pathExists(gitignore))) {
+        log.warn(".gitignore file not found. Creating a new one...");
         await fs.writeFile(gitignore, entries.join("\n") + "\n", "utf8");
+        log.ok(".gitignore created with default entries.");
         return;
     }
 
@@ -97,13 +100,20 @@ export async function updateGitignore() {
 
     for (const entry of entries) {
         if (!content.split(/\r?\n/).includes(entry)) {
+            log.debug(`Adding '${entry}' to .gitignore`);
             content += (content.endsWith("\n") ? "" : "\n") + entry + "\n";
             updated = true;
+        } else {
+            log.debug(`'${entry}' already present in .gitignore`);
         }
     }
 
+
     if (updated) {
         await fs.writeFile(gitignore, content, "utf8");
+        log.verbose(".gitignore updated with new entries.");
+    } else {
+        log.verbose(".gitignore already contains all required entries. No changes made.");
     }
 }
 

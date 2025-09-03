@@ -24,24 +24,24 @@ export async function init(opts: { template?: string }) {
         process.exit(1);
     }
 
-    log.verbose(`Checking if config file already exists`);
-    if (await fs.pathExists(dest)) {
-        log.debug(`Config file already exists: ${dest}`);
-        log.err(`${configFiles.config_json} already exists in this project`);
-        process.exit(1);
-    }
-
     let setup_success: boolean = false;
 
-    // Copy config
-    try {
-        log.info(`Creating ${configFiles.config_json} from '${template}' template`);
-        await fs.copy(src, dest);
-        log.ok(`Created ${configFiles.config_json} from '${template}' template`);
-        setup_success = true;
-    }catch (e){
-        log.err(`Error creating ${configFiles.config_json} from '${template}' template`);
+    log.verbose(`Checking if config file already exists`);
+    if (!(await fs.pathExists(dest))) {
+        // Copy config
+        try {
+            log.info(`Creating ${configFiles.config_json} from '${template}' template`);
+            await fs.copy(src, dest);
+            log.ok(`Created ${configFiles.config_json} from '${template}' template`);
+            setup_success = true;
+        } catch (e) {
+            log.err(`Error creating ${configFiles.config_json} from '${template}' template`);
+        }
+    } else {
+        log.debug(`Config file already exists: ${dest}`);
+        log.warn(`${configFiles.config_json} already exists, skipped`);
     }
+
 
     // Also export .env.dploy.example if available
     const envSrc = path.join(templatesDir,configFiles.env_example);
@@ -63,8 +63,9 @@ export async function init(opts: { template?: string }) {
     }
 
     if (setup_success) {
-        log.verbose("Adding files to .gitignore to prevent from git indexing.");
+        log.info("Updating .gitignore to exclude sensitive deployment files from version control...");
         await updateGitignore();
+        log.ok(".gitignore successfully updated.");
     }
 
 }
