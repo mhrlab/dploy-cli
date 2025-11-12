@@ -15,7 +15,7 @@ export type BuildResult = {
 
 export async function buildArtifact(options: {
     cwd: string;
-    buildDir: string;
+    buildDir: string | undefined;
     version: string;
     cfg: DeployConfig;
 }): Promise<BuildResult> {
@@ -29,7 +29,7 @@ export async function buildArtifact(options: {
         copy: cfg.build?.copy
     })}`);
 
-    const outDir = path.join(cwd, buildDir);
+    const outDir = path.join(cwd, buildDir ? buildDir : 'builds');
     log.verbose(`Creating output directory: ${outDir}`);
     await fs.ensureDir(outDir);
 

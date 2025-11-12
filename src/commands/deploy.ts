@@ -34,7 +34,7 @@ export async function deploy(opts: { env?: string; artifact?: string; version?: 
 
         const result = await buildArtifact({
             cwd,
-            buildDir: cfg.buildDir,
+            buildDir:  cfg.build?.buildDir,
             version,
             cfg,
         });
