@@ -22,7 +22,8 @@ export async function connect(env: EnvConfig): Promise<SSHBundle> {
         username: env.username,
     };
     if (env.password) connectConfig.password = env.password;
-    if (env.privateKeyPath) connectConfig.privateKey = await fs.readFile(env.privateKeyPath);
+    if (env.ssh_key) connectConfig.privateKey = env.ssh_key;
+    if (env.ssh_key_path) connectConfig.privateKey = await fs.readFile(env.ssh_key_path);
 
     log.debug(`SSH connection config: ${JSON.stringify({
         host: connectConfig.host,
