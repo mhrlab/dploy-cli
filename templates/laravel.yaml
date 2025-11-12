@@ -1,0 +1,82 @@
+# deploy.config.yml
+name: Laravel + Vite
+
+build:
+  strategy: hybrid
+  buildDir: build
+  include:
+    - app/**
+    - bootstrap/**
+    - config/**
+    - database/**
+    - public/**
+    - resources/**
+    - routes/**
+    - artisan
+    - composer.json
+    - composer.lock
+    - package.json
+    - vite.config.js
+  exclude:
+    - node_modules/**
+    - storage/**
+    - tests/**
+  shared:
+    - .env
+    - storage
+  sharedDefaults:
+    .env: .env.example
+  copy:
+    - from: public/build
+      to: build/public/build
+      optional: true
+  cleanAfterDeploy: true
+
+hooks:
+  preBuild:
+    - echo "📦 Installing Composer dependencies"
+    - composer install --no-dev --optimize-autoloader
+    - echo "🧩 Installing Node dependencies for Vite"
+    - npm ci
+  postBuild:
+    - echo "⚙️ Building front-end assets using Vite"
+    - npm run build
+  preDeploy:
+    - echo "🗜️ Creating Laravel deployment artifact"
+    - tar -czf laravel_app.tar.gz build
+  postDeploy:
+    - echo "🚀 Running post-deployment tasks"
+    - php artisan migrate --force
+    - php artisan config:cache
+    - php artisan route:cache
+    - php artisan view:cache
+    - sudo systemctl restart nginx
+
+environments:
+  default:
+    keepVersions: 5
+    deployTo: /home/{SSH_USERNAME}/{APP_NAME}
+    env:
+      APP_ENV: production
+      APP_DEBUG: true
+      PHP_VERSION: "8.2"
+
+  staging:
+    extends: default
+    host: ${STAGING_HOST:-staging.example.com}
+    username: ${STAGING_USER:-deploy}
+    deployTo: /var/www/staging_app
+    env:
+      APP_ENV: staging
+      APP_DEBUG: false
+
+  production:
+    extends: default
+    host: ${PROD_HOST:-prod.example.com}
+    username: ${PROD_USER:-deploy}
+    deployTo: /var/www/laravel_app
+    keepVersions: 7
+    env:
+      APP_ENV: production
+      APP_DEBUG: false
+      APP_KEY: ${APP_KEY}
