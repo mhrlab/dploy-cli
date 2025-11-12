@@ -1,22 +1,22 @@
 import fg from "fast-glob";
 import fs from "fs-extra";
 import path from "node:path";
-import { DployConfig } from "../core/config.js";
+import { DeployConfig } from "../core/config.js";
 import { log } from "../core/logger.js";
 
-export async function resolveFiles(cwd: string, cfg: DployConfig): Promise<{ from: string; to: string }[]> {
-    const strategy = cfg.strategy ?? "copy";
+export async function resolveFiles(cwd: string, cfg: DeployConfig): Promise<{ from: string; to: string }[]> {
+    const strategy = cfg.build?.strategy ?? "copy";
     log.debug(`Resolving files using strategy: ${strategy}`);
-    log.debug(`Strategy config - copy: ${cfg.copy?.length || 0}, include: ${cfg.include?.length || 0}, exclude: ${cfg.exclude?.length || 0}`);
+    log.debug(`Strategy config - copy: ${cfg.copy?.length || 0}, include: ${cfg.build?.include?.length || 0}, exclude: ${cfg.build?.exclude?.length || 0}`);
 
     const results: { from: string; to: string }[] = [];
 
     if (strategy === "copy" || strategy === "hybrid") {
         log.verbose(`Processing copy strategy entries`);
-        if (cfg.copy?.length) {
-            log.verbose(`Processing ${cfg.copy.length} copy entries...`);
+        if (cfg.build?.copy?.length) {
+            log.verbose(`Processing ${cfg.build?.copy.length} copy entries...`);
         }
-        for (const entry of cfg.copy ?? []) {
+        for (const entry of cfg.build?.copy ?? []) {
             const fromAbs = path.join(cwd, entry.from);
             log.debug(`Checking copy entry: ${entry.from} -> ${entry.to} (optional: ${entry.optional})`);
 
@@ -36,8 +36,8 @@ export async function resolveFiles(cwd: string, cfg: DployConfig): Promise<{ fro
 
     if (strategy === "include" || strategy === "hybrid") {
         log.verbose(`Processing include strategy`);
-        const include = cfg.include ?? [];
-        const exclude = cfg.exclude ?? [];
+        const include = cfg.build?.include ?? [];
+        const exclude = cfg.build?.exclude ?? [];
 
         log.verbose(`Include patterns: ${JSON.stringify(include)}`);
         log.verbose(`Exclude patterns: ${JSON.stringify(exclude)}`);
@@ -57,7 +57,7 @@ export async function resolveFiles(cwd: string, cfg: DployConfig): Promise<{ fro
 
     if (strategy === "exclude") {
         log.verbose(`Processing exclude strategy`);
-        const exclude = cfg.exclude ?? [];
+        const exclude = cfg.build?.exclude ?? [];
         log.debug(`Exclude patterns: ${JSON.stringify(exclude)}`);
 
         log.debug(`Globbing all files except exclude patterns`);

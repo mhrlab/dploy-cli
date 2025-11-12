@@ -2,7 +2,7 @@ import fs from "fs-extra";
 import path from "node:path";
 import * as tar from "tar";
 import { resolveFiles } from "./strategy.js";
-import { DployConfig } from "../core/config.js";
+import { DeployConfig } from "../core/config.js";
 import { log } from "../core/logger.js";
 import {getReadableFileSize} from "../core/utils.js";
 
@@ -17,16 +17,16 @@ export async function buildArtifact(options: {
     cwd: string;
     buildDir: string;
     version: string;
-    cfg: DployConfig;
+    cfg: DeployConfig;
 }): Promise<BuildResult> {
     const { cwd, buildDir, version, cfg } = options;
 
     log.debug(`Build artifact started - cwd: ${cwd}, buildDir: ${buildDir}, version: ${version}`);
     log.debug(`Build config: ${JSON.stringify({
-        strategy: cfg.strategy,
-        include: cfg.include,
-        exclude: cfg.exclude,
-        copy: cfg.copy
+        strategy: cfg.build?.strategy,
+        include: cfg.build?.include,
+        exclude: cfg.build?.exclude,
+        copy: cfg.build?.copy
     })}`);
 
     const outDir = path.join(cwd, buildDir);
