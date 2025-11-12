@@ -7,9 +7,29 @@ import { list } from "../src/commands/list.js";
 import { clean } from "../src/commands/clean.js";
 import { health } from "../src/commands/health.js";
 import { init } from "../src/commands/init.js";
-import { setLogLevel } from "../src/core/logger.js";
+import {log, setLogLevel} from "../src/core/logger.js";
 import { getAppVersion } from "../src/core/utils.js";
 import { loadConfig, getEnvironmentConfig } from "../src/core/config.js";
+
+
+
+// 🧩 Global SIGINT handler (Ctrl + C)
+process.on("SIGINT", () => {
+    console.log("\n⚠️  Operation cancelled by user.\n");
+    process.exit(0);
+});
+
+// 🧩 Global unhandled rejection handler (for Inquirer ExitPromptError, etc.)
+process.on("unhandledRejection", (err: any) => {
+    if (err?.name === "ExitPromptError" || /SIGINT/i.test(err?.message)) {
+        console.log("\n⚠️  Prompt cancelled by user.\n");
+        process.exit(0);
+    }
+
+    console.error("❌ Unhandled error:", err);
+    process.exit(1);
+});
+
 
 async function main() {
     const program = new Command();
@@ -27,17 +47,31 @@ async function main() {
 
     // Hook to set log levels before executing any command
     program.hook("preAction", async (thisCommand) => {
-        const opts = thisCommand.opts();
+        let opts = thisCommand.opts();
         setLogLevel(!!opts.debug, !!opts.verbose);
+        const skipFor = ["help", "init"];
 
+        if (skipFor.includes(thisCommand.name())) {
+            log.debug(`[HOOK] Skipping hook for ${thisCommand.name()}`);
+            return;
+        }
+
+        opts = thisCommand.opts();
         const cwd = process.cwd();
-        const config = await loadConfig(cwd);
-        const envConf = getEnvironmentConfig(config, opts.env);
 
-        // Attach to command context
-        (thisCommand as any).config = config;
-        (thisCommand as any).envConf = envConf;
+        try {
+            const config = await loadConfig(cwd);
+            const envConf = getEnvironmentConfig(config, opts.env);
+
+            (thisCommand as any).config = config;
+            (thisCommand as any).envConf = envConf;
+        } catch (err) {
+            log.warn(`[HOOK] ${err}`);
+        }
     });
+
+
+
 
 
     // Commands
@@ -82,15 +116,15 @@ async function main() {
         .action(health);
 
     program.parse(process.argv);
-    const opts = program.opts();
-
-    const cwd = process.cwd();
-    const config = await loadConfig(cwd);
-    const envConf = getEnvironmentConfig(config, opts.env);
 }
 
 // ✅ Run main entry
 main().catch((err) => {
-    console.error("Error:", err.message);
+    if (err?.name === "ExitPromptError" || /SIGINT/i.test(err?.message)) {
+        console.log("\n⚠️  Prompt cancelled by user.\n");
+        process.exit(0);
+    }
+
+    console.error("❌ CLI Error:", err);
     process.exit(1);
 });
