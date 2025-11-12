@@ -8,7 +8,7 @@ export async function health(opts: { env?: string }) {
     const envName = getEnvName(opts.env);
     log.verbose(`Using environment: ${envName}`);
 
-    const env = cfg.environments[envName];
+    const env = cfg.environments?.[envName];
     if (!env) throw new Error(`Unknown environment: ${envName}`);
 
     const base = env.baseUrl || process.env.DPLOY_BASE_URL;

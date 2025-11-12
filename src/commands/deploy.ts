@@ -2,7 +2,7 @@ import path from "node:path";
 import { loadConfig, getEnvName } from "../core/config.js";
 import { detectVersion, posixJoin } from "../core/utils.js";
 import { buildArtifact } from "../features/packager.js";
-import { connect, close, ensureRemoteDirs, exec, uploadFile, listDirs, removePath } from "../core/ssh.js";
+import { connect, close, ensureRemoteDirs, exec, uploadFile } from "../core/ssh.js";
 import { log } from "../core/logger.js";
 import { linkShared } from "../features/shared.js";
 import {runLocalHooks, runRemoteHooks} from "../core/hooks.js";
@@ -16,7 +16,7 @@ export async function deploy(opts: { env?: string; artifact?: string; version?: 
     const envName = getEnvName(opts.env);
     log.verbose(`Using environment: ${envName}`);
 
-    const env = cfg.environments[envName];
+    const env = cfg.environments?.[envName];
     if (!env) throw new Error(`Unknown environment: ${envName}`);
 
     const version = detectVersion(opts.version);
@@ -51,7 +51,7 @@ export async function deploy(opts: { env?: string; artifact?: string; version?: 
 
     log.verbose(`Preparing for artifact uploading to remote server.`);
 
-    const remoteRoot = env.deployTo;
+    const remoteRoot = env.deployTo ? env.deployTo : '';
     const releases = posixJoin(remoteRoot, "releases");
     const currentLink = posixJoin(remoteRoot, "current");
     const tmp = posixJoin(remoteRoot, "tmp");

@@ -10,10 +10,10 @@ export async function list(opts: { env?: string }) {
     const envName = getEnvName(opts.env);
     log.verbose(`Using environment: ${envName}`);
 
-    const env = cfg.environments[envName];
+    const env = cfg.environments?.[envName];
     if (!env) throw new Error(`Unknown environment: ${envName}`);
 
-    const releases = posixJoin(env.deployTo, "releases");
+    const releases = posixJoin((env.deployTo ? env.deployTo : ''), "releases");
     log.debug(`Releases directory: ${releases}`);
 
     log.info(`Connecting to ${env.username}@${env.host} to list releases`);
