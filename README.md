@@ -1,6 +1,6 @@
 # dploy-cli
 
-`dploy-cli` is a simple, flexible, and powerful deployment tool designed to handle deployments for various types of projects, including Node.js, PHP, Python, Go, and more. It is **language-agnostic**, meaning it can be adapted to any stack by configuring the right build and deploy strategies.
+`dploy-cli` is a command-line deployment tool that packages a project locally, uploads the artifact to a remote server over SSH/SFTP, extracts it into a versioned release directory, and switches a `current` symlink to activate the new release.
 
 ---
 
@@ -37,14 +37,14 @@ npx dploy-cli
 
 ## Features
 
-* **Language-Agnostic**: Supports deployments for Node.js, PHP, Python, static websites, and more.
-* **Environment-Specific Deployments**: Allows for multiple environment configurations (local, production, staging).
-* **File Exclusion and Inclusion**: Flexibly include/exclude files during deployment with glob patterns.
-* **Symlink Management**: Keeps your shared files (like `.env`, `storage/`) persistent across deployments.
-* **Rollback Support**: Roll back to a previous release with a single command.
-* **Health Check**: Optionally set a health check URL for verifying the deployment status.
-* **Hooks**: Supports pre/post hooks to run custom commands before and after the build or deploy process.
-* **Comprehensive Logging**: Verbose and debug logging for better visibility and troubleshooting.
+* **Environment-specific deploys**: Supports multiple environments such as `production` and `staging`.
+* **Packaging strategies**: Supports `include`, `exclude`, `copy`, and `hybrid` file selection.
+* **Shared paths**: Keeps files like `.env` or `storage` persistent across deployments.
+* **Rollback support**: Switch back to an older release from the remote server.
+* **Health checks**: Can call a configured health endpoint after deployment.
+* **Hooks**: Runs local `preBuild` / `postBuild` hooks and remote `preDeploy` / `postDeploy` hooks.
+* **Verbose logging**: Supports `--verbose` and `--debug` output for troubleshooting.
+* **Template initialization**: Generates starter config files for Node.js, Laravel, and FastAPI projects.
 
 ---
 
@@ -54,16 +54,16 @@ After installation, you can run `dploy` commands from the command line.
 
 ### Common Commands
 
-* **Initialize the project** (creates `dploy.config.json` and `.env.dploy.example`):
+* **Initialize the project** (creates `deploy.config.yaml` or `deploy.config.json` from a template):
 
   ```bash
-  dploy init <template>
+  dploy init [template]
   ```
 
   Example:
 
   ```bash
-  dploy init node  # Creates a dploy.config.json template
+  dploy init node
   ```
 
 * **Build the project** (prepares files for deployment):
@@ -84,63 +84,99 @@ After installation, you can run `dploy` commands from the command line.
   dploy rollback
   ```
 
+* **List releases on a remote server**:
+
+  ```bash
+  dploy list -e production
+  ```
+
+* **Clean old releases**:
+
+  ```bash
+  dploy clean -e production
+  ```
+
+* **Run a health check**:
+
+  ```bash
+  dploy health -e production
+  ```
+
 ---
 
 ## Configuration
 
-The deployment behavior of `dploy-cli` is controlled by a configuration file called `dploy.config.json`. This file defines environments, shared files, deployment directories, and more.
+The deployment behavior is controlled by one of these config files in the project root:
 
-### Example `dploy.config.json`
+* `deploy.config.yml`
+* `deploy.config.yaml`
+* `deploy.config.json`
 
-```json
-{
-  "buildDir": "build",
-  "strategy": "hybrid",
-  "include": ["dist/**", "package.json", "package-lock.json"],
-  "shared": [".env", "storage"],
-  "sharedDefaults": {
-    ".env": ".env.example"
-  },
-  "hooks": {
-    "preBuild": ["npm run clean"],
-    "postBuild": ["npm install --production"],
-    "preDeploy": ["echo 'Preparing for deployment'"],
-    "postDeploy": ["pm2 restart myapp"]
-  },
-  "environments": {
-    "production": {
-      "host": "${DPLOY_HOST}",
-      "username": "${DPLOY_USER}",
-      "deployTo": "/var/www/myapp",
-      "keepVersions": 5,
-      "healthCheckPath": "/health"
-    },
-    "staging": {
-      "host": "${DPLOY_STAGING_HOST}",
-      "username": "${DPLOY_STAGING_USER}",
-      "deployTo": "/var/www/myapp-staging",
-      "keepVersions": 3,
-      "healthCheckPath": "/health"
-    }
-  }
-}
+The loader also reads `.env` from the project root and substitutes `${VAR}` or `${VAR:-fallback}` placeholders anywhere in the config.
+
+### Example `deploy.config.yml`
+
+```yaml
+name: Node.js + PM2
+
+build:
+  strategy: include
+  buildDir: build
+  include:
+    - dist/**
+    - package.json
+    - package-lock.json
+  exclude:
+    - node_modules/**
+    - tests/**
+  shared:
+    - .env
+  sharedDefaults:
+    .env: .env.example
+  copy:
+    - from: ecosystem.config.js
+      to: build/ecosystem.config.js
+  cleanAfterDeploy: true
+
+hooks:
+  preBuild:
+    - npm ci
+  postBuild:
+    - npm run build
+  preDeploy:
+    - echo "Preparing release"
+  postDeploy:
+    - pm2 restart ecosystem.config.js
+
+environments:
+  production:
+    host: ${DPLOY_HOST}
+    username: ${DPLOY_USER}
+    deployTo: /var/www/myapp
+    keepVersions: 5
+    healthCheckPath: /health
 ```
 
 ### Key Configuration Fields:
 
-* **buildDir**: The directory to store built files (e.g., `build` or `dist`).
-* **strategy**: Deployment strategy (`include`, `exclude`, `copy`, `hybrid`).
-* **include**: List of files/patterns to include in the deployment.
-* **exclude**: List of files/patterns to exclude from the deployment.
-* **shared**: List of files or directories to be symlinked across releases (e.g., `.env`, `storage`).
-* **sharedDefaults**: Default files to copy into the shared directories when they don’t exist.
-* **hooks**: Pre/Post hooks for commands to run during different phases (build, deploy).
+* **build.strategy**: Deployment strategy (`include`, `exclude`, `copy`, `hybrid`).
+* **build.buildDir**: Output directory used for the staging folder and final tarball.
+* **build.include**: Glob patterns to include when using the `include` strategy.
+* **build.exclude**: Glob patterns to ignore when using `include` or `exclude`.
+* **build.copy**: Copy-specific source and destination entries.
+* **build.shared**: Files or directories that are symlinked from the remote `shared` directory.
+* **build.sharedDefaults**: Default sources used to seed shared files on first deploy.
+* **build.cleanAfterDeploy**: Removes the temporary remote upload directory after deployment.
+* **hooks.preBuild / hooks.postBuild**: Run locally before and after packaging.
+* **hooks.preDeploy / hooks.postDeploy**: Run remotely after extraction and after activation.
+* **environments.*.extends**: Environment inheritance for shared settings.
+* **environments.*.ssh_key_path**: Optional path to an SSH private key on disk.
 
 ### Environment Variables
 
-You can store sensitive information like hostnames, SSH keys, and user details in the `.env.dploy` file.
+You can store sensitive information like hostnames, SSH keys, and user details in `.env`.
 
-Example `.env.dploy`:
+Example `.env`:
 
 ```env
 DPLOY_HOST=myserver.com
@@ -149,24 +185,24 @@ DPLOY_PRIVATE_KEY=~/.ssh/id_rsa
 DPLOY_BASE_URL=https://myserver.com
 ```
 
-These environment variables are used by the `dploy.config.json` to substitute values at runtime.
+These environment variables are used by the config loader to substitute values at runtime.
 
 ---
 
 ## Hooks
 
-Hooks allow you to run commands **before** or **after** the build and deploy processes.
+Hooks let you run commands at different points in the deployment lifecycle.
 
 ### Available Hooks:
 
-* **preBuild**: Run commands before building the project.
-* **postBuild**: Run commands after building the project.
-* **preDeploy**: Run commands before deployment. But after tar file extracted.
-* **postDeploy**: Run commands after deployment.
+* **preBuild**: Runs locally before packaging starts.
+* **postBuild**: Runs locally after the artifact is created.
+* **preDeploy**: Runs on the remote server after the release is extracted.
+* **postDeploy**: Runs on the remote server after `current` is switched to the new release.
 
 ### Example:
 
-In the `dploy.config.json`:
+In the deployment config:
 
 ```json
 {
@@ -246,14 +282,20 @@ dploy deploy -v -d
 
 ## Template Setup
 
-When you run `dploy init <template>`, `dploy-cli` will automatically create a `dploy.config.json` and a `.env.dploy.example` file based on the selected template (e.g., Node.js, PHP, Django).
+When you run `dploy init <template>`, the CLI copies a starter config from `templates/`.
 
 ### Available Templates:
 
-* **node**
-* **laravel**
-* **python**
-* **static**
+* `node.yaml`
+* `node.json`
+* `laravel.yaml`
+* `laravel.json`
+* `fastapi.yaml`
+
+Notes:
+
+* YAML templates can use either `.yml` or `.yaml` as the config filename.
+* JSON templates also copy `.env.dploy.example` into the project root.
 
 ---
 
@@ -286,7 +328,13 @@ When you run `dploy init <template>`, `dploy-cli` will automatically create a `d
    npm run build
    ```
 
-4. Link the package locally for testing:
+4. Run the tests:
+
+   ```bash
+   npm test
+   ```
+
+5. Link the package locally for testing:
 
    ```bash
    npm link

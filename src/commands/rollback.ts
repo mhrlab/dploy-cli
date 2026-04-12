@@ -10,11 +10,11 @@ export async function rollback(opts: { env?: string }) {
     const cfg = await loadConfig();
     const envName = getEnvName(opts.env);
 
-    const env = cfg.environments[envName];
+    const env = cfg.environments?.[envName];
     if (!env) throw new Error(`Unknown environment: ${envName}`);
 
-    const releasesDir = posixJoin(env.deployTo, "releases");
-    const currentLink = posixJoin(env.deployTo, "current");
+    const releasesDir = posixJoin((env.deployTo ? env.deployTo : ''), "releases");
+    const currentLink = posixJoin((env.deployTo ? env.deployTo : ''), "current");
     log.debug(`Releases directory: ${releasesDir}, Current link: ${currentLink}`);
 
     log.info(`Connecting to ${env.username}@${env.host} to perform rollback`);

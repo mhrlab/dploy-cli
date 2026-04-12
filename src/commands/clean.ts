@@ -11,10 +11,10 @@ export async function clean(opts: { env?: string }) {
     const envName = getEnvName(opts.env);
     log.verbose(`Using environment: ${envName}`);
 
-    const env = cfg.environments[envName];
+    const env = cfg.environments?.[envName];
     if (!env) throw new Error(`Unknown environment: ${envName}`);
 
-    const releases = posixJoin(env.deployTo, "releases");
+    const releases = posixJoin((env.deployTo ? env.deployTo : ''), "releases");
     const keep = env.keepVersions ?? 5;
     log.debug(`Releases directory: ${releases}, Keeping versions: ${keep}`);
 

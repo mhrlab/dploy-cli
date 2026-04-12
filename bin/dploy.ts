@@ -7,79 +7,124 @@ import { list } from "../src/commands/list.js";
 import { clean } from "../src/commands/clean.js";
 import { health } from "../src/commands/health.js";
 import { init } from "../src/commands/init.js";
-import { setLogLevel } from "../src/core/logger.js";
-import {getAppVersion} from "../src/core/utils.js";
+import {log, setLogLevel} from "../src/core/logger.js";
+import { getAppVersion } from "../src/core/utils.js";
+import { loadConfig, getEnvironmentConfig } from "../src/core/config.js";
 
 
-const program = new Command();
 
-// Global verbose flag
-program
-    .option('-v, --verbose', 'Enable verbose logging')
-    .option('-d, --debug', 'Enable debug logging');
+// 🧩 Global SIGINT handler (Ctrl + C)
+process.on("SIGINT", () => {
+    console.log("\n⚠️  Operation cancelled by user.\n");
+    process.exit(0);
+});
 
+// 🧩 Global unhandled rejection handler (for Inquirer ExitPromptError, etc.)
+process.on("unhandledRejection", (err: any) => {
+    if (err?.name === "ExitPromptError" || /SIGINT/i.test(err?.message)) {
+        console.log("\n⚠️  Prompt cancelled by user.\n");
+        process.exit(0);
+    }
 
-program
-    .name("dploy")
-    .description("Universal deployment tool (current features MVP)")
-    .version(getAppVersion());
-
-// Set log levels before any command execution
-program.hook('preAction', (thisCommand) => {
-    const options = thisCommand.opts();
-    setLogLevel(!!options.debug, !!options.verbose);
+    console.error("❌ Unhandled error:", err);
+    process.exit(1);
 });
 
 
-program
-    .command("init [template]")
-    .description("Initialize a new dploy.config.json from templates")
-    .action((template) => init({ template }));
+async function main() {
+    const program = new Command();
 
-program
-    .command("build")
-    .description("Build and package the project (copy strategy)")
-    .option("-v, --version <ver>", "Override version string")
-    .action(async (opts) => {
-        await build(opts); // ignore returned artifactPath
+    // Global options
+    program
+        .option("-e, --env <env>", "Environment name (default: production)", "production")
+        .option("-v, --verbose", "Enable verbose logging")
+        .option("-d, --debug", "Enable debug logging");
+
+    program
+        .name("dploy")
+        .description("Universal deployment tool (MVP version)")
+        .version(getAppVersion());
+
+    // Hook to set log levels before executing any command
+    program.hook("preAction", async (thisCommand) => {
+        let opts = thisCommand.opts();
+        setLogLevel(!!opts.debug, !!opts.verbose);
+        const skipFor = ["help", "init"];
+
+        if (skipFor.includes(thisCommand.name())) {
+            log.debug(`[HOOK] Skipping hook for ${thisCommand.name()}`);
+            return;
+        }
+
+        opts = thisCommand.opts();
+        const cwd = process.cwd();
+
+        try {
+            const config = await loadConfig(cwd);
+            const envConf = getEnvironmentConfig(config, opts.env);
+
+            (thisCommand as any).config = config;
+            (thisCommand as any).envConf = envConf;
+        } catch (err) {
+            log.warn(`[HOOK] ${err}`);
+        }
     });
 
 
-program
-    .command("deploy")
-    .description("Deploy to remote server")
-    .option("-e, --env <name>", "Environment name (default from .env.deploy)")
-    .option("--artifact <path>", "Path to prebuilt artifact (skips build)")
-    .option("-v, --version <ver>", "Override version string")
-    .action(deploy);
 
 
-program
-    .command("rollback")
-    .description("Rollback to previous release")
-    .option("-e, --env <name>", "Environment name")
-    .action(rollback);
 
+    // Commands
+    program
+        .command("init [template]")
+        .description("Initialize a new deploy.config.yml from templates")
+        .action((template) => init({ template }));
 
-program
-    .command("list")
-    .description("List releases on remote")
-    .option("-e, --env <name>", "Environment name")
-    .action(list);
+    program
+        .command("build")
+        .description("Build and package the project (copy strategy)")
+        .option("-v, --version <ver>", "Override version string")
+        .action(async (opts) => {
+            await build(opts);
+        });
 
+    program
+        .command("deploy")
+        .description("Deploy to remote server")
+        .option("--artifact <path>", "Path to prebuilt artifact (skips build)")
+        .option("-v, --version <ver>", "Override version string")
+        .action(deploy);
 
-program
-    .command("clean")
-    .description("Remove old releases beyond keepVersions")
-    .option("-e, --env <name>", "Environment name")
-    .action(clean);
+    program
+        .command("rollback")
+        .description("Rollback to previous release")
+        .action(rollback);
 
+    program
+        .command("list")
+        .description("List releases on remote")
+        .action(list);
 
-program
-    .command("health")
-    .description("Call the health endpoint")
-    .option("-e, --env <name>", "Environment name")
-    .action(health);
+    program
+        .command("clean")
+        .description("Remove old releases beyond keepVersions")
+        .action(clean);
 
+    program
+        .command("health")
+        .description("Call the health endpoint")
+        .action(health);
 
-program.parse(process.argv);
+    program.parse(process.argv);
+}
+
+// ✅ Run main entry
+main().catch((err) => {
+    if (err?.name === "ExitPromptError" || /SIGINT/i.test(err?.message)) {
+        console.log("\n⚠️  Prompt cancelled by user.\n");
+        process.exit(0);
+    }
+
+    console.error("❌ CLI Error:", err);
+    process.exit(1);
+});

@@ -1,0 +1,66 @@
+# deploy.config.yml
+name: 'Python FastAPI + Uvicorn'
+
+build:
+  strategy: include
+  buildDir: build
+  include:
+    - app/**
+    - requirements.txt
+    - run.sh
+  exclude:
+    - venv/**
+    - __pycache__/**
+    - tests/**
+  shared:
+    - .env
+  sharedDefaults:
+    .env: .env.example
+  copy:
+    - from: run.sh
+      to: build/run.sh
+      optional: true
+  cleanAfterDeploy: true
+
+hooks:
+  preBuild:
+    - echo "🐍 Creating virtual environment"
+    - python3 -m venv venv
+    - source venv/bin/activate
+    - pip install -r requirements.txt
+  postBuild:
+    - echo "📦 Packaging FastAPI app"
+    - tar -czf fastapi_app.tar.gz build
+  preDeploy:
+    - echo "⚙️ Preparing deployment"
+  postDeploy:
+    - echo "🚀 Restarting Uvicorn service"
+    - sudo systemctl restart fastapi.service
+
+environments:
+  default:
+    keepVersions: 5
+    deployTo: /var/www/fastapi_app
+    env:
+      ENVIRONMENT: local
+      DEBUG: true
+
+  staging:
+    extends: default
+    host: ${STAGING_HOST:-staging.example.com}
+    username: ${STAGING_USER:-deploy}
+    deployTo: /var/www/fastapi_staging
+    env:
+      ENVIRONMENT: staging
+      DEBUG: false
+
+  production:
+    extends: default
+    host: ${PROD_HOST:-prod.example.com}
+    username: ${PROD_USER:-deploy}
+    deployTo: /var/www/fastapi_app
+    keepVersions: 10
+    env:
+      ENVIRONMENT: production
+      DEBUG: false
+      PORT: 8000
