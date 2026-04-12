@@ -22,7 +22,7 @@ export async function build(opts: { version?: string }) {
         log.verbose(`Starting artifact build process`);
         const {artifactPath} = await buildArtifact({
             cwd,
-            buildDir: cfg.buildDir,
+            buildDir: cfg.build?.buildDir,
             version,
             cfg,
         });

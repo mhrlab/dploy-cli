@@ -2,7 +2,7 @@ import { Client } from "ssh2";
 import SFTPClient from "ssh2-sftp-client";
 import fs from "fs-extra";
 import path from "node:path";
-import { EnvConfig } from "./config.js";
+import { EnvironmentConfig } from "./config.js";
 import { log } from "./logger.js";
 
 export type SSHBundle = {
@@ -10,7 +10,7 @@ export type SSHBundle = {
     sftp: SFTPClient;
 };
 
-export async function connect(env: EnvConfig): Promise<SSHBundle> {
+export async function connect(env: EnvironmentConfig): Promise<SSHBundle> {
     log.debug(`SSH connect initiated for ${env.username}@${env.host}:${env.port || 22}`);
 
     const ssh = new Client();
@@ -22,7 +22,8 @@ export async function connect(env: EnvConfig): Promise<SSHBundle> {
         username: env.username,
     };
     if (env.password) connectConfig.password = env.password;
-    if (env.privateKeyPath) connectConfig.privateKey = await fs.readFile(env.privateKeyPath);
+    if (env.ssh_key) connectConfig.privateKey = env.ssh_key;
+    if (env.ssh_key_path) connectConfig.privateKey = await fs.readFile(env.ssh_key_path);
 
     log.debug(`SSH connection config: ${JSON.stringify({
         host: connectConfig.host,

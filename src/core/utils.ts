@@ -1,9 +1,12 @@
+import path from "node:path";
+import fs from "fs-extra";
 import { execSync } from "node:child_process";
 import { homedir } from "node:os";
-import path from "node:path";
 import { readFileSync } from "fs";
 import { fileURLToPath } from "url";
 import { dirname, join } from "path";
+import { configFiles } from "./config.js";
+import {log} from "./logger.js";
 
 
 export function expandTilde(p?: string): string | undefined {
@@ -61,7 +64,7 @@ export function getAppVersion(): string {
 
         // Construct the path to the package.json file, which is assumed to be
         // one directory level up from the current file.
-        const packageJsonPath = join(__dirname, '..','..', '..', 'package.json');
+        const packageJsonPath = join(__dirname, '..', '..', '..', 'package.json');
 
         // Read the file and parse the JSON.
         const packageJson = JSON.parse(readFileSync(packageJsonPath, 'utf8'));
@@ -73,3 +76,45 @@ export function getAppVersion(): string {
         return "unknown";
     }
 }
+
+
+/**
+ * Ignore config files from git indexing by adding them to `.gitignore`.
+ * Designed to stay flexible for future exclude logic.
+ */
+export async function updateGitignore() {
+    const gitignore = path.resolve(process.cwd(), ".gitignore");
+    const entries = configFiles.gitignore;
+
+    // If file does not exist → create with all entries
+    if (!(await fs.pathExists(gitignore))) {
+        log.warn(".gitignore file not found. Creating a new one...");
+        await fs.writeFile(gitignore, entries.join("\n") + "\n", "utf8");
+        log.ok(".gitignore created with default entries.");
+        return;
+    }
+
+    // if file exits then read and update it
+    let content = readFileSync(gitignore, "utf8");
+    let updated = false;
+
+    for (const entry of entries) {
+        if (!content.split(/\r?\n/).includes(entry)) {
+            log.debug(`Adding '${entry}' to .gitignore`);
+            content += (content.endsWith("\n") ? "" : "\n") + entry + "\n";
+            updated = true;
+        } else {
+            log.debug(`'${entry}' already present in .gitignore`);
+        }
+    }
+
+
+    if (updated) {
+        await fs.writeFile(gitignore, content, "utf8");
+        log.verbose(".gitignore updated with new entries.");
+    } else {
+        log.verbose(".gitignore already contains all required entries. No changes made.");
+    }
+}
+
+
