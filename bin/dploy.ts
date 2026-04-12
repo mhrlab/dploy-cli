@@ -48,7 +48,7 @@ async function main() {
     // Hook to set log levels before executing any command
     program.hook("preAction", async (thisCommand) => {
         let opts = thisCommand.opts();
-        setLogLevel(!!opts.debug, !!opts.verbose);
+        setLogLevel(!!opts.debug, !!opts.verbose || !!opts.dryRun);
         const skipFor = ["help", "init"];
 
         if (skipFor.includes(thisCommand.name())) {
@@ -84,6 +84,7 @@ async function main() {
         .command("build")
         .description("Build and package the project (copy strategy)")
         .option("-v, --version <ver>", "Override version string")
+        .option("-n, --dry-run", "Show planned build actions without writing files")
         .action(async (opts) => {
             await build(opts);
         });
@@ -93,6 +94,7 @@ async function main() {
         .description("Deploy to remote server")
         .option("--artifact <path>", "Path to prebuilt artifact (skips build)")
         .option("-v, --version <ver>", "Override version string")
+        .option("-n, --dry-run", "Show planned deploy actions without changing anything")
         .action(deploy);
 
     program
@@ -108,6 +110,7 @@ async function main() {
     program
         .command("clean")
         .description("Remove old releases beyond keepVersions")
+        .option("-n, --dry-run", "Show which releases would be removed without deleting them")
         .action(clean);
 
     program

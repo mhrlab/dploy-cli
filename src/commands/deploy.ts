@@ -1,14 +1,14 @@
 import path from "node:path";
 import { loadConfig, getEnvName } from "../core/config.js";
 import { detectVersion, posixJoin } from "../core/utils.js";
-import { buildArtifact } from "../features/packager.js";
+import { buildArtifact, planBuildArtifact } from "../features/packager.js";
 import { connect, close, ensureRemoteDirs, exec, uploadFile } from "../core/ssh.js";
 import { log } from "../core/logger.js";
 import { linkShared } from "../features/shared.js";
 import {runLocalHooks, runRemoteHooks} from "../core/hooks.js";
 import {cleanupReleases} from "../features/cleaner.js";
 
-export async function deploy(opts: { env?: string; artifact?: string; version?: string }) {
+export async function deploy(opts: { env?: string; artifact?: string; version?: string; dryRun?: boolean }) {
     log.debug(`Deploy command started with options: ${JSON.stringify(opts)}`);
 
     const cwd = process.cwd();
@@ -27,26 +27,84 @@ export async function deploy(opts: { env?: string; artifact?: string; version?: 
     // Build or use provided artifact
     let artifactPath = opts.artifact ? path.resolve(opts.artifact) : undefined;
     if (!artifactPath) {
-        log.info(`No artifact provided, building from source`);
+        if (opts.dryRun) {
+            const plan = await planBuildArtifact({
+                cwd,
+                buildDir: cfg.build?.buildDir,
+                version,
+                cfg,
+            });
 
-        log.verbose(`Running pre-build hooks`);
-        await runLocalHooks("preBuild", cfg.hooks?.preBuild);
+            log.info(`[dry-run] Would package ${plan.files.length} file(s) into ${path.basename(plan.artifactPath)}`);
+            if (cfg.hooks?.preBuild?.length) {
+                log.info(`[dry-run] Would run ${cfg.hooks.preBuild.length} local preBuild hook(s)`);
+            } else {
+                log.info(`[dry-run] No local preBuild hooks configured`);
+            }
+            if (cfg.hooks?.postBuild?.length) {
+                log.info(`[dry-run] Would run ${cfg.hooks.postBuild.length} local postBuild hook(s)`);
+            } else {
+                log.info(`[dry-run] No local postBuild hooks configured`);
+            }
+            for (const file of plan.files) {
+                log.verbose(`[dry-run] package ${file.from} -> ${file.to}`);
+            }
+            artifactPath = plan.artifactPath;
+        } else {
+            log.info(`No artifact provided, building from source`);
 
-        const result = await buildArtifact({
-            cwd,
-            buildDir:  cfg.build?.buildDir,
-            version,
-            cfg,
-        });
-        artifactPath = result.artifactPath;
+            log.verbose(`Running pre-build hooks`);
+            await runLocalHooks("preBuild", cfg.hooks?.preBuild);
 
-        log.debug(`Artifact built successfully: ${artifactPath}`);
-        log.verbose(`Running post-build hooks`);
-        await runLocalHooks("postBuild", cfg.hooks?.postBuild);
+            const result = await buildArtifact({
+                cwd,
+                buildDir:  cfg.build?.buildDir,
+                version,
+                cfg,
+            });
+            artifactPath = result.artifactPath;
+
+            log.debug(`Artifact built successfully: ${artifactPath}`);
+            log.verbose(`Running post-build hooks`);
+            await runLocalHooks("postBuild", cfg.hooks?.postBuild);
+        }
 
     } else {
         log.verbose(`Using provided artifact: ${artifactPath}`);
         log.info(`Using provided artifact: ${path.basename(artifactPath)}`);
+    }
+
+    if (opts.dryRun) {
+        const remoteRoot = env.deployTo ? env.deployTo : '';
+        const releases = posixJoin(remoteRoot, "releases");
+        const currentLink = posixJoin(remoteRoot, "current");
+        const tmp = posixJoin(remoteRoot, "tmp");
+        const releaseDir = posixJoin(releases, version);
+        const remoteTar = posixJoin(tmp, `release-${version}.tar.gz`);
+        const keep = env.keepVersions ?? 5;
+
+        log.info(`[dry-run] Would connect to ${env.username}@${env.host}`);
+        log.info(`[dry-run] Would upload ${path.basename(artifactPath!)} to ${remoteTar}`);
+        log.info(`[dry-run] Would extract into ${releaseDir}`);
+        if (cfg.shared?.length) {
+            log.info(`[dry-run] Would link shared items: ${cfg.shared.join(", ")}`);
+        }
+        log.info(`[dry-run] Would switch current symlink to ${currentLink}`);
+        if (cfg.hooks?.preDeploy?.length) {
+            log.info(`[dry-run] Would run ${cfg.hooks.preDeploy.length} preDeploy hook(s)`);
+        } else {
+            log.info(`[dry-run] No preDeploy hooks configured`);
+        }
+        if (cfg.hooks?.postDeploy?.length) {
+            log.info(`[dry-run] Would run ${cfg.hooks.postDeploy.length} postDeploy hook(s)`);
+        } else {
+            log.info(`[dry-run] No postDeploy hooks configured`);
+        }
+        log.info(`[dry-run] Would clean old releases, keeping ${keep} version(s)`);
+        if (cfg.cleanAfterDeploy) {
+            log.info(`[dry-run] Would remove temporary upload directory ${tmp}`);
+        }
+        return;
     }
 
     log.verbose(`Preparing for artifact uploading to remote server.`);
@@ -119,7 +177,7 @@ export async function deploy(opts: { env?: string; artifact?: string; version?: 
         // Clean old releases
         const keep = env.keepVersions ?? 5;
         log.verbose(`Cleaning old releases, keeping ${keep} versions`);
-        await cleanupReleases(bundle, releases, keep, true);
+        await cleanupReleases(bundle, releases, keep, { strict: true });
         if (cfg.cleanAfterDeploy) {
             log.verbose(`Cleaning temporary uploaded directory & files`);
             await exec(bundle.ssh, `rm -rf "${tmp}"`);

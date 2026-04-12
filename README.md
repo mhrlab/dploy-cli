@@ -45,6 +45,7 @@ npx dploy-cli
 * **Hooks**: Runs local `preBuild` / `postBuild` hooks and remote `preDeploy` / `postDeploy` hooks.
 * **Verbose logging**: Supports `--verbose` and `--debug` output for troubleshooting.
 * **Template initialization**: Generates starter config files for Node.js, Laravel, and FastAPI projects.
+* **Dry-run mode**: Shows planned build, deploy, and clean actions without changing anything.
 
 ---
 
@@ -69,13 +70,13 @@ After installation, you can run `dploy` commands from the command line.
 * **Build the project** (prepares files for deployment):
 
   ```bash
-  dploy build
+  dploy build --dry-run
   ```
 
 * **Deploy the project** (upload files to the server):
 
   ```bash
-  dploy deploy -e <environment>
+  dploy deploy -e <environment> --dry-run
   ```
 
 * **Rollback to previous release**:
@@ -93,7 +94,7 @@ After installation, you can run `dploy` commands from the command line.
 * **Clean old releases**:
 
   ```bash
-  dploy clean -e production
+  dploy clean -e production --dry-run
   ```
 
 * **Run a health check**:

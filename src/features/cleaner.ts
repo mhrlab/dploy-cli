@@ -3,7 +3,13 @@ import { listDirs, removePath, SSHBundle } from "../core/ssh.js";
 import { posixJoin } from "../core/utils.js";
 import { log } from "../core/logger.js";
 
-export async function cleanupReleases(bundle: SSHBundle, releasesDir: string, keep: number, strict = false) {
+export async function cleanupReleases(
+    bundle: SSHBundle,
+    releasesDir: string,
+    keep: number,
+    options: { strict?: boolean; dryRun?: boolean } = {}
+) {
+    const { strict = false, dryRun = false } = options;
     try {
         log.verbose(`Listing releases for cleanup in: ${releasesDir}`);
         const dirs = await listDirs(bundle.sftp, releasesDir);
@@ -17,6 +23,14 @@ export async function cleanupReleases(bundle: SSHBundle, releasesDir: string, ke
         }
 
         log.info(`Cleaning ${toDelete.length} old release(s) to keep ${keep} latest`);
+
+        if (dryRun) {
+            for (const r of toDelete) {
+                log.info(`[dry-run] Would remove release: [${r.name}]`);
+            }
+            log.ok(`[dry-run] Cleanup plan completed (${toDelete.length} release(s) would be removed)`);
+            return;
+        }
 
         for (const r of toDelete) {
             try {

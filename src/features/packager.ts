@@ -11,7 +11,30 @@ export type BuildResult = {
     artifactPath: string; // path to .tar.gz
     stagingDir: string; // temp staging dir
     sizeBytes: number; // size of artifact
+    files: { from: string; to: string }[];
 };
+
+export type BuildPlan = {
+    outDir: string;
+    stagingDir: string;
+    artifactPath: string;
+    files: { from: string; to: string }[];
+};
+
+export async function planBuildArtifact(options: {
+    cwd: string;
+    buildDir: string | undefined;
+    version: string;
+    cfg: DeployConfig;
+}): Promise<BuildPlan> {
+    const { cwd, buildDir, version, cfg } = options;
+    const outDir = path.join(cwd, buildDir ? buildDir : "builds");
+    const stagingDir = path.join(outDir, `staging-${version}`);
+    const artifactPath = path.join(outDir, `release-${version}.tar.gz`);
+    const files = await resolveFiles(cwd, cfg);
+
+    return { outDir, stagingDir, artifactPath, files };
+}
 
 export async function buildArtifact(options: {
     cwd: string;
@@ -29,16 +52,15 @@ export async function buildArtifact(options: {
         copy: cfg.build?.copy
     })}`);
 
-    const outDir = path.join(cwd, buildDir ? buildDir : 'builds');
+    const plan = await planBuildArtifact({ cwd, buildDir, version, cfg });
+    const { outDir, stagingDir, artifactPath, files } = plan;
+
     log.verbose(`Creating output directory: ${outDir}`);
     await fs.ensureDir(outDir);
 
-    const stagingDir = path.join(outDir, `staging-${version}`);
     log.verbose(`Creating staging directory: ${stagingDir}`);
     await fs.emptyDir(stagingDir);
 
-    log.verbose(`Resolving files to include in artifact`);
-    const files = await resolveFiles(cwd, cfg);
     log.debug(`Resolved ${files.length} files to copy`);
     log.verbose(`Copying ${files.length} files to staging directory...`);
     log.info(`Copying ${files.length} files to staging directory...`);
@@ -49,8 +71,6 @@ export async function buildArtifact(options: {
         await fs.copy(f.from, path.join(stagingDir, f.to), { dereference: true });
     }
 
-    const artifactName = `release-${version}.tar.gz`;
-    const artifactPath = path.join(outDir, artifactName);
     log.verbose(`Creating artifact: ${artifactPath}`);
 
     log.debug(`Creating tar archive with gzip compression`);
@@ -62,5 +82,5 @@ export async function buildArtifact(options: {
 
     log.ok(`Built ${path.basename(artifactPath)} [ ${getReadableFileSize(sizeBytes)} ]`);
 
-    return { artifactPath, stagingDir, sizeBytes };
+    return { artifactPath, stagingDir, sizeBytes, files };
 }
