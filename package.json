@@ -18,7 +18,7 @@
   "scripts": {
     "build": "tsc",
     "dev": "tsc -w",
-    "test": "npm run build && node --test --test-concurrency=1 dist/tests/config.test.js",
+    "test": "npm run build && node --test --test-concurrency=1 dist/tests",
     "prepare": "npm run build"
   },
   "dependencies": {

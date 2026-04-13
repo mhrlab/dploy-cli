@@ -8,6 +8,7 @@ import { linkShared } from "../features/shared.js";
 import {runLocalHooks, runRemoteHooks} from "../core/hooks.js";
 import {cleanupReleases} from "../features/cleaner.js";
 import { resolveDeployArtifact } from "../features/deploy-artifact.js";
+import { verifyArtifactChecksum } from "../features/checksum.js";
 
 export async function deploy(opts: { env?: string; artifact?: string; archive?: string; version?: string; dryRun?: boolean; skipBuild?: boolean }) {
     log.debug(`Deploy command started with options: ${JSON.stringify(opts)}`);
@@ -129,6 +130,7 @@ export async function deploy(opts: { env?: string; artifact?: string; archive?: 
         if (cfg.cleanAfterDeploy) {
             log.info(`[dry-run] Would remove temporary upload directory ${tmp}`);
         }
+        log.info(`[dry-run] Would verify SHA256 checksum after upload`);
         return;
     }
 
@@ -159,6 +161,23 @@ export async function deploy(opts: { env?: string; artifact?: string; archive?: 
         log.verbose(`Uploading artifact to remote server`);
         log.info(`Uploading deployment artifact...`);
         await uploadFile(bundle.sftp, artifactPath!, remoteTar);
+
+        log.verbose(`Verifying uploaded artifact checksum`);
+        const checksum = log.spinner("Verifying checksum...");
+        try {
+            const { localHash, remoteHash } = await verifyArtifactChecksum({
+                ssh: bundle.ssh,
+                localPath: artifactPath!,
+                remotePath: remoteTar,
+            });
+            checksum.succeed("Checksum verified");
+            log.ok(`Checksum verified (${localHash.slice(0, 12)}...)`);
+            log.debug(`Local checksum: ${localHash}`);
+            log.debug(`Remote checksum: ${remoteHash}`);
+        } catch (error) {
+            checksum.fail("Checksum verification failed");
+            throw error;
+        }
 
         // Extract release
         log.debug(`Executing extract command: mkdir -p "${releaseDir}" && tar -xzf "${remoteTar}" -C "${releaseDir}" && rm -f "${remoteTar}"`);

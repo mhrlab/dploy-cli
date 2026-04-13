@@ -49,6 +49,7 @@ npx dploy-cli
 * **CLI version flag**: Use `--app-version` to print the tool version.
 * **Deploy without build**: Reuse an existing local archive with `--skip-build`.
 * **Custom archive upload**: Upload a manually created archive with `--artifact` or `--archive`.
+* **Checksum verification**: Verifies SHA256 after upload to catch corrupted transfers.
 
 ---
 
