@@ -7,8 +7,9 @@ import { log } from "../core/logger.js";
 import { linkShared } from "../features/shared.js";
 import {runLocalHooks, runRemoteHooks} from "../core/hooks.js";
 import {cleanupReleases} from "../features/cleaner.js";
+import { resolveDeployArtifact } from "../features/deploy-artifact.js";
 
-export async function deploy(opts: { env?: string; artifact?: string; version?: string; dryRun?: boolean }) {
+export async function deploy(opts: { env?: string; artifact?: string; archive?: string; version?: string; dryRun?: boolean; skipBuild?: boolean }) {
     log.debug(`Deploy command started with options: ${JSON.stringify(opts)}`);
 
     const cwd = process.cwd();
@@ -24,10 +25,12 @@ export async function deploy(opts: { env?: string; artifact?: string; version?: 
 
     log.info(`Starting deployment to [${envName}] environment (${env.host})`);
 
-    // Build or use provided artifact
-    let artifactPath = opts.artifact ? path.resolve(opts.artifact) : undefined;
-    if (!artifactPath) {
-        if (opts.dryRun) {
+    const customArtifact = opts.artifact ?? opts.archive;
+    const shouldBuild = !customArtifact && !opts.skipBuild;
+    let artifactPath: string;
+
+    if (opts.dryRun) {
+        if (shouldBuild) {
             const plan = await planBuildArtifact({
                 cwd,
                 buildDir: cfg.build?.buildDir,
@@ -51,27 +54,49 @@ export async function deploy(opts: { env?: string; artifact?: string; version?: 
             }
             artifactPath = plan.artifactPath;
         } else {
-            log.info(`No artifact provided, building from source`);
-
-            log.verbose(`Running pre-build hooks`);
-            await runLocalHooks("preBuild", cfg.hooks?.preBuild);
-
-            const result = await buildArtifact({
+            const selection = await resolveDeployArtifact({
                 cwd,
-                buildDir:  cfg.build?.buildDir,
-                version,
                 cfg,
+                version,
+                artifact: opts.artifact,
+                archive: opts.archive,
+                skipBuild: opts.skipBuild,
+                strict: false,
             });
-            artifactPath = result.artifactPath;
-
-            log.debug(`Artifact built successfully: ${artifactPath}`);
-            log.verbose(`Running post-build hooks`);
-            await runLocalHooks("postBuild", cfg.hooks?.postBuild);
+            artifactPath = selection.artifactPath;
+            log.info(`[dry-run] Would skip build phase`);
+            log.info(`[dry-run] Would use ${selection.source === "custom" ? "provided artifact" : "existing prebuilt artifact"}: ${path.basename(artifactPath)}`);
         }
+    } else if (shouldBuild) {
+        log.info(`No artifact provided, building from source`);
 
+        log.verbose(`Running pre-build hooks`);
+        await runLocalHooks("preBuild", cfg.hooks?.preBuild);
+
+        const result = await buildArtifact({
+            cwd,
+            buildDir:  cfg.build?.buildDir,
+            version,
+            cfg,
+        });
+        artifactPath = result.artifactPath;
+
+        log.debug(`Artifact built successfully: ${artifactPath}`);
+        log.verbose(`Running post-build hooks`);
+        await runLocalHooks("postBuild", cfg.hooks?.postBuild);
     } else {
-        log.verbose(`Using provided artifact: ${artifactPath}`);
-        log.info(`Using provided artifact: ${path.basename(artifactPath)}`);
+        const selection = await resolveDeployArtifact({
+            cwd,
+            cfg,
+            version,
+            artifact: opts.artifact,
+            archive: opts.archive,
+            skipBuild: opts.skipBuild,
+            strict: true,
+        });
+        artifactPath = selection.artifactPath;
+        log.info(selection.source === "custom" ? `Using provided artifact: ${path.basename(artifactPath)}` : `Using prebuilt artifact: ${path.basename(artifactPath)}`);
+        log.verbose(`Using artifact path: ${artifactPath}`);
     }
 
     if (opts.dryRun) {

@@ -47,6 +47,8 @@ npx dploy-cli
 * **Template initialization**: Generates starter config files for Node.js, Laravel, and FastAPI projects.
 * **Dry-run mode**: Shows planned build, deploy, and clean actions without changing anything.
 * **CLI version flag**: Use `--app-version` to print the tool version.
+* **Deploy without build**: Reuse an existing local archive with `--skip-build`.
+* **Custom archive upload**: Upload a manually created archive with `--artifact` or `--archive`.
 
 ---
 
@@ -78,6 +80,9 @@ After installation, you can run `dploy` commands from the command line.
 
   ```bash
   dploy deploy -e <environment> -V 1.2.3 --dry-run
+  dploy deploy -e <environment> --skip-build
+  dploy deploy -e <environment> --artifact ./my-release.tar.gz
+  dploy deploy -e <environment> --archive ./my-release.tar.gz
   ```
 
 * **Rollback to previous release**:

@@ -93,7 +93,9 @@ async function main() {
     program
         .command("deploy")
         .description("Deploy to remote server")
-        .option("--artifact <path>", "Path to prebuilt artifact (skips build)")
+        .option("--artifact <path>", "Path to a custom archive to upload (skips build)")
+        .option("-A, --archive <path>", "Alias for --artifact")
+        .option("-s, --skip-build", "Skip local build and use an existing artifact")
         .option("-V, --version <ver>", "Override version string")
         .option("-n, --dry-run", "Show planned deploy actions without changing anything")
         .action(deploy);
