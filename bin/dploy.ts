@@ -44,7 +44,7 @@ async function main() {
     program
         .name("dploy")
         .description("Universal deployment tool (MVP version)")
-        .version(getAppVersion());
+        .version(getAppVersion(), "-a, --app-version");
 
     // Hook to set log levels before executing any command
     program.hook("preAction", async (thisCommand) => {
@@ -84,7 +84,7 @@ async function main() {
     program
         .command("build")
         .description("Build and package the project (copy strategy)")
-        .option("-v, --version <ver>", "Override version string")
+        .option("-V, --version <ver>", "Override version string")
         .option("-n, --dry-run", "Show planned build actions without writing files")
         .action(async (opts) => {
             await build(opts);
@@ -94,7 +94,7 @@ async function main() {
         .command("deploy")
         .description("Deploy to remote server")
         .option("--artifact <path>", "Path to prebuilt artifact (skips build)")
-        .option("-v, --version <ver>", "Override version string")
+        .option("-V, --version <ver>", "Override version string")
         .option("-n, --dry-run", "Show planned deploy actions without changing anything")
         .action(deploy);
 
