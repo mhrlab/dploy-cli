@@ -73,12 +73,18 @@ export async function buildArtifact(options: {
 
     log.verbose(`Creating artifact: ${artifactPath}`);
 
-    log.debug(`Creating tar archive with gzip compression`);
-    log.info(`Creating deployment archive...`);
-    await tar.create({ gzip: true, file: artifactPath, cwd: stagingDir, portable: true, noMtime: true }, ["."]);
-    const stats = fs.statSync(artifactPath);
-    const sizeBytes = stats.size;
-    log.verbose(`Artifact created successfully: ${artifactPath}`);
+    let sizeBytes = 0;
+    try {
+        log.debug(`Creating tar archive with gzip compression`);
+        log.info(`Creating deployment archive...`);
+        await tar.create({ gzip: true, file: artifactPath, cwd: stagingDir, portable: true, noMtime: true }, ["."]);
+        const stats = fs.statSync(artifactPath);
+        sizeBytes = stats.size;
+        log.verbose(`Artifact created successfully: ${artifactPath}`);
+    } finally {
+        log.verbose(`Removing staging directory: ${stagingDir}`);
+        await fs.remove(stagingDir);
+    }
 
     log.ok(`Built ${path.basename(artifactPath)} [ ${getReadableFileSize(sizeBytes)} ]`);
 
