@@ -50,6 +50,7 @@ npx dploy-cli
 * **Deploy without build**: Reuse an existing local archive with `--skip-build`.
 * **Custom archive upload**: Upload a manually created archive with `--artifact` or `--archive`.
 * **Checksum verification**: Verifies SHA256 after upload to catch corrupted transfers.
+* **Release metadata**: Writes `deploy-metadata.json` into each release so `list` and `status` can show version, timestamp, commit, and environment.
 
 ---
 
@@ -101,6 +102,8 @@ After installation, you can run `dploy` commands from the command line.
   dploy list -e production
   ```
 
+  Each release line includes metadata when a `deploy-metadata.json` file is present.
+
 * **Clean old releases**:
 
   ```bash
@@ -112,6 +115,8 @@ After installation, you can run `dploy` commands from the command line.
   ```bash
   dploy status -e production
   ```
+
+  The status view includes the active release metadata when available.
 
 * **Run a health check**:
 

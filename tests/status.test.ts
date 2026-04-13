@@ -12,9 +12,10 @@ test("formatRemoteStatus renders current release and release list", () => {
     currentTarget: "/var/www/app/releases/v2",
     currentRelease: "v2",
     lastDeployAt: new Date("2026-04-12T10:30:00.000Z"),
+    currentReleaseMetadata: null,
     releases: [
-      { name: "v2", mtime: new Date("2026-04-12T10:30:00.000Z") },
-      { name: "v1", mtime: new Date("2026-04-11T09:15:00.000Z") },
+      { name: "v2", mtime: new Date("2026-04-12T10:30:00.000Z"), metadata: null },
+      { name: "v1", mtime: new Date("2026-04-11T09:15:00.000Z"), metadata: null },
     ],
   });
 

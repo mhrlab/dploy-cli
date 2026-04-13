@@ -1,6 +1,7 @@
 import path from "node:path";
+import os from "node:os";
 import { loadConfig, getEnvName } from "../core/config.js";
-import { detectVersion, posixJoin } from "../core/utils.js";
+import { detectVersion, posixJoin, safeExec } from "../core/utils.js";
 import { buildArtifact, planBuildArtifact } from "../features/packager.js";
 import { connect, close, ensureRemoteDirs, exec, uploadFile } from "../core/ssh.js";
 import { log } from "../core/logger.js";
@@ -9,6 +10,9 @@ import {runLocalHooks, runRemoteHooks} from "../core/hooks.js";
 import {cleanupReleases} from "../features/cleaner.js";
 import { resolveDeployArtifact } from "../features/deploy-artifact.js";
 import { verifyArtifactChecksum } from "../features/checksum.js";
+import fs from "fs-extra";
+import { mkdtemp } from "node:fs/promises";
+import { createReleaseMetadata, RELEASE_METADATA_FILE } from "../features/release-metadata.js";
 
 export async function deploy(opts: { env?: string; artifact?: string; archive?: string; version?: string; dryRun?: boolean; skipBuild?: boolean }) {
     log.debug(`Deploy command started with options: ${JSON.stringify(opts)}`);
@@ -111,6 +115,7 @@ export async function deploy(opts: { env?: string; artifact?: string; archive?: 
 
         log.info(`[dry-run] Would connect to ${env.username}@${env.host}`);
         log.info(`[dry-run] Would upload ${path.basename(artifactPath!)} to ${remoteTar}`);
+        log.info(`[dry-run] Would write ${RELEASE_METADATA_FILE} into the release directory`);
         log.info(`[dry-run] Would extract into ${releaseDir}`);
         if (cfg.shared?.length) {
             log.info(`[dry-run] Would link shared items: ${cfg.shared.join(", ")}`);
@@ -217,6 +222,23 @@ export async function deploy(opts: { env?: string; artifact?: string; archive?: 
         // run PostDeploy hooks
         log.verbose(`Running post-deploy hooks`);
         await runRemoteHooks(bundle.ssh, "postDeploy", cfg.hooks?.postDeploy, releaseDir);
+
+        const metadataTmpDir = await mkdtemp(path.join(os.tmpdir(), "dploy-release-"));
+        const metadataTmpFile = path.join(metadataTmpDir, RELEASE_METADATA_FILE);
+        const metadata = createReleaseMetadata({
+            version,
+            environment: envName,
+            gitCommit: safeExec("git rev-parse HEAD") ?? null,
+            deployedAt: new Date(),
+            artifactName: path.basename(artifactPath!),
+        });
+        try {
+            await fs.writeJson(metadataTmpFile, metadata, { spaces: 2 });
+            log.verbose(`Uploading release metadata to ${posixJoin(releaseDir, RELEASE_METADATA_FILE)}`);
+            await uploadFile(bundle.sftp, metadataTmpFile, posixJoin(releaseDir, RELEASE_METADATA_FILE));
+        } finally {
+            await fs.remove(metadataTmpDir);
+        }
 
         // Clean old releases
         const keep = env.keepVersions ?? 5;
