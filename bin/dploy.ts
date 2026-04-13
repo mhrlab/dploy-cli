@@ -5,6 +5,7 @@ import { deploy } from "../src/commands/deploy.js";
 import { rollback } from "../src/commands/rollback.js";
 import { list } from "../src/commands/list.js";
 import { clean } from "../src/commands/clean.js";
+import { status } from "../src/commands/status.js";
 import { health } from "../src/commands/health.js";
 import { init } from "../src/commands/init.js";
 import {log, setLogLevel} from "../src/core/logger.js";
@@ -112,6 +113,11 @@ async function main() {
         .description("Remove old releases beyond keepVersions")
         .option("-n, --dry-run", "Show which releases would be removed without deleting them")
         .action(clean);
+
+    program
+        .command("status")
+        .description("Show current release and remote deployment status")
+        .action(status);
 
     program
         .command("health")

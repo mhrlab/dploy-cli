@@ -97,6 +97,12 @@ After installation, you can run `dploy` commands from the command line.
   dploy clean -e production --dry-run
   ```
 
+* **Show deployment status**:
+
+  ```bash
+  dploy status -e production
+  ```
+
 * **Run a health check**:
 
   ```bash
