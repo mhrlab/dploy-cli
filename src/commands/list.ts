@@ -12,6 +12,7 @@ export async function list(opts: { env?: string }) {
 
     const env = cfg.environments?.[envName];
     if (!env) throw new Error(`Unknown environment: ${envName}`);
+    if (!env.deployTo) throw new Error(`Environment '${envName}' is missing deployTo`);
 
     const releases = posixJoin((env.deployTo ? env.deployTo : ''), "releases");
     log.debug(`Releases directory: ${releases}`);
@@ -36,8 +37,8 @@ export async function list(opts: { env?: string }) {
             log.warn("No releases found");
         } else {
             log.ok(`Found ${dirs.length} release(s):`);
-            for (const d of dirs.sort()) {
-                console.log("  -", d);
+            for (const d of dirs) {
+                console.log("  -", d.name);
             }
         }
     } finally {

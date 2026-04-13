@@ -1,10 +1,12 @@
 import { loadConfig, getEnvName } from "../core/config.js";
-import { connect, close, listDirs, exec } from "../core/ssh.js";
+import { connect, close, exec } from "../core/ssh.js";
 import { log } from "../core/logger.js";
 import { posixJoin } from "../core/utils.js";
+import { collectRemoteStatus } from "../features/status.js";
+import { currentReleaseNameFromTarget, resolveRollbackTarget } from "../features/rollback.js";
 import inquirer from "inquirer";
 
-export async function rollback(opts: { env?: string }) {
+export async function rollback(opts: { env?: string; latest?: boolean; to?: string; dryRun?: boolean }) {
     log.debug(`Rollback command started with options: ${JSON.stringify(opts)}`);
 
     const cfg = await loadConfig();
@@ -12,6 +14,7 @@ export async function rollback(opts: { env?: string }) {
 
     const env = cfg.environments?.[envName];
     if (!env) throw new Error(`Unknown environment: ${envName}`);
+    if (!env.deployTo) throw new Error(`Environment '${envName}' is missing deployTo`);
 
     const releasesDir = posixJoin((env.deployTo ? env.deployTo : ''), "releases");
     const currentLink = posixJoin((env.deployTo ? env.deployTo : ''), "current");
@@ -20,43 +23,73 @@ export async function rollback(opts: { env?: string }) {
     log.info(`Connecting to ${env.username}@${env.host} to perform rollback`);
     const bundle = await connect(env);
     try {
-        log.verbose(`Reading current symlink target`);
-        const { stdout } = await exec(bundle.ssh, `readlink -f "${currentLink}" || true`);
-        const currentTarget = stdout.trim();
-        log.debug(`Current symlink target: ${currentTarget}`);
+        const remoteStatus = await collectRemoteStatus(bundle, envName, env.deployTo);
+        const sortedReleases = remoteStatus.releases;
+        const currentRelease = currentReleaseNameFromTarget(remoteStatus.currentTarget);
+        log.debug(`Current symlink target: ${remoteStatus.currentTarget ?? ""}`);
+        log.debug(`Current release: ${currentRelease ?? ""}`);
 
-        log.verbose(`Listing available releases`);
-        // list releases with timestamps
-        const releases = await listDirs(bundle.sftp, releasesDir);
-        const sortedReleases = releases.sort((a, b) => b.mtime.getTime() - a.mtime.getTime());
+        if (!sortedReleases.length) {
+            log.warn("No releases found");
+            return;
+        }
 
-        if (sortedReleases.length < 2) {
+        if (sortedReleases.length < 2 && !opts.to && !opts.latest) {
             log.warn(`Not enough releases to rollback (found ${sortedReleases.length}, need at least 2)`);
             return;
         }
 
-        // build choices for prompt
-        const choices = sortedReleases.map(r => ({
-            name: `${r.name} (${r.mtime.toLocaleString()})${currentTarget.endsWith(r.name) ? " [current]" : ""}`,
-            value: posixJoin(releasesDir, r.name),
-            disabled: currentTarget.endsWith(r.name) ? "Already active" : false
-        }));
+        const wantsAutomaticTarget = !!opts.latest || !!opts.to;
+        let targetRelease = resolveRollbackTarget(sortedReleases, currentRelease, {
+            latest: opts.latest,
+            to: opts.to,
+        });
 
-        // prompt user
-        const { target } = await inquirer.prompt([
-            {
-                type: "list",
-                name: "target",
-                message: "Select a release to rollback to:",
-                choices
+        if (!targetRelease) {
+            if (wantsAutomaticTarget) {
+                log.warn("No rollback target could be resolved");
+                return;
             }
-        ]);
 
-        // switch symlink
-        const targetVersion = target.split("/").pop();
-        log.info(`Rolling back to: ${targetVersion}`);
-        await exec(bundle.ssh, `ln -sfn "${target}" "${currentLink}"`);
-        log.ok(`Successfully rolled back to ${targetVersion}`);
+            const choices = sortedReleases.map((release) => ({
+                name: `${release.name} (${release.mtime.toLocaleString()})${release.name === currentRelease ? " [current]" : ""}`,
+                value: release.name,
+                disabled: release.name === currentRelease ? "Already active" : false,
+            }));
+
+            const { target } = await inquirer.prompt([
+                {
+                    type: "list",
+                    name: "target",
+                    message: "Select a release to rollback to:",
+                    choices,
+                },
+            ]);
+
+            targetRelease = sortedReleases.find((release) => release.name === target) ?? null;
+        }
+
+        if (!targetRelease) {
+            log.warn("No rollback target could be selected");
+            return;
+        }
+
+        if (targetRelease.name === currentRelease) {
+            log.warn(`${targetRelease.name} is already active`);
+            return;
+        }
+
+        const targetPath = posixJoin(releasesDir, targetRelease.name);
+
+        if (opts.dryRun) {
+            log.ok(`Dry run: would roll back to ${targetRelease.name}`);
+            log.info(`Would switch ${currentLink} -> ${targetPath}`);
+            return;
+        }
+
+        log.info(`Rolling back to: ${targetRelease.name}`);
+        await exec(bundle.ssh, `ln -sfn "${targetPath}" "${currentLink}"`);
+        log.ok(`Successfully rolled back to ${targetRelease.name}`);
     } finally {
         log.verbose(`Closing SSH connection`);
         await close(bundle);

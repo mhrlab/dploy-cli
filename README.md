@@ -40,7 +40,7 @@ npx dploy-cli
 * **Environment-specific deploys**: Supports multiple environments such as `production` and `staging`.
 * **Packaging strategies**: Supports `include`, `exclude`, `copy`, and `hybrid` file selection.
 * **Shared paths**: Keeps files like `.env` or `storage` persistent across deployments.
-* **Rollback support**: Switch back to an older release from the remote server.
+* **Rollback support**: Switch back to an older release from the remote server, or use `--latest` / `--to <version>` for non-interactive rollbacks.
 * **Health checks**: Can call a configured health endpoint after deployment.
 * **Hooks**: Runs local `preBuild` / `postBuild` hooks and remote `preDeploy` / `postDeploy` hooks.
 * **Verbose logging**: Supports `--verbose` and `--debug` output for troubleshooting.
@@ -90,6 +90,9 @@ After installation, you can run `dploy` commands from the command line.
 
   ```bash
   dploy rollback
+  dploy rollback --latest
+  dploy rollback --to v0.1.24-62ef2ff
+  dploy rollback --dry-run
   ```
 
 * **List releases on a remote server**:

@@ -103,6 +103,9 @@ async function main() {
     program
         .command("rollback")
         .description("Rollback to previous release")
+        .option("--latest", "Rollback to the previous release without prompting")
+        .option("--to <version>", "Rollback to a specific release by name")
+        .option("-n, --dry-run", "Show what would be changed without switching the symlink")
         .action(rollback);
 
     program
