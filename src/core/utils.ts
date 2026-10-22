@@ -66,26 +66,33 @@ export function getReadableFileSize(sizeInBytes: number, decimals: number = 2): 
 
 
 /**
+ * Traverse upward to find the root directory containing package.json
+ */
+export function findPackageRoot(startDir: string = dirname(fileURLToPath(import.meta.url))): string {
+    let current = path.resolve(startDir);
+    while (true) {
+        if (fs.existsSync(path.join(current, "package.json"))) {
+            return current;
+        }
+        const parent = path.dirname(current);
+        if (parent === current) {
+            return startDir;
+        }
+        current = parent;
+    }
+}
+
+/**
  * Reads the version from the project's package.json file.
  * @returns {string} The version string from package.json, or 'unknown' if not found.
  */
 export function getAppVersion(): string {
     try {
-        // Determine the directory of the current module's file.
-        const __filename = fileURLToPath(import.meta.url);
-        const __dirname = dirname(__filename);
-
-        // Construct the path to the package.json file, which is assumed to be
-        // one directory level up from the current file.
-        const packageJsonPath = join(__dirname, '..', '..', '..', 'package.json');
-
-        // Read the file and parse the JSON.
-        const packageJson = JSON.parse(readFileSync(packageJsonPath, 'utf8'));
-
-        // Return the version.
-        return packageJson.version;
+        const root = findPackageRoot();
+        const packageJsonPath = path.join(root, "package.json");
+        const packageJson = JSON.parse(readFileSync(packageJsonPath, "utf8"));
+        return packageJson.version || "unknown";
     } catch (error: any) {
-        console.error("Error reading package.json:", error.message);
         return "unknown";
     }
 }

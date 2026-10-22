@@ -5,7 +5,7 @@ import { mkdtemp, writeFile } from "node:fs/promises";
 import { test } from "node:test";
 
 import { loadConfig } from "../src/core/config.js";
-import { detectVersion, escapeShellArg } from "../src/core/utils.js";
+import { detectVersion, escapeShellArg, findPackageRoot, getAppVersion } from "../src/core/utils.js";
 
 async function createTempProject() {
   return await mkdtemp(path.join(os.tmpdir(), "dploy-config-"));
@@ -126,4 +126,10 @@ test("detectVersion validates version override format and rejects injection atte
   assert.throws(() => detectVersion('v1.0.0"; rm -rf /; echo "'), /Invalid version format/);
   assert.throws(() => detectVersion("v1.0.0`whoami`"), /Invalid version format/);
   assert.throws(() => detectVersion("v1.0.0$(id)"), /Invalid version format/);
+});
+
+test("findPackageRoot discovers directory containing package.json", () => {
+  const root = findPackageRoot();
+  assert.ok(root.length > 0);
+  assert.equal(getAppVersion(), "0.2.0");
 });

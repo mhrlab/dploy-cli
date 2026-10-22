@@ -89,7 +89,7 @@ Review Status: In Progress
   - **Issue**: `log_new` is exported but completely unused across the codebase.
   - **Fix**: Consolidate logger implementation into `log` and remove `log_new`.
 
-- [ ] **[LOW] [QUAL-08] Harden Relative Path Resolution for `package.json` and Templates**
+- [x] **[LOW] [QUAL-08] Harden Relative Path Resolution for `package.json` and Templates**
   - **Location**: `src/core/utils.ts:57`, `src/commands/init.ts:10`
   - **Issue**: Hardcoded 3-level directory traversal (`../../../package.json`) breaks when running outside standard `dist/` directory nesting.
   - **Fix**: Search upward for root `package.json` or resolve relative to package root dynamically.
