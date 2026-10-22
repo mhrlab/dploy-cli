@@ -103,7 +103,7 @@ Review Status: In Progress
   - **Gap**: Zero automated tests exist for `deploy.ts`, `build.ts`, `rollback.ts`, `list.ts`, `clean.ts`, `status.ts`, `health.ts`, and `init.ts`.
   - **Action**: Add unit tests using mocked SSH/SFTP fixtures to test command branching, option handling, and error exits.
 
-- [ ] **[MEDIUM] Unit Tests for Packaging Strategies**
+- [x] **[MEDIUM] Unit Tests for Packaging Strategies**
   - **Location**: `tests/strategy.test.ts` (new)
   - **Gap**: Only `include` strategy is tested indirectly. `copy`, `exclude`, and `hybrid` strategies have no dedicated tests.
   - **Action**: Add dedicated tests in `tests/strategy.test.ts` covering globbing, optional copy files, and missing required copy files.
