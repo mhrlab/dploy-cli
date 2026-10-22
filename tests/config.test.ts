@@ -74,3 +74,17 @@ test("loadConfig reads deploy.config.yaml and uses fallback values when env vars
   assert.equal(config.environments?.production.host, "fallback.example.test");
   assert.equal(config.environments?.production.username, "fallback-user");
 });
+
+test("resolveFiles resolves files with root-level config options (legacy/JSON compatibility)", async () => {
+  const cwd = await createTempProject();
+  await writeFile(path.join(cwd, "test.txt"), "hello", "utf8");
+
+  const { resolveFiles } = await import("../src/features/strategy.js");
+  const files = await resolveFiles(cwd, {
+    strategy: "include",
+    include: ["test.txt"],
+  } as any);
+
+  assert.equal(files.length, 1);
+  assert.equal(files[0].to, "test.txt");
+});

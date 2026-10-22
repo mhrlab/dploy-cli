@@ -1,10 +1,21 @@
 {
-  "for": "Node.js + PM2",
-  "buildDir": "build",
-  "strategy": "include",
-  "include": ["dist/**", "package.json", "package-lock.json"],
-  "shared": [".env"],
-  "sharedDefaults": { ".env": ".env.example" },
+  "name": "Node.js + PM2",
+  "build": {
+    "buildDir": "build",
+    "strategy": "include",
+    "include": [
+      "dist/**",
+      "package.json",
+      "package-lock.json"
+    ],
+    "shared": [
+      ".env"
+    ],
+    "sharedDefaults": {
+      ".env": ".env.example"
+    },
+    "cleanAfterDeploy": true
+  },
   "hooks": {
     "postDeploy": [
       "npm install --production",

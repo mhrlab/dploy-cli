@@ -40,12 +40,12 @@ Review Status: In Progress
 
 ## 3. Configuration & Template Schema Alignment
 
-- [ ] **[HIGH] [QUAL-02] Align `shared`, `sharedDefaults`, and `cleanAfterDeploy` in YAML Templates vs. `deploy.ts`**
+- [x] **[HIGH] [QUAL-02] Align `shared`, `sharedDefaults`, and `cleanAfterDeploy` in YAML Templates vs. `deploy.ts`**
   - **Location**: `src/commands/deploy.ts:98, 107, 185`, `templates/node.yaml:14`, `templates/fastapi.yaml:14`, `templates/laravel.yaml:14`
   - **Issue**: Starter YAML templates place `shared`, `sharedDefaults`, and `cleanAfterDeploy` inside `build:`. `deploy.ts` checks root-level `cfg.shared`, `cfg.sharedDefaults`, and `cfg.cleanAfterDeploy`. As a result, shared symlinking and cleanup are silently skipped for projects using YAML templates.
   - **Fix**: Fallback to `cfg.shared ?? cfg.build?.shared`, `cfg.sharedDefaults ?? cfg.build?.sharedDefaults`, and `cfg.cleanAfterDeploy ?? cfg.build?.cleanAfterDeploy`.
 
-- [ ] **[HIGH] [QUAL-03] Align JSON Templates with `cfg.build` Schema**
+- [x] **[HIGH] [QUAL-03] Align JSON Templates with `cfg.build` Schema**
   - **Location**: `src/features/strategy.ts:7`, `templates/node.json:3-5`, `templates/laravel.json:2-4`
   - **Issue**: `templates/node.json` and `laravel.json` define `strategy`, `include`, and `buildDir` at the root object instead of inside `build:`. `strategy.ts` looks for `cfg.build?.strategy`, falling back to `"copy"` with 0 files found.
   - **Fix**: Update JSON templates to nest build settings under `"build": { ... }` and add defensive fallback in `strategy.ts` (`cfg.build?.strategy ?? cfg.strategy`).
@@ -55,7 +55,7 @@ Review Status: In Progress
   - **Issue**: Starter files instruct users to copy to `.env.dploy`, and `.gitignore` excludes `.env.dploy`, but `loadDotenv()` only loads `.env`. Any settings placed in `.env.dploy` are ignored.
   - **Fix**: Check for `.env.dploy` first in `loadDotenv()`, then fallback to `.env`.
 
-- [ ] **[LOW] [QUAL-09] Fix Logging Field Typo in `strategy.ts`**
+- [x] **[LOW] [QUAL-09] Fix Logging Field Typo in `strategy.ts`**
   - **Location**: `src/features/strategy.ts:9`
   - **Issue**: Logs `cfg.copy?.length` instead of `cfg.build?.copy?.length`, always printing `copy: 0`.
   - **Fix**: Change `cfg.copy?.length` to `cfg.build?.copy?.length`.

@@ -28,7 +28,8 @@ export async function planBuildArtifact(options: {
     cfg: DeployConfig;
 }): Promise<BuildPlan> {
     const { cwd, buildDir, version, cfg } = options;
-    const outDir = path.join(cwd, buildDir ? buildDir : "builds");
+    const effectiveBuildDir = buildDir ? buildDir : (cfg.build?.buildDir ?? cfg.buildDir ?? "builds");
+    const outDir = path.join(cwd, effectiveBuildDir);
     const stagingDir = path.join(outDir, `staging-${version}`);
     const artifactPath = path.join(outDir, `release-${version}.tar.gz`);
     const files = await resolveFiles(cwd, cfg);
@@ -46,10 +47,10 @@ export async function buildArtifact(options: {
 
     log.debug(`Build artifact started - cwd: ${cwd}, buildDir: ${buildDir}, version: ${version}`);
     log.debug(`Build config: ${JSON.stringify({
-        strategy: cfg.build?.strategy,
-        include: cfg.build?.include,
-        exclude: cfg.build?.exclude,
-        copy: cfg.build?.copy
+        strategy: cfg.build?.strategy ?? cfg.strategy,
+        include: cfg.build?.include ?? cfg.include,
+        exclude: cfg.build?.exclude ?? cfg.exclude,
+        copy: cfg.build?.copy ?? cfg.copy
     })}`);
 
     const plan = await planBuildArtifact({ cwd, buildDir, version, cfg });

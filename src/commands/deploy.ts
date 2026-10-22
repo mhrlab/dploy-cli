@@ -32,6 +32,10 @@ export async function deploy(opts: { env?: string; artifact?: string; archive?: 
         throw new Error(`Invalid deployTo path: cannot deploy directly to root '/'`);
     }
 
+    const sharedItems: string[] = cfg.shared ?? cfg.build?.shared ?? [];
+    const sharedDefaults: Record<string, string> | undefined = cfg.sharedDefaults ?? cfg.build?.sharedDefaults;
+    const cleanAfterDeploy: boolean = cfg.cleanAfterDeploy ?? cfg.build?.cleanAfterDeploy ?? false;
+
     const version = detectVersion(opts.version);
     log.verbose(`Deployment version: ${version}`);
 
@@ -123,8 +127,8 @@ export async function deploy(opts: { env?: string; artifact?: string; archive?: 
         log.info(`[dry-run] Would upload ${path.basename(artifactPath!)} to ${remoteTar}`);
         log.info(`[dry-run] Would write ${RELEASE_METADATA_FILE} into the release directory`);
         log.info(`[dry-run] Would extract into ${releaseDir}`);
-        if (cfg.shared?.length) {
-            log.info(`[dry-run] Would link shared items: ${cfg.shared.join(", ")}`);
+        if (sharedItems.length) {
+            log.info(`[dry-run] Would link shared items: ${sharedItems.join(", ")}`);
         }
         log.info(`[dry-run] Would switch current symlink to ${currentLink}`);
         if (cfg.hooks?.preDeploy?.length) {
@@ -138,7 +142,7 @@ export async function deploy(opts: { env?: string; artifact?: string; archive?: 
             log.info(`[dry-run] No postDeploy hooks configured`);
         }
         log.info(`[dry-run] Would clean old releases, keeping ${keep} version(s)`);
-        if (cfg.cleanAfterDeploy && tmp && tmp !== "/") {
+        if (cleanAfterDeploy && tmp && tmp !== "/") {
             log.info(`[dry-run] Would remove temporary upload directory ${tmp}`);
         }
         log.info(`[dry-run] Would verify SHA256 checksum after upload`);
@@ -205,12 +209,12 @@ export async function deploy(opts: { env?: string; artifact?: string; archive?: 
         await runRemoteHooks(bundle.ssh, "preDeploy", cfg.hooks?.preDeploy, releaseDir);
 
         // Link shared items
-        if (cfg.shared?.length) {
-            log.verbose(`Linking ${cfg.shared.length} shared items`);
-            log.debug(`Shared items: ${JSON.stringify(cfg.shared)}`);
+        if (sharedItems.length) {
+            log.verbose(`Linking ${sharedItems.length} shared items`);
+            log.debug(`Shared items: ${JSON.stringify(sharedItems)}`);
             const spinShared = log.spinner("Linking shared items...");
-            await linkShared(bundle.ssh, remoteRoot, releaseDir, cfg.shared, cfg.sharedDefaults);
-            spinShared.succeed(`Linking completed for ${cfg.shared.length} shared items`);
+            await linkShared(bundle.ssh, remoteRoot, releaseDir, sharedItems, sharedDefaults);
+            spinShared.succeed(`Linking completed for ${sharedItems.length} shared items`);
         } else {
             log.verbose(`No shared items to link`);
         }
@@ -249,7 +253,7 @@ export async function deploy(opts: { env?: string; artifact?: string; archive?: 
         const keep = env.keepVersions ?? 5;
         log.verbose(`Cleaning old releases, keeping ${keep} versions`);
         await cleanupReleases(bundle, releases, keep, { strict: true });
-        if (cfg.cleanAfterDeploy && tmp && tmp !== "/") {
+        if (cleanAfterDeploy && tmp && tmp !== "/") {
             log.verbose(`Cleaning temporary uploaded directory & files`);
             await exec(bundle.ssh, `rm -rf "${tmp}"`);
         }
