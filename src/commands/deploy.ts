@@ -1,7 +1,7 @@
 import path from "node:path";
 import os from "node:os";
 import { loadConfig, getEnvName } from "../core/config.js";
-import { detectVersion, posixJoin, safeExec } from "../core/utils.js";
+import { detectVersion, posixJoin, safeExec, escapeShellArg } from "../core/utils.js";
 import { buildArtifact, planBuildArtifact } from "../features/packager.js";
 import { connect, close, ensureRemoteDirs, exec, uploadFile } from "../core/ssh.js";
 import { log } from "../core/logger.js";
@@ -194,12 +194,12 @@ export async function deploy(opts: { env?: string; artifact?: string; archive?: 
         }
 
         // Extract release
-        log.debug(`Executing extract command: mkdir -p "${releaseDir}" && tar -xzf "${remoteTar}" -C "${releaseDir}" && rm -f "${remoteTar}"`);
+        log.debug(`Executing extract command: mkdir -p ${escapeShellArg(releaseDir)} && tar -xzf ${escapeShellArg(remoteTar)} -C ${escapeShellArg(releaseDir)} && rm -f ${escapeShellArg(remoteTar)}`);
         const extract = log.spinner("Extracting release...");
 
         const { code, stderr } = await exec(
             bundle.ssh,
-            `mkdir -p "${releaseDir}" && tar -xzf "${remoteTar}" -C "${releaseDir}" && rm -f "${remoteTar}"`
+            `mkdir -p ${escapeShellArg(releaseDir)} && tar -xzf ${escapeShellArg(remoteTar)} -C ${escapeShellArg(releaseDir)} && rm -f ${escapeShellArg(remoteTar)}`
         );
         if (code !== 0) throw new Error(stderr || "remote extract failed");
         extract.succeed(`Extracted ${version}`);
@@ -223,7 +223,7 @@ export async function deploy(opts: { env?: string; artifact?: string; archive?: 
         log.verbose(`Switching current symlink to new release`);
         log.info(`Activating new release...`);
 
-        await exec(bundle.ssh, `ln -sfn "${releaseDir}" "${currentLink}"`);
+        await exec(bundle.ssh, `ln -sfn ${escapeShellArg(releaseDir)} ${escapeShellArg(currentLink)}`);
 
         log.ok(`Activated ${version}`);
         log.ok(`Deployed ${version} to [${envName}]`);
@@ -255,7 +255,7 @@ export async function deploy(opts: { env?: string; artifact?: string; archive?: 
         await cleanupReleases(bundle, releases, keep, { strict: true });
         if (cleanAfterDeploy && tmp && tmp !== "/") {
             log.verbose(`Cleaning temporary uploaded directory & files`);
-            await exec(bundle.ssh, `rm -rf "${tmp}"`);
+            await exec(bundle.ssh, `rm -rf ${escapeShellArg(tmp)}`);
         }
 
     } finally {

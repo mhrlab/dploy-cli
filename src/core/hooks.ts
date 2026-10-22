@@ -4,6 +4,7 @@ import { Client } from "ssh2";
 import { log } from "./logger.js";
 import * as os from "node:os";
 import chalk from "chalk";
+import { escapeShellArg } from "./utils.js";
 
 
 export async function runLocalHooks(phase: string, hooks?: string[]) {
@@ -49,7 +50,7 @@ export async function runRemoteHooks(
     if (cwd) log.debug(`Remote hook working directory: ${cwd}`);
 
     for (const cmd of hooks) {
-        const fullCmd = cwd ? `cd "${cwd}" && ${cmd}` : cmd;
+        const fullCmd = cwd ? `cd ${escapeShellArg(cwd)} && ${cmd}` : cmd;
 
         // Command itself
         log.info(chalk.inverse(`[remote] → ${fullCmd} `));

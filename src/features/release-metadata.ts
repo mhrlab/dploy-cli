@@ -1,5 +1,6 @@
 import path from "node:path";
 import { exec, type SSHBundle } from "../core/ssh.js";
+import { escapeShellArg } from "../core/utils.js";
 
 export const RELEASE_METADATA_FILE = "deploy-metadata.json";
 
@@ -78,7 +79,7 @@ export function formatReleaseLabel(release: ReleaseInfo, currentRelease?: string
 
 export async function readRemoteReleaseMetadata(bundle: SSHBundle, releaseDir: string): Promise<ReleaseMetadata | null> {
     const filePath = path.posix.join(releaseDir, RELEASE_METADATA_FILE);
-    const { stdout } = await exec(bundle.ssh, `cat "${filePath}" 2>/dev/null || true`);
+    const { stdout } = await exec(bundle.ssh, `cat ${escapeShellArg(filePath)} 2>/dev/null || true`);
     try {
         return parseReleaseMetadata(stdout);
     } catch {

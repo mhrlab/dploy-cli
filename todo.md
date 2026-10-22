@@ -21,7 +21,7 @@ Review Status: In Progress
 
 ## 2. Security Vulnerabilities
 
-- [ ] **[HIGH] [SEC-02] Eliminate Shell Command Injection in Remote SSH Executions**
+- [x] **[HIGH] [SEC-02] Eliminate Shell Command Injection in Remote SSH Executions**
   - **Location**: `src/commands/deploy.ts:170-174`, `src/core/hooks.ts:40`, `src/core/ssh.ts:74`
   - **Issue**: CLI options (`--version`) and remote path strings (`releaseDir`) are concatenated directly into raw shell commands (`mkdir -p "${releaseDir}" && tar -xzf ...`). Special characters or shell metacharacters in version strings allow remote code execution.
   - **Fix**: Enforce strict alphanumeric regex `/^[a-zA-Z0-9._-]+$/` in `detectVersion` / `assertValidVersion`, and sanitize path strings before shell interpolation.
@@ -64,7 +64,7 @@ Review Status: In Progress
 
 ## 4. Reliability, Error Handling & Performance
 
-- [ ] **[MEDIUM] [QUAL-04] Register Stream `'error'` Event Listeners in `ssh.exec()`**
+- [x] **[MEDIUM] [QUAL-04] Register Stream `'error'` Event Listeners in `ssh.exec()`**
   - **Location**: `src/core/ssh.ts:58-75`
   - **Issue**: Neither `stream` nor `stream.stderr` handles `'error'` events. Any network interruption or channel fault causes an unhandled Node EventEmitter error, terminating the CLI process immediately and bypassing cleanup handlers.
   - **Fix**: Attach `.on("error", (err) => reject(err))` to `stream` and `stream.stderr`.
@@ -96,8 +96,7 @@ Review Status: In Progress
 
 ---
 
-## 5. Test Coverage Gaps
-
+## 5. Test Coverage Gaps\n
 - [ ] **[MEDIUM] Unit Tests for Core Commands**
   - **Location**: `tests/commands.test.ts` (new)
   - **Gap**: Zero automated tests exist for `deploy.ts`, `build.ts`, `rollback.ts`, `list.ts`, `clean.ts`, `status.ts`, `health.ts`, and `init.ts`.

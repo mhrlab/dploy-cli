@@ -1,5 +1,5 @@
 import path from "node:path";
-import { posixJoin } from "../core/utils.js";
+import { posixJoin, escapeShellArg } from "../core/utils.js";
 import { exec, listDirs, SSHBundle } from "../core/ssh.js";
 import { formatReleaseLabel, formatReleaseMetadata, readRemoteReleaseMetadata, type ReleaseMetadata, type ReleaseInfo } from "./release-metadata.js";
 
@@ -42,7 +42,7 @@ export async function collectRemoteStatus(
         }))
     );
 
-    const { stdout } = await exec(bundle.ssh, `readlink -f "${currentLink}" || true`);
+    const { stdout } = await exec(bundle.ssh, `readlink -f ${escapeShellArg(currentLink)} || true`);
     const currentTarget = stdout.trim() || null;
     const currentRelease = currentTarget ? path.posix.basename(currentTarget) : null;
     const currentReleaseMetadata = releaseInfos.find((release) => release.name === currentRelease)?.metadata ?? null;

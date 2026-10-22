@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { createReadStream } from "node:fs";
 import { Client } from "ssh2";
 import { exec } from "../core/ssh.js";
+import { escapeShellArg } from "../core/utils.js";
 
 export async function sha256File(filePath: string): Promise<string> {
     const hash = createHash("sha256");
@@ -19,9 +20,9 @@ export async function sha256File(filePath: string): Promise<string> {
 async function remoteSha256(ssh: Client, remotePath: string): Promise<string> {
     const command = [
         `if command -v sha256sum >/dev/null 2>&1; then`,
-        `  sha256sum "${remotePath}" | cut -d' ' -f1;`,
+        `  sha256sum ${escapeShellArg(remotePath)} | cut -d' ' -f1;`,
         `elif command -v shasum >/dev/null 2>&1; then`,
-        `  shasum -a 256 "${remotePath}" | cut -d' ' -f1;`,
+        `  shasum -a 256 ${escapeShellArg(remotePath)} | cut -d' ' -f1;`,
         `else`,
         `  echo "__NO_SHA256_TOOL__";`,
         `fi`,

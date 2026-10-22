@@ -5,6 +5,7 @@ import { mkdtemp, writeFile } from "node:fs/promises";
 import { test } from "node:test";
 
 import { loadConfig } from "../src/core/config.js";
+import { detectVersion, escapeShellArg } from "../src/core/utils.js";
 
 async function createTempProject() {
   return await mkdtemp(path.join(os.tmpdir(), "dploy-config-"));
@@ -87,4 +88,17 @@ test("resolveFiles resolves files with root-level config options (legacy/JSON co
 
   assert.equal(files.length, 1);
   assert.equal(files[0].to, "test.txt");
+});
+
+test("escapeShellArg wraps in single quotes and escapes internal single quotes", () => {
+  assert.equal(escapeShellArg("/var/www/app"), "'/var/www/app'");
+  assert.equal(escapeShellArg("foo'bar"), "'foo'\\''bar'");
+  assert.equal(escapeShellArg('path with spaces and "quotes" and $vars'), "'path with spaces and \"quotes\" and $vars'");
+});
+
+test("detectVersion validates version override format and rejects injection attempts", () => {
+  assert.equal(detectVersion("v1.2.3-alpha.1"), "v1.2.3-alpha.1");
+  assert.throws(() => detectVersion('v1.0.0"; rm -rf /; echo "'), /Invalid version format/);
+  assert.throws(() => detectVersion("v1.0.0`whoami`"), /Invalid version format/);
+  assert.throws(() => detectVersion("v1.0.0$(id)"), /Invalid version format/);
 });

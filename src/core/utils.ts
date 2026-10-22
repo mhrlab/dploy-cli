@@ -24,15 +24,28 @@ export function safeExec(cmd: string): string | undefined {
     }
 }
 
+export function assertValidVersion(version: string): void {
+    if (!/^[a-zA-Z0-9._-]+$/.test(version)) {
+        throw new Error(`Invalid version format: '${version}'. Only alphanumeric, '.', '_', and '-' are allowed.`);
+    }
+}
+
+export function escapeShellArg(arg: string): string {
+    return `'${arg.replace(/'/g, "'\\''")}'`;
+}
 
 export function detectVersion(override?: string): string {
-    if (override) return override;
+    if (override) {
+        assertValidVersion(override);
+        return override;
+    }
     const pkgVersion = safeExec("node -p \"require('./package.json').version\"");
     const shortSha = safeExec("git rev-parse --short HEAD");
     const now = new Date();
     const stamp = now.toISOString().replace(/[-:T.Z]/g, "").slice(0, 14); // YYYYMMDDHHMMSS
-    if (pkgVersion) return `v${pkgVersion}-${shortSha ?? stamp}`;
-    return `v${stamp}${shortSha ? `-${shortSha}` : ""}`;
+    const version = pkgVersion ? `v${pkgVersion}-${shortSha ?? stamp}` : `v${stamp}${shortSha ? `-${shortSha}` : ""}`;
+    assertValidVersion(version);
+    return version;
 }
 
 
@@ -116,5 +129,3 @@ export async function updateGitignore() {
         log.verbose(".gitignore already contains all required entries. No changes made.");
     }
 }
-
-
