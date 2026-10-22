@@ -24,6 +24,13 @@ export async function deploy(opts: { env?: string; artifact?: string; archive?: 
 
     const env = cfg.environments?.[envName];
     if (!env) throw new Error(`Unknown environment: ${envName}`);
+    if (!env.deployTo || typeof env.deployTo !== "string" || !env.deployTo.trim()) {
+        throw new Error(`Environment '${envName}' is missing required 'deployTo' path`);
+    }
+    const remoteRoot = env.deployTo.trim();
+    if (remoteRoot === "/") {
+        throw new Error(`Invalid deployTo path: cannot deploy directly to root '/'`);
+    }
 
     const version = detectVersion(opts.version);
     log.verbose(`Deployment version: ${version}`);
@@ -105,7 +112,6 @@ export async function deploy(opts: { env?: string; artifact?: string; archive?: 
     }
 
     if (opts.dryRun) {
-        const remoteRoot = env.deployTo ? env.deployTo : '';
         const releases = posixJoin(remoteRoot, "releases");
         const currentLink = posixJoin(remoteRoot, "current");
         const tmp = posixJoin(remoteRoot, "tmp");
@@ -132,7 +138,7 @@ export async function deploy(opts: { env?: string; artifact?: string; archive?: 
             log.info(`[dry-run] No postDeploy hooks configured`);
         }
         log.info(`[dry-run] Would clean old releases, keeping ${keep} version(s)`);
-        if (cfg.cleanAfterDeploy) {
+        if (cfg.cleanAfterDeploy && tmp && tmp !== "/") {
             log.info(`[dry-run] Would remove temporary upload directory ${tmp}`);
         }
         log.info(`[dry-run] Would verify SHA256 checksum after upload`);
@@ -141,7 +147,6 @@ export async function deploy(opts: { env?: string; artifact?: string; archive?: 
 
     log.verbose(`Preparing for artifact uploading to remote server.`);
 
-    const remoteRoot = env.deployTo ? env.deployTo : '';
     const releases = posixJoin(remoteRoot, "releases");
     const currentLink = posixJoin(remoteRoot, "current");
     const tmp = posixJoin(remoteRoot, "tmp");
@@ -244,7 +249,7 @@ export async function deploy(opts: { env?: string; artifact?: string; archive?: 
         const keep = env.keepVersions ?? 5;
         log.verbose(`Cleaning old releases, keeping ${keep} versions`);
         await cleanupReleases(bundle, releases, keep, { strict: true });
-        if (cfg.cleanAfterDeploy) {
+        if (cfg.cleanAfterDeploy && tmp && tmp !== "/") {
             log.verbose(`Cleaning temporary uploaded directory & files`);
             await exec(bundle.ssh, `rm -rf "${tmp}"`);
         }
@@ -254,4 +259,3 @@ export async function deploy(opts: { env?: string; artifact?: string; archive?: 
         await close(bundle);
     }
 }
-

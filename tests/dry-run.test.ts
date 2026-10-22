@@ -56,3 +56,30 @@ test("cleanupReleases dry-run does not call remote delete commands", async () =>
 
   assert.equal(execCalled, false);
 });
+
+test("deploy throws if environment is missing required deployTo path", async () => {
+  const cwd = await mkdtemp(path.join(os.tmpdir(), "dploy-deploy-to-"));
+  await writeFile(
+    path.join(cwd, "deploy.config.yml"),
+    [
+      "name: test",
+      "environments:",
+      "  production:",
+      "    host: example.com",
+      "    username: deploy",
+    ].join("\n"),
+    "utf8"
+  );
+
+  const prevCwd = process.cwd();
+  process.chdir(cwd);
+  try {
+    const { deploy } = await import("../src/commands/deploy.js");
+    await assert.rejects(
+      deploy({ env: "production", dryRun: true }),
+      /missing required 'deployTo' path/
+    );
+  } finally {
+    process.chdir(prevCwd);
+  }
+});

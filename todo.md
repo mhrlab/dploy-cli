@@ -12,7 +12,7 @@ Review Status: In Progress
   - **Issue**: `ReleaseInfo` is referenced on line 18 (`releases: ReleaseInfo[];`) but never imported from `./release-metadata.js`. Breaks `tsc` and `npm test` completely.
   - **Fix**: Add `type ReleaseInfo` to the import list from `./release-metadata.js`.
 
-- [ ] **[CRITICAL] [SEC-01] Prevent Catastrophic Remote `/tmp` Deletion in `deploy.ts`**
+- [x] **[CRITICAL] [SEC-01] Prevent Catastrophic Remote `/tmp` Deletion in `deploy.ts`**
   - **Location**: `src/commands/deploy.ts:27-31, 220-224`
   - **Issue**: `deploy.ts` never validates `env.deployTo`. If `deployTo` is missing or empty, `posixJoin(remoteRoot, "tmp")` resolves to `"/tmp"`. When `cfg.cleanAfterDeploy` runs, it executes `rm -rf "/tmp"` on the remote host as the remote user.
   - **Fix**: Require `if (!env.deployTo || typeof env.deployTo !== "string") throw new Error(...)` before constructing remote paths.
@@ -106,7 +106,7 @@ Review Status: In Progress
 - [ ] **[MEDIUM] Unit Tests for Packaging Strategies**
   - **Location**: `tests/strategy.test.ts` (new)
   - **Gap**: Only `include` strategy is tested indirectly. `copy`, `exclude`, and `hybrid` strategies have no dedicated tests.
-  - **Action**: Add dedicated tests in `tests/strategy.test.ts` covering globbing, optional copy files, and missing required copy files.
+  - **Action**: Add dedicated tests in `tests/strategy.test.ts covering globbing, optional copy files, and missing required copy files.
 
 - [ ] **[MEDIUM] Unit Tests for Shared Resource Linking**
   - **Location**: `tests/shared.test.ts` (new)
