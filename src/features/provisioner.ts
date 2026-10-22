@@ -76,7 +76,7 @@ export async function checkRemotePrerequisites(
         missing.push("curl");
     }
 
-    // Check runtime binaries (e.g. node, php, python)
+    // Check runtime binaries (e.g. node, php, python, go)
     if (runtime) {
         for (const [bin, expectedVer] of Object.entries(runtime)) {
             const check = await exec(
@@ -265,14 +265,37 @@ export async function provisionPermissions(
 }
 
 /**
- * Verify or check background service integration (systemd / PM2).
+ * Normalize single service and/or array of services into ProvisionServiceConfig[]
  */
-export async function provisionService(
-    ssh: Client,
+export function normalizeServices(
     service?: ProvisionServiceConfig,
+    services?: (ProvisionServiceConfig | string)[]
+): ProvisionServiceConfig[] {
+    const result: ProvisionServiceConfig[] = [];
+    if (service && service.name) {
+        result.push(service);
+    }
+    if (Array.isArray(services)) {
+        for (const s of services) {
+            if (typeof s === "string" && s.trim()) {
+                result.push({ name: s.trim(), type: "systemd" });
+            } else if (s && typeof s === "object" && s.name) {
+                result.push({ type: "systemd", ...s });
+            }
+        }
+    }
+    return result;
+}
+
+/**
+ * Verify or check background service integration (systemd / PM2) for one or more services.
+ */
+export async function provisionServices(
+    ssh: Client,
+    serviceConfigs: ProvisionServiceConfig[],
     dryRun: boolean = false
 ): Promise<ProvisionStepResult> {
-    if (!service || !service.name) {
+    if (!serviceConfigs || serviceConfigs.length === 0) {
         return {
             step: "service",
             status: "skipped",
@@ -281,40 +304,66 @@ export async function provisionService(
     }
 
     const details: string[] = [];
-    const type = service.type ?? "systemd";
 
     if (dryRun) {
-        details.push(`[dry-run] Would verify ${type} service: ${service.name}`);
+        for (const s of serviceConfigs) {
+            const type = s.type ?? "systemd";
+            details.push(`[dry-run] Would verify ${type} service: ${s.name}`);
+        }
         return {
             step: "service",
             status: "planned",
-            message: `Service check planned for ${service.name} (${type})`,
+            message: `${serviceConfigs.length} service(s) planned for verification`,
             details,
         };
     }
 
-    if (type === "systemd") {
-        const check = await exec(
-            ssh,
-            `systemctl is-active ${escapeShellArg(service.name)} 2>&1 || true`
-        );
-        const state = check.stdout.trim();
-        details.push(`Systemd service '${service.name}' state: ${state}`);
-    } else if (type === "pm2") {
-        const check = await exec(
-            ssh,
-            `pm2 describe ${escapeShellArg(service.name)} >/dev/null 2>&1 && echo running || echo not_found`
-        );
-        const state = check.stdout.trim();
-        details.push(`PM2 service '${service.name}' state: ${state}`);
+    let allActive = true;
+    for (const s of serviceConfigs) {
+        const type = s.type ?? "systemd";
+        if (type === "systemd") {
+            const check = await exec(
+                ssh,
+                `systemctl is-active ${escapeShellArg(s.name!)} 2>&1 || true`
+            );
+            const state = check.stdout.trim();
+            details.push(`Systemd service '${s.name}' state: ${state}`);
+            if (state !== "active" && state !== "activating") {
+                allActive = false;
+            }
+        } else if (type === "pm2") {
+            const check = await exec(
+                ssh,
+                `pm2 describe ${escapeShellArg(s.name!)} >/dev/null 2>&1 && echo running || echo not_found`
+            );
+            const state = check.stdout.trim();
+            details.push(`PM2 service '${s.name}' state: ${state}`);
+            if (state !== "running") {
+                allActive = false;
+            }
+        }
     }
 
     return {
         step: "service",
-        status: "ok",
-        message: `Service status verified for ${service.name} (${type})`,
+        status: allActive ? "ok" : "failed",
+        message: allActive
+            ? `${serviceConfigs.length} service(s) verified active`
+            : `One or more services are not active`,
         details,
     };
+}
+
+/**
+ * Verify or check background service integration (systemd / PM2).
+ */
+export async function provisionService(
+    ssh: Client,
+    service?: ProvisionServiceConfig,
+    dryRun: boolean = false
+): Promise<ProvisionStepResult> {
+    const list = normalizeServices(service);
+    return provisionServices(ssh, list, dryRun);
 }
 
 /**
@@ -376,9 +425,13 @@ export async function executeProvisioning(
     }
 
     // 5. Service verification
-    if (shouldRun("service") && provCfg.service) {
-        const res = await provisionService(bundle.ssh, provCfg.service, dryRun);
+    const services = normalizeServices(provCfg.service, provCfg.services);
+    if (shouldRun("service") && services.length > 0) {
+        const res = await provisionServices(bundle.ssh, services, dryRun);
         steps.push(res);
+        if (res.status === "failed") {
+            success = false;
+        }
     }
 
     return {
@@ -463,12 +516,15 @@ export function planProvisioningOffline(
         });
     }
 
-    if (shouldRun("service") && provCfg.service) {
+    const services = normalizeServices(provCfg.service, provCfg.services);
+    if (shouldRun("service") && services.length > 0) {
         steps.push({
             step: "service",
             status: "planned",
-            message: `Service check planned for ${provCfg.service.name} (${provCfg.service.type ?? "systemd"})`,
-            details: [`[dry-run] Would verify ${provCfg.service.type ?? "systemd"} service: ${provCfg.service.name}`],
+            message: `${services.length} service check(s) planned`,
+            details: services.map(
+                (s) => `[dry-run] Would verify ${s.type ?? "systemd"} service: ${s.name}`
+            ),
         });
     }
 

@@ -8,10 +8,12 @@ import { test } from "node:test";
 import {
   checkRemotePrerequisites,
   executeProvisioning,
+  normalizeServices,
   planProvisioningOffline,
   provisionDirectories,
   provisionPermissions,
   provisionService,
+  provisionServices,
   provisionSharedResources,
 } from "../src/features/provisioner.js";
 import { provision } from "../src/commands/provision.js";
@@ -134,6 +136,59 @@ test("provisionService checks systemd service status", async () => {
   assert.ok(res.details?.some((d) => d.includes("active")));
 });
 
+test("normalizeServices normalizes strings and objects", () => {
+  const services = normalizeServices(
+    { name: "web-app", type: "systemd" },
+    ["redis", "mysql", { name: "custom-worker", type: "pm2" }]
+  );
+
+  assert.equal(services.length, 4);
+  assert.deepEqual(services[0], { name: "web-app", type: "systemd" });
+  assert.deepEqual(services[1], { name: "redis", type: "systemd" });
+  assert.deepEqual(services[2], { name: "mysql", type: "systemd" });
+  assert.deepEqual(services[3], { name: "custom-worker", type: "pm2" });
+});
+
+test("provisionServices checks multiple services and reports status", async () => {
+  const { ssh } = createMockSSH({
+    "redis": "active\n",
+    "mysql": "active\n",
+  });
+
+  const res = await provisionServices(
+    ssh,
+    [
+      { name: "redis", type: "systemd" },
+      { name: "mysql", type: "systemd" },
+    ],
+    false
+  );
+
+  assert.equal(res.status, "ok");
+  assert.equal(res.details?.length, 2);
+  assert.ok(res.details?.some((d) => d.includes("redis' state: active")));
+  assert.ok(res.details?.some((d) => d.includes("mysql' state: active")));
+});
+
+test("provisionServices marks status failed if any service is inactive", async () => {
+  const { ssh } = createMockSSH({
+    "redis": "active\n",
+    "mysql": "inactive\n",
+  });
+
+  const res = await provisionServices(
+    ssh,
+    [
+      { name: "redis", type: "systemd" },
+      { name: "mysql", type: "systemd" },
+    ],
+    false
+  );
+
+  assert.equal(res.status, "failed");
+  assert.ok(res.message.includes("not active"));
+});
+
 test("executeProvisioning honors --only filter", async () => {
   const { ssh, executedCommands } = createMockSSH();
 
@@ -165,6 +220,7 @@ test("planProvisioningOffline generates complete dry-run plan without SSH connec
         dirs: ["custom"],
         permissions: { mode: "755", owner: "deploy" },
         service: { type: "systemd", name: "myapp" },
+        services: ["redis", "postgresql"],
         runtime: { node: "20" },
       },
     },
@@ -178,6 +234,9 @@ test("planProvisioningOffline generates complete dry-run plan without SSH connec
   assert.ok(stepNames.includes("dirs"));
   assert.ok(stepNames.includes("permissions"));
   assert.ok(stepNames.includes("service"));
+
+  const serviceStep = report.steps.find((s) => s.step === "service");
+  assert.equal(serviceStep?.details?.length, 3);
 });
 
 test("provision command throws when deployTo is missing or root", async () => {

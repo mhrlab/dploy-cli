@@ -1,0 +1,93 @@
+# deploy.config.yml
+name: CodeIgniter 4 + Nginx
+
+build:
+  strategy: hybrid
+  buildDir: build
+  include:
+    - app/**
+    - public/**
+    - system/**
+    - writable/**
+    - writable/index.html
+    - writable/**/index.html
+    - package.json
+    - composer.json
+    - composer.lock
+    - preload.php
+    - spark
+    - env
+  exclude:
+    - node_modules/**
+    - tests/**
+    - .git/**
+  shared:
+    - .env
+    - writable
+  sharedDefaults:
+    .env: env
+  cleanAfterDeploy: true
+
+hooks:
+  preBuild:
+    - echo "📦 Installing Composer dependencies without dev tools"
+    - composer install --no-dev --optimize-autoloader --no-interaction
+  preDeploy:
+    - echo "🗜️ Packaging CodeIgniter 4 deployment artifact"
+    - tar -czf ci4_app.tar.gz build
+  postDeploy:
+    - echo "🚀 Running database migrations"
+    - php spark migrate --all --force || true
+    - echo "🧹 Clearing application cache"
+    - php spark cache:clear || true
+    - echo "🔄 Reloading PHP-FPM and Nginx"
+    - sudo systemctl reload php8.2-fpm || sudo systemctl reload php-fpm
+    - sudo systemctl reload nginx
+
+environments:
+  default:
+    keepVersions: 5
+    deployTo: /var/www/ci4_app
+    provision:
+      checkPrerequisites: true
+      runtime:
+        php: "8.2"
+        composer: "2.0"
+      dirs:
+        - writable/cache
+        - writable/logs
+        - writable/session
+        - writable/uploads
+        - writable/debugbar
+      permissions:
+        mode: "755"
+        sharedMode: "775"
+        owner: ${PROV_OWNER:-deploy}
+        group: ${PROV_GROUP:-www-data}
+      services:
+        - php8.2-fpm
+        - nginx
+        - mysql
+        - redis
+    env:
+      CI_ENVIRONMENT: production
+      app.baseURL: "https://${PROD_HOST:-example.com}/"
+
+  staging:
+    extends: default
+    host: ${STAGING_HOST:-staging.example.com}
+    username: ${STAGING_USER:-deploy}
+    deployTo: /var/www/ci4_staging
+    env:
+      CI_ENVIRONMENT: development
+      app.baseURL: "https://${STAGING_HOST:-staging.example.com}/"
+
+  production:
+    extends: default
+    host: ${PROD_HOST:-prod.example.com}
+    username: ${PROD_USER:-deploy}
+    deployTo: /var/www/ci4_app
+    keepVersions: 7
+    env:
+      CI_ENVIRONMENT: production
+      app.baseURL: "https://${PROD_HOST:-prod.example.com}/"

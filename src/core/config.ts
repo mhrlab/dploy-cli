@@ -38,6 +38,7 @@ export interface ProvisionPermissionsConfig {
 export interface ProvisionServiceConfig {
     type?: "systemd" | "pm2";
     name?: string;
+    action?: "check" | "restart" | "reload" | "enable";
     [key: string]: any;
 }
 
@@ -51,6 +52,7 @@ export interface ProvisionConfig {
     permissions?: ProvisionPermissionsConfig;
     runtime?: Record<string, string>;
     service?: ProvisionServiceConfig;
+    services?: (ProvisionServiceConfig | string)[];
     [key: string]: any;
 }
 
@@ -291,14 +293,18 @@ export function getMergedEnvValues(envCfg: EnvironmentConfig): Record<string, st
     return { ...(envCfg.env || {}), ...(process.env || {}) };
 }
 
-
-
+/**
+ * Common config filenames
+ */
 export const configFiles = {
-    "config_json": "deploy.config.json", // can be indexed contain just setup & strategy
-    "config_yaml": "deploy.config.yaml", // can be indexed contain just setup & strategy
-    "env_example": ".env.dploy.example", // example file for create main .env.dploy file
-    "gitignore": [ ".env.dploy", "/build", "/builds" ], // list all files those need to add in .gitignore
-}
+    config_yml: "deploy.config.yml",
+    config_yaml: "deploy.config.yaml",
+    config_json: "deploy.config.json",
+    env: ".env",
+    env_deploy: ".env.deploy",
+    env_example: ".env.dploy.example",
+    gitignore: [ ".env.dploy", "/build", "/builds" ],
+};
 
 export type CopyEntry = { from: string; to: string; optional?: boolean };
 export type Strategy = "include" | "exclude" | "copy" | "hybrid";
