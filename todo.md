@@ -148,3 +148,42 @@ Add a dedicated command (`dploy provision` / alias `dploy setup-server`) to prep
 - `-n, --dry-run`: Preview planned server changes without executing.
 - `--force`: Re-run all steps even if directories/files exist.
 - `--skip-checks`: Skip prerequisite verification (tar, curl, runtime).
+- `--only <step>`: Run a specific provisioning step (`dirs`, `shared`, `permissions`, `runtime`, `service`, `health`).
+- `--json`: Output machine-readable JSON status.
+
+### Configuration Schema (`provision` block in `deploy.config.yml`)
+```yaml
+environments:
+  production:
+    host: ${DPLOY_HOST}
+    username: ${DPLOY_USER}
+    deployTo: /var/www/myapp
+    keepVersions: 5
+    provision:
+      enabled: true
+      createDirs: true
+      configurePermissions: true
+      seedShared: true
+      checkPrerequisites: true
+      dirs:
+        - releases
+        - shared
+        - tmp
+        - logs
+      permissions:
+        owner: deploy
+        group: www-data
+        mode: "755"
+        sharedMode: "775"
+      runtime:
+        node: "20"
+      service:
+        type: systemd
+        name: myapp
+```
+
+### Planned Implementation Phases
+1. **Phase 1: Core Provisioning**: `src/commands/provision.ts`, base directory creation, shared seeding, permission application, dry-run mode.
+2. **Phase 2: Prerequisite Checks & Idempotency**: Verify remote binaries (`tar`, `curl`, `node`), safe non-destructive checks, `--json` output.
+3. **Phase 3: Service & Web Server Integration**: Systemd / PM2 service templates and nginx config generation.
+4. **Phase 4: Starter Templates & Documentation**: Update `templates/` and `README.md` with provisioning defaults.
