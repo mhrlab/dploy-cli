@@ -28,10 +28,37 @@ export interface BuildConfig {
     [key: string]: any;
 }
 
+export interface ProvisionPermissionsConfig {
+    owner?: string;
+    group?: string;
+    mode?: string;
+    sharedMode?: string;
+}
+
+export interface ProvisionServiceConfig {
+    type?: "systemd" | "pm2";
+    name?: string;
+    [key: string]: any;
+}
+
+export interface ProvisionConfig {
+    enabled?: boolean;
+    createDirs?: boolean;
+    configurePermissions?: boolean;
+    seedShared?: boolean;
+    checkPrerequisites?: boolean;
+    dirs?: string[];
+    permissions?: ProvisionPermissionsConfig;
+    runtime?: Record<string, string>;
+    service?: ProvisionServiceConfig;
+    [key: string]: any;
+}
+
 export interface DeployConfig {
     name?: string;
     build?: BuildConfig;
     hooks?: HookConfig;
+    provision?: ProvisionConfig;
     environments?: Record<string, EnvironmentConfig>;
     [key: string]: any;
 }
@@ -46,6 +73,7 @@ export interface EnvironmentConfig {
     deployTo?: string;
     keepVersions?: number;
     env?: Record<string, string>;
+    provision?: ProvisionConfig;
     [key: string]: any;
 }
 

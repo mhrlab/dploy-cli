@@ -38,6 +38,13 @@ environments:
   default:
     keepVersions: 5
     deployTo: /var/www/node_app
+    provision:
+      checkPrerequisites: true
+      runtime:
+        node: "20"
+      permissions:
+        mode: "755"
+        sharedMode: "775"
     env:
       NODE_ENV: development
 

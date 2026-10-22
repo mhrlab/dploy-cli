@@ -8,6 +8,7 @@ import { clean } from "../src/commands/clean.js";
 import { status } from "../src/commands/status.js";
 import { health } from "../src/commands/health.js";
 import { init } from "../src/commands/init.js";
+import { provision } from "../src/commands/provision.js";
 import { setLogLevel } from "../src/core/logger.js";
 import { getAppVersion } from "../src/core/utils.js";
 
@@ -104,6 +105,20 @@ async function main() {
         .command("health")
         .description("Call the health endpoint")
         .action(health);
+
+    program
+        .command("provision")
+        .alias("setup-server")
+        .description("Prepare a fresh remote server for deployments")
+        .option("-e, --env <env>", "Target environment (default: production)")
+        .option("-n, --dry-run", "Preview planned server changes without executing")
+        .option("--force", "Re-run all steps even if directories/files exist")
+        .option("--skip-checks", "Skip prerequisite verification (tar, curl, runtime)")
+        .option("--only <step>", "Run a specific provisioning step (prereqs, dirs, shared, permissions, service)")
+        .option("--json", "Output machine-readable JSON status")
+        .action(async (opts) => {
+            await provision(opts);
+        });
 
     program.parse(process.argv);
 }

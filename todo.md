@@ -141,14 +141,14 @@ Review Status: In Progress
 ## 7. Feature Spec: `dploy provision`
 
 ### Goal
-Add a dedicated command (`dploy provision` / alias `dploy setup-server`) to prepare a fresh server for deployments in an idempotent manner without polluting the core deploy flow.
+[x] Add a dedicated command (`dploy provision` / alias `dploy setup-server`) to prepare a fresh server for deployments in an idempotent manner without polluting the core deploy flow.
 
 ### Command Options
 - `-e, --env <env>`: Target environment (default: `production`).
 - `-n, --dry-run`: Preview planned server changes without executing.
 - `--force`: Re-run all steps even if directories/files exist.
 - `--skip-checks`: Skip prerequisite verification (tar, curl, runtime).
-- `--only <step>`: Run a specific provisioning step (`dirs`, `shared`, `permissions`, `runtime`, `service`, `health`).
+- `--only <step>`: Run a specific provisioning step (`prereqs`, `dirs`, `shared`, `permissions`, `service`).
 - `--json`: Output machine-readable JSON status.
 
 ### Configuration Schema (`provision` block in `deploy.config.yml`)
@@ -182,8 +182,9 @@ environments:
         name: myapp
 ```
 
-### Planned Implementation Phases
-1. **Phase 1: Core Provisioning**: `src/commands/provision.ts`, base directory creation, shared seeding, permission application, dry-run mode.
-2. **Phase 2: Prerequisite Checks & Idempotency**: Verify remote binaries (`tar`, `curl`, `node`), safe non-destructive checks, `--json` output.
-3. **Phase 3: Service & Web Server Integration**: Systemd / PM2 service templates and nginx config generation.
-4. **Phase 4: Starter Templates & Documentation**: Update `templates/` and `README.md` with provisioning defaults.
+### Implementation Details
+- [x] **Core Provisioning & Feature Engine**: Implemented `src/features/provisioner.ts` with prerequisite checks (`tar`, `curl`, configured runtimes), remote directory layout creation, shared directory/file seeding, permission and ownership enforcement, and systemd / PM2 service verification.
+- [x] **Command CLI Integration**: Implemented `src/commands/provision.ts` with alias `setup-server` in `bin/dploy.ts`, supporting `--dry-run`, `--force`, `--skip-checks`, `--only <step>`, and `--json`.
+- [x] **Offline Dry-Run & Safe Validation**: Refuses root `/` provisioning, ensures safe argument escaping via `escapeShellArg`, and supports offline dry-run when remote host is not reachable.
+- [x] **Starter Templates & Types**: Updated `src/core/config.ts` with TypeScript interfaces and added default provisioning config to `templates/node.yaml`.
+- [x] **Automated Test Suite**: Added comprehensive unit tests in `tests/provision.test.ts` covering live execution, `--only` filtering, prerequisite failures, and offline dry-run JSON output.
