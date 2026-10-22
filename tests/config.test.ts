@@ -76,6 +76,31 @@ test("loadConfig reads deploy.config.yaml and uses fallback values when env vars
   assert.equal(config.environments?.production.username, "fallback-user");
 });
 
+test("loadConfig loads environment variables from .env.dploy with override", async () => {
+  const cwd = await createTempProject();
+  await writeFile(path.join(cwd, ".env"), "TEST_VAR_A=from_env\nTEST_OVERRIDE=from_env\n", "utf8");
+  await writeFile(path.join(cwd, ".env.dploy"), "TEST_VAR_B=from_dploy\nTEST_OVERRIDE=from_dploy\n", "utf8");
+  await writeFile(
+    path.join(cwd, "deploy.config.json"),
+    JSON.stringify({
+      name: "Env Test",
+      environments: {
+        production: {
+          host: "${TEST_OVERRIDE}",
+          username: "${TEST_VAR_B}",
+          deployTo: "/var/www/test",
+        },
+      },
+    }),
+    "utf8"
+  );
+
+  const config = await loadConfig(cwd);
+  assert.equal(config.environments?.production.host, "from_dploy");
+  assert.equal(config.environments?.production.username, "from_dploy");
+  assert.equal(process.env.TEST_VAR_A, "from_env");
+});
+
 test("resolveFiles resolves files with root-level config options (legacy/JSON compatibility)", async () => {
   const cwd = await createTempProject();
   await writeFile(path.join(cwd, "test.txt"), "hello", "utf8");

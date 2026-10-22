@@ -43,14 +43,13 @@ Review Status: In Progress
 - [x] **[HIGH] [QUAL-02] Align `shared`, `sharedDefaults`, and `cleanAfterDeploy` in YAML Templates vs. `deploy.ts`**
   - **Location**: `src/commands/deploy.ts:98, 107, 185`, `templates/node.yaml:14`, `templates/fastapi.yaml:14`, `templates/laravel.yaml:14`
   - **Issue**: Starter YAML templates place `shared`, `sharedDefaults`, and `cleanAfterDeploy` inside `build:`. `deploy.ts` checks root-level `cfg.shared`, `cfg.sharedDefaults`, and `cfg.cleanAfterDeploy`. As a result, shared symlinking and cleanup are silently skipped for projects using YAML templates.
-  - **Fix**: Fallback to `cfg.shared ?? cfg.build?.shared`, `cfg.sharedDefaults ?? cfg.build?.sharedDefaults`, and `cfg.cleanAfterDeploy ?? cfg.build?.cleanAfterDeploy`.
-
+  - **Fix**: Fallback to `cfg.shared ?? cfg.build?.shared`, `cfg.sharedDefaults ?? cfg.build?.sharedDefaults`, and `cfg.cleanAfterDeploy ?? cfg.build?.cleanAfterDeploy`.\n
 - [x] **[HIGH] [QUAL-03] Align JSON Templates with `cfg.build` Schema**
   - **Location**: `src/features/strategy.ts:7`, `templates/node.json:3-5`, `templates/laravel.json:2-4`
   - **Issue**: `templates/node.json` and `laravel.json` define `strategy`, `include`, and `buildDir` at the root object instead of inside `build:`. `strategy.ts` looks for `cfg.build?.strategy`, falling back to `"copy"` with 0 files found.
   - **Fix**: Update JSON templates to nest build settings under `"build": { ... }` and add defensive fallback in `strategy.ts` (`cfg.build?.strategy ?? cfg.strategy`).
 
-- [ ] **[MEDIUM] [QUAL-05] Load `.env.dploy` in `loadConfig`**
+- [x] **[MEDIUM] [QUAL-05] Load `.env.dploy` in `loadConfig`**
   - **Location**: `src/core/config.ts:61-68`
   - **Issue**: Starter files instruct users to copy to `.env.dploy`, and `.gitignore` excludes `.env.dploy`, but `loadDotenv()` only loads `.env`. Any settings placed in `.env.dploy` are ignored.
   - **Fix**: Check for `.env.dploy` first in `loadDotenv()`, then fallback to `.env`.
@@ -76,9 +75,7 @@ Review Status: In Progress
 
 - [ ] **[MEDIUM] [PERF-02] Add Abort Timeout to HTTP Health Check**
   - **Location**: `src/commands/health.ts:25`
-  - **Issue**: `await fetch(url)` lacks a timeout. If the health check endpoint hangs or deadlocks, `dploy health` hangs indefinitely in CI/CD pipelines.
-  - **Fix**: Pass `{ signal: AbortSignal.timeout(env.healthCheckTimeout ?? 10000) }` to `fetch()``.
-
+  - **Issue**: `await fetch(url)` lacks a timeout. If the health check endpoint hangs or deadlocks, `dploy health` hangs indefinitely in CI/CD pipelines.\n  - **Fix**: Pass `{ signal: AbortSignal.timeout(env.healthCheckTimeout ?? 10000) }` to `fetch()``.\n
 - [ ] **[LOW] [QUAL-06] Clean Up Dead Code and False Warnings in Commander `preAction` Hook**
   - **Location**: `bin/dploy.ts:42-63`
   - **Issue**: Hook loads configuration into `(thisCommand as any).config`, but no command ever reads it. Defaulting to `opts.env = "production"` outputs a false warning (`[HOOK] Error: Environment 'production' not found`) for commands like `dploy build`.
@@ -106,8 +103,7 @@ Review Status: In Progress
 - [ ] **[MEDIUM] Unit Tests for Packaging Strategies**
   - **Location**: `tests/strategy.test.ts` (new)
   - **Gap**: Only `include` strategy is tested indirectly. `copy`, `exclude`, and `hybrid` strategies have no dedicated tests.
-  - **Action**: Add dedicated tests in `tests/strategy.test.ts covering globbing, optional copy files, and missing required copy files.
-
+  - **Action**: Add dedicated tests in `tests/strategy.test.ts covering globbing, optional copy files, and missing required copy files.\n
 - [ ] **[MEDIUM] Unit Tests for Shared Resource Linking**
   - **Location**: `tests/shared.test.ts` (new)
   - **Gap**: `linkShared` in `src/features/shared.ts` is completely untested.
@@ -148,42 +144,3 @@ Add a dedicated command (`dploy provision` / alias `dploy setup-server`) to prep
 - `-n, --dry-run`: Preview planned server changes without executing.
 - `--force`: Re-run all steps even if directories/files exist.
 - `--skip-checks`: Skip prerequisite verification (tar, curl, runtime).
-- `--only <step>`: Run a specific provisioning step (`dirs`, `shared`, `permissions`, `runtime`, `service`, `health`).
-- `--json`: Output machine-readable JSON status.
-
-### Configuration Schema (`provision` block in `deploy.config.yml`)
-```yaml
-environments:
-  production:
-    host: ${DPLOY_HOST}
-    username: ${DPLOY_USER}
-    deployTo: /var/www/myapp
-    keepVersions: 5
-    provision:
-      enabled: true
-      createDirs: true
-      configurePermissions: true
-      seedShared: true
-      checkPrerequisites: true
-      dirs:
-        - releases
-        - shared
-        - tmp
-        - logs
-      permissions:
-        owner: deploy
-        group: www-data
-        mode: "755"
-        sharedMode: "775"
-      runtime:
-        node: "20"
-      service:
-        type: systemd
-        name: myapp
-```
-
-### Planned Implementation Phases
-1. **Phase 1: Core Provisioning**: `src/commands/provision.ts`, base directory creation, shared seeding, permission application, dry-run mode.
-2. **Phase 2: Prerequisite Checks & Idempotency**: Verify remote binaries (`tar`, `curl`, `node`), safe non-destructive checks, `--json` output.
-3. **Phase 3: Service & Web Server Integration**: Systemd / PM2 service templates and nginx config generation.
-4. **Phase 4: Starter Templates & Documentation**: Update `templates/` and `README.md` with provisioning defaults.
