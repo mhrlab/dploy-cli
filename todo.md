@@ -26,12 +26,12 @@ Review Status: In Progress
   - **Issue**: CLI options (`--version`) and remote path strings (`releaseDir`) are concatenated directly into raw shell commands (`mkdir -p "${releaseDir}" && tar -xzf ...`). Special characters or shell metacharacters in version strings allow remote code execution.
   - **Fix**: Enforce strict alphanumeric regex `/^[a-zA-Z0-9._-]+$/` in `detectVersion` / `assertValidVersion`, and sanitize path strings before shell interpolation.
 
-- [ ] **[HIGH] [SEC-03] Fix Local Path Traversal in Packaging / Staging**
+- [x] **[HIGH] [SEC-03] Fix Local Path Traversal in Packaging / Staging**
   - **Location**: `src/features/packager.ts:58-61`, `src/features/strategy.ts:25-32`
   - **Issue**: `copy` strategy entries copy files directly to `path.join(stagingDir, f.to)` without verifying that `f.to` stays inside `stagingDir`. Traversal paths (e.g. `../../target`) can overwrite arbitrary files on the local machine during packaging.
   - **Fix**: Validate that `path.resolve(stagingDir, f.to)` is strictly contained within `path.resolve(stagingDir)`.
 
-- [ ] **[MEDIUM] [SEC-04] Disable Dangerous Symlink Dereferencing During Artifact Packaging**
+- [x] **[MEDIUM] [SEC-04] Disable Dangerous Symlink Dereferencing During Artifact Packaging**
   - **Location**: `src/features/packager.ts:60`
   - **Issue**: `fs.copy(f.from, dest, { dereference: true })` resolves symlinks on the host. Symlinks pointing to sensitive host directories (e.g., `~/.ssh` or `/etc`) get bundled into deployment archives.
   - **Fix**: Set `{ dereference: false }` or validate symlink targets against the project root.
@@ -77,7 +77,7 @@ Review Status: In Progress
 - [ ] **[MEDIUM] [PERF-02] Add Abort Timeout to HTTP Health Check**
   - **Location**: `src/commands/health.ts:25`
   - **Issue**: `await fetch(url)` lacks a timeout. If the health check endpoint hangs or deadlocks, `dploy health` hangs indefinitely in CI/CD pipelines.
-  - **Fix**: Pass `{ signal: AbortSignal.timeout(env.healthCheckTimeout ?? 10000) }` to `fetch()`.
+  - **Fix**: Pass `{ signal: AbortSignal.timeout(env.healthCheckTimeout ?? 10000) }` to `fetch()``.
 
 - [ ] **[LOW] [QUAL-06] Clean Up Dead Code and False Warnings in Commander `preAction` Hook**
   - **Location**: `bin/dploy.ts:42-63`
@@ -96,7 +96,8 @@ Review Status: In Progress
 
 ---
 
-## 5. Test Coverage Gaps\n
+## 5. Test Coverage Gaps
+
 - [ ] **[MEDIUM] Unit Tests for Core Commands**
   - **Location**: `tests/commands.test.ts` (new)
   - **Gap**: Zero automated tests exist for `deploy.ts`, `build.ts`, `rollback.ts`, `list.ts`, `clean.ts`, `status.ts`, `health.ts`, and `init.ts`.

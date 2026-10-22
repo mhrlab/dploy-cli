@@ -34,6 +34,14 @@ export async function planBuildArtifact(options: {
     const artifactPath = path.join(outDir, `release-${version}.tar.gz`);
     const files = await resolveFiles(cwd, cfg);
 
+    for (const f of files) {
+        const destPath = path.resolve(stagingDir, f.to);
+        const rel = path.relative(stagingDir, destPath);
+        if (rel.startsWith("..") || path.isAbsolute(rel)) {
+            throw new Error(`Path traversal detected: target path '${f.to}' resolves outside staging directory`);
+        }
+    }
+
     return { outDir, stagingDir, artifactPath, files };
 }
 
@@ -68,8 +76,13 @@ export async function buildArtifact(options: {
 
     for (const f of files) {
         log.debug(`Copying file: ${f.from} -> ${f.to}`);
-        await fs.ensureDir(path.dirname(path.join(stagingDir, f.to)));
-        await fs.copy(f.from, path.join(stagingDir, f.to), { dereference: true });
+        const destPath = path.resolve(stagingDir, f.to);
+        const rel = path.relative(stagingDir, destPath);
+        if (rel.startsWith("..") || path.isAbsolute(rel)) {
+            throw new Error(`Path traversal detected: target path '${f.to}' resolves outside staging directory`);
+        }
+        await fs.ensureDir(path.dirname(destPath));
+        await fs.copy(f.from, destPath, { dereference: false });
     }
 
     log.verbose(`Creating artifact: ${artifactPath}`);
