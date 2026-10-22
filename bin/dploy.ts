@@ -8,9 +8,8 @@ import { clean } from "../src/commands/clean.js";
 import { status } from "../src/commands/status.js";
 import { health } from "../src/commands/health.js";
 import { init } from "../src/commands/init.js";
-import {log, setLogLevel} from "../src/core/logger.js";
+import { setLogLevel } from "../src/core/logger.js";
 import { getAppVersion } from "../src/core/utils.js";
-import { loadConfig, getEnvironmentConfig } from "../src/core/config.js";
 
 
 
@@ -47,33 +46,10 @@ async function main() {
         .version(getAppVersion(), "-a, --app-version");
 
     // Hook to set log levels before executing any command
-    program.hook("preAction", async (thisCommand) => {
-        let opts = thisCommand.opts();
+    program.hook("preAction", (thisCommand) => {
+        const opts = thisCommand.opts();
         setLogLevel(!!opts.debug, !!opts.verbose || !!opts.dryRun);
-        const skipFor = ["help", "init"];
-
-        if (skipFor.includes(thisCommand.name())) {
-            log.debug(`[HOOK] Skipping hook for ${thisCommand.name()}`);
-            return;
-        }
-
-        opts = thisCommand.opts();
-        const cwd = process.cwd();
-
-        try {
-            const config = await loadConfig(cwd);
-            const envConf = getEnvironmentConfig(config, opts.env);
-
-            (thisCommand as any).config = config;
-            (thisCommand as any).envConf = envConf;
-        } catch (err) {
-            log.warn(`[HOOK] ${err}`);
-        }
     });
-
-
-
-
 
     // Commands
     program
