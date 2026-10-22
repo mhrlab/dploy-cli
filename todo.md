@@ -98,7 +98,7 @@ Review Status: In Progress
 
 ## 5. Test Coverage Gaps
 
-- [ ] **[MEDIUM] Unit Tests for Core Commands**
+- [x] **[MEDIUM] Unit Tests for Core Commands**
   - **Location**: `tests/commands.test.ts` (new)
   - **Gap**: Zero automated tests exist for `deploy.ts`, `build.ts`, `rollback.ts`, `list.ts`, `clean.ts`, `status.ts`, `health.ts`, and `init.ts`.
   - **Action**: Add unit tests using mocked SSH/SFTP fixtures to test command branching, option handling, and error exits.
