@@ -84,7 +84,7 @@ Review Status: In Progress
   - **Issue**: Hook loads configuration into `(thisCommand as any).config`, but no command ever reads it. Defaulting to `opts.env = "production"` outputs a false warning (`[HOOK] Error: Environment 'production' not found`) for commands like `dploy build`.
   - **Fix**: Simplify `preAction` to only set logging verbosity, removing the duplicate config loading.
 
-- [ ] **[LOW] [QUAL-07] Remove Dead Logger Object `log_new`**
+- [x] **[LOW] [QUAL-07] Remove Dead Logger Object `log_new`**
   - **Location**: `src/core/logger.ts:13-25`
   - **Issue**: `log_new` is exported but completely unused across the codebase.
   - **Fix**: Consolidate logger implementation into `log` and remove `log_new`.
