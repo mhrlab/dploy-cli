@@ -1,7 +1,7 @@
 import path from "node:path";
 import { posixJoin } from "../core/utils.js";
 import { exec, listDirs, SSHBundle } from "../core/ssh.js";
-import { formatReleaseLabel, formatReleaseMetadata, readRemoteReleaseMetadata, type ReleaseMetadata } from "./release-metadata.js";
+import { formatReleaseLabel, formatReleaseMetadata, readRemoteReleaseMetadata, type ReleaseMetadata, type ReleaseInfo } from "./release-metadata.js";
 
 export type RemoteRelease = {
     name: string;

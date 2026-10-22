@@ -1,13 +1,13 @@
 # Project Task List & Issue Tracker: dploy-cli
 
 Last Updated: 2026-10-22
-Review Status: Code Audit Complete
+Review Status: In Progress
 
 ---
 
 ## 1. Critical Build Blockers & Runtime Hazards
 
-- [ ] **[CRITICAL] [QUAL-01] Fix TypeScript Compilation Error in `status.ts`**
+- [x] **[CRITICAL] [QUAL-01] Fix TypeScript Compilation Error in `status.ts`**
   - **Location**: `src/features/status.ts:4, 18`
   - **Issue**: `ReleaseInfo` is referenced on line 18 (`releases: ReleaseInfo[];`) but never imported from `./release-metadata.js`. Breaks `tsc` and `npm test` completely.
   - **Fix**: Add `type ReleaseInfo` to the import list from `./release-metadata.js`.
@@ -99,7 +99,7 @@ Review Status: Code Audit Complete
 ## 5. Test Coverage Gaps
 
 - [ ] **[MEDIUM] Unit Tests for Core Commands**
-  - **Location**: `src/commands/*.ts`
+  - **Location**: `tests/commands.test.ts` (new)
   - **Gap**: Zero automated tests exist for `deploy.ts`, `build.ts`, `rollback.ts`, `list.ts`, `clean.ts`, `status.ts`, `health.ts`, and `init.ts`.
   - **Action**: Add unit tests using mocked SSH/SFTP fixtures to test command branching, option handling, and error exits.
 
