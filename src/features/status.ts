@@ -1,7 +1,7 @@
 import path from "node:path";
 import { posixJoin, escapeShellArg } from "../core/utils.js";
-import { exec, listDirs, SSHBundle } from "../core/ssh.js";
-import { formatReleaseLabel, formatReleaseMetadata, readRemoteReleaseMetadata, type ReleaseMetadata, type ReleaseInfo } from "./release-metadata.js";
+import { exec, SSHBundle } from "../core/ssh.js";
+import { formatReleaseLabel, formatReleaseMetadata, fetchRemoteReleases, type ReleaseMetadata, type ReleaseInfo } from "./release-metadata.js";
 
 export type RemoteRelease = {
     name: string;
@@ -32,15 +32,7 @@ export async function collectRemoteStatus(
     const releasesDir = posixJoin(deployTo, "releases");
     const currentLink = posixJoin(deployTo, "current");
 
-    const releases = (await listDirs(bundle.sftp, releasesDir)).sort(
-        (a, b) => b.mtime.getTime() - a.mtime.getTime()
-    );
-    const releaseInfos = await Promise.all(
-        releases.map(async (release) => ({
-            ...release,
-            metadata: await readRemoteReleaseMetadata(bundle, posixJoin(releasesDir, release.name)),
-        }))
-    );
+    const releaseInfos = await fetchRemoteReleases(bundle, releasesDir);
 
     const { stdout } = await exec(bundle.ssh, `readlink -f ${escapeShellArg(currentLink)} || true`);
     const currentTarget = stdout.trim() || null;

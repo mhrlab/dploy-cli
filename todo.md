@@ -69,7 +69,7 @@ Review Status: In Progress
   - **Issue**: Neither `stream` nor `stream.stderr` handles `'error'` events. Any network interruption or channel fault causes an unhandled Node EventEmitter error, terminating the CLI process immediately and bypassing cleanup handlers.
   - **Fix**: Attach `.on("error", (err) => reject(err))` to `stream` and `stream.stderr`.
 
-- [ ] **[MEDIUM] [PERF-01] Eliminate Concurrent SSH Channel Exhaustion in `list` & `status`**
+- [x] **[MEDIUM] [PERF-01] Eliminate Concurrent SSH Channel Exhaustion in `list` & `status`**
   - **Location**: `src/features/status.ts:31-38`, `src/commands/list.ts:33-40`
   - **Issue**: `Promise.all(dirs.map(readRemoteReleaseMetadata))` opens concurrent `ssh.exec()` channels simultaneously for all releases on the server. If releases exceed OpenSSH `MaxSessions` (typically 10), commands crash with channel open errors.
   - **Fix**: Batch execution with a concurrency limit (e.g., chunk size 3-5) or fetch all release metadata in a single combined remote shell command.

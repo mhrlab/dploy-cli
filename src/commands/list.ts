@@ -1,8 +1,8 @@
 import { loadConfig, getEnvName } from "../core/config.js";
-import { connect, close, listDirs } from "../core/ssh.js";
+import { connect, close } from "../core/ssh.js";
 import { log } from "../core/logger.js";
 import { posixJoin } from "../core/utils.js";
-import { readRemoteReleaseMetadata, formatReleaseLabel } from "../features/release-metadata.js";
+import { fetchRemoteReleases, formatReleaseLabel } from "../features/release-metadata.js";
 
 export async function list(opts: { env?: string }) {
     log.debug(`List command started with options: ${JSON.stringify(opts)}`);
@@ -29,14 +29,7 @@ export async function list(opts: { env?: string }) {
 
     try {
         log.verbose(`Listing releases in: ${releases}`);
-        const dirs_list = await listDirs(bundle.sftp, releases);
-        const dirs = dirs_list.sort((a, b) => b.mtime.getTime() - a.mtime.getTime());
-        const releasesWithMetadata = await Promise.all(
-            dirs.map(async (release) => ({
-                ...release,
-                metadata: await readRemoteReleaseMetadata(bundle, posixJoin(releases, release.name)),
-            }))
-        );
+        const releasesWithMetadata = await fetchRemoteReleases(bundle, releases);
 
         log.debug(`Found ${releasesWithMetadata.length} releases: ${JSON.stringify(releasesWithMetadata)}`);
 

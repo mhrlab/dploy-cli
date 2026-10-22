@@ -1,6 +1,6 @@
 import path from "node:path";
-import { exec, type SSHBundle } from "../core/ssh.js";
-import { escapeShellArg } from "../core/utils.js";
+import { exec, listDirs, type SSHBundle } from "../core/ssh.js";
+import { escapeShellArg, mapConcurrent } from "../core/utils.js";
 
 export const RELEASE_METADATA_FILE = "deploy-metadata.json";
 
@@ -38,9 +38,12 @@ export function parseReleaseMetadata(raw: string): ReleaseMetadata | null {
     const text = raw.trim();
     if (!text) return null;
 
-    const data = JSON.parse(text) as Partial<ReleaseMetadata>;
-    if (!data.version || !data.deployedAt || !data.environment) {
-        return null;
+    const data = JSON.parse(text);
+    if (!data || typeof data !== "object") {
+        throw new Error("Invalid release metadata payload");
+    }
+    if (typeof data.version !== "string" || typeof data.deployedAt !== "string" || typeof data.environment !== "string") {
+        throw new Error("Release metadata is missing required fields");
     }
 
     return {
@@ -85,6 +88,19 @@ export async function readRemoteReleaseMetadata(bundle: SSHBundle, releaseDir: s
     } catch {
         return null;
     }
+}
+
+export async function fetchRemoteReleases(
+    bundle: SSHBundle,
+    releasesDir: string,
+    concurrency: number = 5
+): Promise<ReleaseInfo[]> {
+    const dirsList = await listDirs(bundle.sftp, releasesDir);
+    const sorted = dirsList.sort((a, b) => b.mtime.getTime() - a.mtime.getTime());
+    return await mapConcurrent(sorted, concurrency, async (release) => ({
+        ...release,
+        metadata: await readRemoteReleaseMetadata(bundle, path.posix.join(releasesDir, release.name)),
+    }));
 }
 
 function formatDateTime(value: Date): string {

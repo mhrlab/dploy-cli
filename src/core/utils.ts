@@ -129,3 +129,27 @@ export async function updateGitignore() {
         log.verbose(".gitignore already contains all required entries. No changes made.");
     }
 }
+
+/**
+ * Maps items asynchronously with a concurrency limit.
+ */
+export async function mapConcurrent<T, R>(
+    items: T[],
+    limit: number,
+    fn: (item: T, index: number) => Promise<R>
+): Promise<R[]> {
+    if (items.length === 0) return [];
+    const concurrency = Math.max(1, Math.min(limit, items.length));
+    const results: R[] = new Array(items.length);
+    let index = 0;
+
+    const workers = Array.from({ length: concurrency }, async () => {
+        while (index < items.length) {
+            const currentIndex = index++;
+            results[currentIndex] = await fn(items[currentIndex], currentIndex);
+        }
+    });
+
+    await Promise.all(workers);
+    return results;
+}
