@@ -1,6 +1,7 @@
 import path from "node:path";
-import { posixJoin } from "../core/utils.js";
-import { exec, listDirs, SSHBundle } from "../core/ssh.js";
+import { posixJoin, escapeShellArg } from "../core/utils.js";
+import { exec, SSHBundle } from "../core/ssh.js";
+import { formatReleaseLabel, formatReleaseMetadata, fetchRemoteReleases, type ReleaseMetadata, type ReleaseInfo } from "./release-metadata.js";
 
 export type RemoteRelease = {
     name: string;
@@ -14,8 +15,9 @@ export type RemoteStatus = {
     deployTo: string;
     currentTarget: string | null;
     currentRelease: string | null;
-    releases: RemoteRelease[];
+    releases: ReleaseInfo[];
     lastDeployAt: Date | null;
+    currentReleaseMetadata: ReleaseMetadata | null;
 };
 
 function formatDateTime(value: Date): string {
@@ -30,22 +32,23 @@ export async function collectRemoteStatus(
     const releasesDir = posixJoin(deployTo, "releases");
     const currentLink = posixJoin(deployTo, "current");
 
-    const releases = (await listDirs(bundle.sftp, releasesDir)).sort(
-        (a, b) => b.mtime.getTime() - a.mtime.getTime()
-    );
+    const releaseInfos = await fetchRemoteReleases(bundle, releasesDir);
 
-    const { stdout } = await exec(bundle.ssh, `readlink -f "${currentLink}" || true`);
+    const { stdout } = await exec(bundle.ssh, `readlink -f ${escapeShellArg(currentLink)} || true`);
     const currentTarget = stdout.trim() || null;
     const currentRelease = currentTarget ? path.posix.basename(currentTarget) : null;
-    const lastDeployAt = releases[0]?.mtime ?? null;
+    const currentReleaseMetadata = releaseInfos.find((release) => release.name === currentRelease)?.metadata ?? null;
+    const latestRelease = releaseInfos[0] ?? null;
+    const lastDeployAt = latestRelease?.metadata ? new Date(latestRelease.metadata.deployedAt) : latestRelease?.mtime ?? null;
 
     return {
         envName,
         deployTo,
         currentTarget,
         currentRelease,
-        releases,
+        releases: releaseInfos,
         lastDeployAt,
+        currentReleaseMetadata,
     };
 }
 
@@ -60,6 +63,9 @@ export function formatRemoteStatus(status: RemoteStatus): string[] {
     }
     lines.push(`Deploy path: ${status.deployTo}`);
     lines.push(`Current release: ${releaseLabel}`);
+    if (status.currentReleaseMetadata) {
+        lines.push(`Current metadata: ${formatReleaseMetadata(status.currentReleaseMetadata)}`);
+    }
     lines.push(`Last deploy: ${lastDeployLabel}`);
     lines.push(`Available releases (${status.releases.length}):`);
 
@@ -69,8 +75,7 @@ export function formatRemoteStatus(status: RemoteStatus): string[] {
     }
 
     for (const release of status.releases) {
-        const marker = release.name === status.currentRelease ? " [current]" : "";
-        lines.push(`  - ${release.name}${marker} (${formatDateTime(release.mtime)})`);
+        lines.push(`  - ${formatReleaseLabel(release, status.currentRelease)}`);
     }
 
     return lines;

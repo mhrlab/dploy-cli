@@ -1,6 +1,12 @@
 import { loadConfig, getEnvName } from "../core/config.js";
 import { log } from "../core/logger.js";
 
+export async function performHealthCheck(url: string, timeoutMs: number = 10000): Promise<{ ok: boolean; status: number; text: string }> {
+    const res = await fetch(url, { signal: AbortSignal.timeout(timeoutMs) });
+    const text = await res.text();
+    return { ok: res.ok, status: res.status, text };
+}
+
 export async function health(opts: { env?: string }) {
     log.debug(`Health command started with options: ${JSON.stringify(opts)}`);
 
@@ -21,21 +27,21 @@ export async function health(opts: { env?: string }) {
     }
 
     const url = new URL(path, base).toString();
-    log.info(`Performing health check: GET ${url}`);
+    const timeoutMs = Number(env.healthCheckTimeout ?? process.env.DPLOY_HEALTH_CHECK_TIMEOUT ?? 10000);
+    log.info(`Performing health check: GET ${url} (timeout: ${timeoutMs}ms)`);
 
     try {
         log.verbose(`Sending HTTP request to health endpoint`);
-        const res = await fetch(url);
-        const text = await res.text();
-        log.debug(`Health check response - status: ${res.status}, content length: ${text.length}`);
+        const { ok, status, text } = await performHealthCheck(url, timeoutMs);
+        log.debug(`Health check response - status: ${status}, content length: ${text.length}`);
 
-        if (res.ok) {
-            log.ok(`Health check passed (${res.status})`);
+        if (ok) {
+            log.ok(`Health check passed (${status})`);
             if (text.trim()) {
                 console.log(text);
             }
         } else {
-            log.warn(`Health check failed (${res.status})`);
+            log.warn(`Health check failed (${status})`);
             if (text.trim()) {
                 console.log(text);
             }

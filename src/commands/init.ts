@@ -4,11 +4,10 @@ import { fileURLToPath } from "node:url";
 import inquirer from "inquirer";
 import { log } from "../core/logger.js";
 import { configFiles } from "../core/config.js";
-import { updateGitignore } from "../core/utils.js";
+import { updateGitignore, findPackageRoot } from "../core/utils.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-// dist/src/commands → go back 3 levels → project root → templates
-const templatesDir = path.resolve(__dirname, "../../../templates");
+const templatesDir = path.resolve(findPackageRoot(__dirname), "templates");
 
 export async function init(opts: { template?: string }) {
     log.debug(`Init started with template: ${opts.template || "interactive"}`);

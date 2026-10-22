@@ -40,13 +40,17 @@ npx dploy-cli
 * **Environment-specific deploys**: Supports multiple environments such as `production` and `staging`.
 * **Packaging strategies**: Supports `include`, `exclude`, `copy`, and `hybrid` file selection.
 * **Shared paths**: Keeps files like `.env` or `storage` persistent across deployments.
-* **Rollback support**: Switch back to an older release from the remote server.
+* **Rollback support**: Switch back to an older release from the remote server, or use `--latest` / `--to <version>` for non-interactive rollbacks.
 * **Health checks**: Can call a configured health endpoint after deployment.
 * **Hooks**: Runs local `preBuild` / `postBuild` hooks and remote `preDeploy` / `postDeploy` hooks.
 * **Verbose logging**: Supports `--verbose` and `--debug` output for troubleshooting.
 * **Template initialization**: Generates starter config files for Node.js, Laravel, and FastAPI projects.
 * **Dry-run mode**: Shows planned build, deploy, and clean actions without changing anything.
 * **CLI version flag**: Use `--app-version` to print the tool version.
+* **Deploy without build**: Reuse an existing local archive with `--skip-build`.
+* **Custom archive upload**: Upload a manually created archive with `--artifact` or `--archive`.
+* **Checksum verification**: Verifies SHA256 after upload to catch corrupted transfers.
+* **Release metadata**: Writes `deploy-metadata.json` into each release so `list` and `status` can show version, timestamp, commit, and environment.
 
 ---
 
@@ -78,12 +82,18 @@ After installation, you can run `dploy` commands from the command line.
 
   ```bash
   dploy deploy -e <environment> -V 1.2.3 --dry-run
+  dploy deploy -e <environment> --skip-build
+  dploy deploy -e <environment> --artifact ./my-release.tar.gz
+  dploy deploy -e <environment> --archive ./my-release.tar.gz
   ```
 
 * **Rollback to previous release**:
 
   ```bash
   dploy rollback
+  dploy rollback --latest
+  dploy rollback --to v0.1.24-62ef2ff
+  dploy rollback --dry-run
   ```
 
 * **List releases on a remote server**:
@@ -91,6 +101,8 @@ After installation, you can run `dploy` commands from the command line.
   ```bash
   dploy list -e production
   ```
+
+  Each release line includes metadata when a `deploy-metadata.json` file is present.
 
 * **Clean old releases**:
 
@@ -103,6 +115,8 @@ After installation, you can run `dploy` commands from the command line.
   ```bash
   dploy status -e production
   ```
+
+  The status view includes the active release metadata when available.
 
 * **Run a health check**:
 

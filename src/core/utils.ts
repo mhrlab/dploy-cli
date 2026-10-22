@@ -24,15 +24,28 @@ export function safeExec(cmd: string): string | undefined {
     }
 }
 
+export function assertValidVersion(version: string): void {
+    if (!/^[a-zA-Z0-9._-]+$/.test(version)) {
+        throw new Error(`Invalid version format: '${version}'. Only alphanumeric, '.', '_', and '-' are allowed.`);
+    }
+}
+
+export function escapeShellArg(arg: string): string {
+    return `'${arg.replace(/'/g, "'\\''")}'`;
+}
 
 export function detectVersion(override?: string): string {
-    if (override) return override;
+    if (override) {
+        assertValidVersion(override);
+        return override;
+    }
     const pkgVersion = safeExec("node -p \"require('./package.json').version\"");
     const shortSha = safeExec("git rev-parse --short HEAD");
     const now = new Date();
     const stamp = now.toISOString().replace(/[-:T.Z]/g, "").slice(0, 14); // YYYYMMDDHHMMSS
-    if (pkgVersion) return `v${pkgVersion}-${shortSha ?? stamp}`;
-    return `v${stamp}${shortSha ? `-${shortSha}` : ""}`;
+    const version = pkgVersion ? `v${pkgVersion}-${shortSha ?? stamp}` : `v${stamp}${shortSha ? `-${shortSha}` : ""}`;
+    assertValidVersion(version);
+    return version;
 }
 
 
@@ -53,26 +66,33 @@ export function getReadableFileSize(sizeInBytes: number, decimals: number = 2): 
 
 
 /**
+ * Traverse upward to find the root directory containing package.json
+ */
+export function findPackageRoot(startDir: string = dirname(fileURLToPath(import.meta.url))): string {
+    let current = path.resolve(startDir);
+    while (true) {
+        if (fs.existsSync(path.join(current, "package.json"))) {
+            return current;
+        }
+        const parent = path.dirname(current);
+        if (parent === current) {
+            return startDir;
+        }
+        current = parent;
+    }
+}
+
+/**
  * Reads the version from the project's package.json file.
  * @returns {string} The version string from package.json, or 'unknown' if not found.
  */
 export function getAppVersion(): string {
     try {
-        // Determine the directory of the current module's file.
-        const __filename = fileURLToPath(import.meta.url);
-        const __dirname = dirname(__filename);
-
-        // Construct the path to the package.json file, which is assumed to be
-        // one directory level up from the current file.
-        const packageJsonPath = join(__dirname, '..', '..', '..', 'package.json');
-
-        // Read the file and parse the JSON.
-        const packageJson = JSON.parse(readFileSync(packageJsonPath, 'utf8'));
-
-        // Return the version.
-        return packageJson.version;
+        const root = findPackageRoot();
+        const packageJsonPath = path.join(root, "package.json");
+        const packageJson = JSON.parse(readFileSync(packageJsonPath, "utf8"));
+        return packageJson.version || "unknown";
     } catch (error: any) {
-        console.error("Error reading package.json:", error.message);
         return "unknown";
     }
 }
@@ -117,4 +137,26 @@ export async function updateGitignore() {
     }
 }
 
+/**
+ * Maps items asynchronously with a concurrency limit.
+ */
+export async function mapConcurrent<T, R>(
+    items: T[],
+    limit: number,
+    fn: (item: T, index: number) => Promise<R>
+): Promise<R[]> {
+    if (items.length === 0) return [];
+    const concurrency = Math.max(1, Math.min(limit, items.length));
+    const results: R[] = new Array(items.length);
+    let index = 0;
 
+    const workers = Array.from({ length: concurrency }, async () => {
+        while (index < items.length) {
+            const currentIndex = index++;
+            results[currentIndex] = await fn(items[currentIndex], currentIndex);
+        }
+    });
+
+    await Promise.all(workers);
+    return results;
+}

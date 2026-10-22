@@ -1,7 +1,8 @@
 import { loadConfig, getEnvName } from "../core/config.js";
-import { connect, close, listDirs } from "../core/ssh.js";
+import { connect, close } from "../core/ssh.js";
 import { log } from "../core/logger.js";
 import { posixJoin } from "../core/utils.js";
+import { fetchRemoteReleases, formatReleaseLabel } from "../features/release-metadata.js";
 
 export async function list(opts: { env?: string }) {
     log.debug(`List command started with options: ${JSON.stringify(opts)}`);
@@ -12,6 +13,7 @@ export async function list(opts: { env?: string }) {
 
     const env = cfg.environments?.[envName];
     if (!env) throw new Error(`Unknown environment: ${envName}`);
+    if (!env.deployTo) throw new Error(`Environment '${envName}' is missing deployTo`);
 
     const releases = posixJoin((env.deployTo ? env.deployTo : ''), "releases");
     log.debug(`Releases directory: ${releases}`);
@@ -27,17 +29,16 @@ export async function list(opts: { env?: string }) {
 
     try {
         log.verbose(`Listing releases in: ${releases}`);
-        const dirs_list = await listDirs(bundle.sftp, releases);
-        const dirs = dirs_list.sort((a, b) => b.mtime.getTime() - a.mtime.getTime());
+        const releasesWithMetadata = await fetchRemoteReleases(bundle, releases);
 
-        log.debug(`Found ${dirs.length} releases: ${JSON.stringify(dirs)}`);
+        log.debug(`Found ${releasesWithMetadata.length} releases: ${JSON.stringify(releasesWithMetadata)}`);
 
-        if (!dirs.length) {
+        if (!releasesWithMetadata.length) {
             log.warn("No releases found");
         } else {
-            log.ok(`Found ${dirs.length} release(s):`);
-            for (const d of dirs.sort()) {
-                console.log("  -", d);
+            log.ok(`Found ${releasesWithMetadata.length} release(s):`);
+            for (const release of releasesWithMetadata) {
+                console.log("  -", formatReleaseLabel(release, null));
             }
         }
     } finally {

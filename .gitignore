@@ -38,4 +38,3 @@ Thumbs.db
 # pnpm-lock.yaml
 dploy.config.json
 .env.example
-todo.md

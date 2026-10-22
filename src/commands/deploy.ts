@@ -1,14 +1,20 @@
 import path from "node:path";
+import os from "node:os";
 import { loadConfig, getEnvName } from "../core/config.js";
-import { detectVersion, posixJoin } from "../core/utils.js";
+import { detectVersion, posixJoin, safeExec, escapeShellArg } from "../core/utils.js";
 import { buildArtifact, planBuildArtifact } from "../features/packager.js";
 import { connect, close, ensureRemoteDirs, exec, uploadFile } from "../core/ssh.js";
 import { log } from "../core/logger.js";
 import { linkShared } from "../features/shared.js";
 import {runLocalHooks, runRemoteHooks} from "../core/hooks.js";
 import {cleanupReleases} from "../features/cleaner.js";
+import { resolveDeployArtifact } from "../features/deploy-artifact.js";
+import { verifyArtifactChecksum } from "../features/checksum.js";
+import fs from "fs-extra";
+import { mkdtemp } from "node:fs/promises";
+import { createReleaseMetadata, RELEASE_METADATA_FILE } from "../features/release-metadata.js";
 
-export async function deploy(opts: { env?: string; artifact?: string; version?: string; dryRun?: boolean }) {
+export async function deploy(opts: { env?: string; artifact?: string; archive?: string; version?: string; dryRun?: boolean; skipBuild?: boolean }) {
     log.debug(`Deploy command started with options: ${JSON.stringify(opts)}`);
 
     const cwd = process.cwd();
@@ -18,16 +24,29 @@ export async function deploy(opts: { env?: string; artifact?: string; version?: 
 
     const env = cfg.environments?.[envName];
     if (!env) throw new Error(`Unknown environment: ${envName}`);
+    if (!env.deployTo || typeof env.deployTo !== "string" || !env.deployTo.trim()) {
+        throw new Error(`Environment '${envName}' is missing required 'deployTo' path`);
+    }
+    const remoteRoot = env.deployTo.trim();
+    if (remoteRoot === "/") {
+        throw new Error(`Invalid deployTo path: cannot deploy directly to root '/'`);
+    }
+
+    const sharedItems: string[] = cfg.shared ?? cfg.build?.shared ?? [];
+    const sharedDefaults: Record<string, string> | undefined = cfg.sharedDefaults ?? cfg.build?.sharedDefaults;
+    const cleanAfterDeploy: boolean = cfg.cleanAfterDeploy ?? cfg.build?.cleanAfterDeploy ?? false;
 
     const version = detectVersion(opts.version);
     log.verbose(`Deployment version: ${version}`);
 
     log.info(`Starting deployment to [${envName}] environment (${env.host})`);
 
-    // Build or use provided artifact
-    let artifactPath = opts.artifact ? path.resolve(opts.artifact) : undefined;
-    if (!artifactPath) {
-        if (opts.dryRun) {
+    const customArtifact = opts.artifact ?? opts.archive;
+    const shouldBuild = !customArtifact && !opts.skipBuild;
+    let artifactPath: string;
+
+    if (opts.dryRun) {
+        if (shouldBuild) {
             const plan = await planBuildArtifact({
                 cwd,
                 buildDir: cfg.build?.buildDir,
@@ -51,31 +70,52 @@ export async function deploy(opts: { env?: string; artifact?: string; version?: 
             }
             artifactPath = plan.artifactPath;
         } else {
-            log.info(`No artifact provided, building from source`);
-
-            log.verbose(`Running pre-build hooks`);
-            await runLocalHooks("preBuild", cfg.hooks?.preBuild);
-
-            const result = await buildArtifact({
+            const selection = await resolveDeployArtifact({
                 cwd,
-                buildDir:  cfg.build?.buildDir,
-                version,
                 cfg,
+                version,
+                artifact: opts.artifact,
+                archive: opts.archive,
+                skipBuild: opts.skipBuild,
+                strict: false,
             });
-            artifactPath = result.artifactPath;
-
-            log.debug(`Artifact built successfully: ${artifactPath}`);
-            log.verbose(`Running post-build hooks`);
-            await runLocalHooks("postBuild", cfg.hooks?.postBuild);
+            artifactPath = selection.artifactPath;
+            log.info(`[dry-run] Would skip build phase`);
+            log.info(`[dry-run] Would use ${selection.source === "custom" ? "provided artifact" : "existing prebuilt artifact"}: ${path.basename(artifactPath)}`);
         }
+    } else if (shouldBuild) {
+        log.info(`No artifact provided, building from source`);
 
+        log.verbose(`Running pre-build hooks`);
+        await runLocalHooks("preBuild", cfg.hooks?.preBuild);
+
+        const result = await buildArtifact({
+            cwd,
+            buildDir:  cfg.build?.buildDir,
+            version,
+            cfg,
+        });
+        artifactPath = result.artifactPath;
+
+        log.debug(`Artifact built successfully: ${artifactPath}`);
+        log.verbose(`Running post-build hooks`);
+        await runLocalHooks("postBuild", cfg.hooks?.postBuild);
     } else {
-        log.verbose(`Using provided artifact: ${artifactPath}`);
-        log.info(`Using provided artifact: ${path.basename(artifactPath)}`);
+        const selection = await resolveDeployArtifact({
+            cwd,
+            cfg,
+            version,
+            artifact: opts.artifact,
+            archive: opts.archive,
+            skipBuild: opts.skipBuild,
+            strict: true,
+        });
+        artifactPath = selection.artifactPath;
+        log.info(selection.source === "custom" ? `Using provided artifact: ${path.basename(artifactPath)}` : `Using prebuilt artifact: ${path.basename(artifactPath)}`);
+        log.verbose(`Using artifact path: ${artifactPath}`);
     }
 
     if (opts.dryRun) {
-        const remoteRoot = env.deployTo ? env.deployTo : '';
         const releases = posixJoin(remoteRoot, "releases");
         const currentLink = posixJoin(remoteRoot, "current");
         const tmp = posixJoin(remoteRoot, "tmp");
@@ -85,9 +125,10 @@ export async function deploy(opts: { env?: string; artifact?: string; version?: 
 
         log.info(`[dry-run] Would connect to ${env.username}@${env.host}`);
         log.info(`[dry-run] Would upload ${path.basename(artifactPath!)} to ${remoteTar}`);
+        log.info(`[dry-run] Would write ${RELEASE_METADATA_FILE} into the release directory`);
         log.info(`[dry-run] Would extract into ${releaseDir}`);
-        if (cfg.shared?.length) {
-            log.info(`[dry-run] Would link shared items: ${cfg.shared.join(", ")}`);
+        if (sharedItems.length) {
+            log.info(`[dry-run] Would link shared items: ${sharedItems.join(", ")}`);
         }
         log.info(`[dry-run] Would switch current symlink to ${currentLink}`);
         if (cfg.hooks?.preDeploy?.length) {
@@ -101,15 +142,15 @@ export async function deploy(opts: { env?: string; artifact?: string; version?: 
             log.info(`[dry-run] No postDeploy hooks configured`);
         }
         log.info(`[dry-run] Would clean old releases, keeping ${keep} version(s)`);
-        if (cfg.cleanAfterDeploy) {
+        if (cleanAfterDeploy && tmp && tmp !== "/") {
             log.info(`[dry-run] Would remove temporary upload directory ${tmp}`);
         }
+        log.info(`[dry-run] Would verify SHA256 checksum after upload`);
         return;
     }
 
     log.verbose(`Preparing for artifact uploading to remote server.`);
 
-    const remoteRoot = env.deployTo ? env.deployTo : '';
     const releases = posixJoin(remoteRoot, "releases");
     const currentLink = posixJoin(remoteRoot, "current");
     const tmp = posixJoin(remoteRoot, "tmp");
@@ -135,13 +176,30 @@ export async function deploy(opts: { env?: string; artifact?: string; version?: 
         log.info(`Uploading deployment artifact...`);
         await uploadFile(bundle.sftp, artifactPath!, remoteTar);
 
+        log.verbose(`Verifying uploaded artifact checksum`);
+        const checksum = log.spinner("Verifying checksum...");
+        try {
+            const { localHash, remoteHash } = await verifyArtifactChecksum({
+                ssh: bundle.ssh,
+                localPath: artifactPath!,
+                remotePath: remoteTar,
+            });
+            checksum.succeed("Checksum verified");
+            log.ok(`Checksum verified (${localHash.slice(0, 12)}...)`);
+            log.debug(`Local checksum: ${localHash}`);
+            log.debug(`Remote checksum: ${remoteHash}`);
+        } catch (error) {
+            checksum.fail("Checksum verification failed");
+            throw error;
+        }
+
         // Extract release
-        log.debug(`Executing extract command: mkdir -p "${releaseDir}" && tar -xzf "${remoteTar}" -C "${releaseDir}" && rm -f "${remoteTar}"`);
+        log.debug(`Executing extract command: mkdir -p ${escapeShellArg(releaseDir)} && tar -xzf ${escapeShellArg(remoteTar)} -C ${escapeShellArg(releaseDir)} && rm -f ${escapeShellArg(remoteTar)}`);
         const extract = log.spinner("Extracting release...");
 
         const { code, stderr } = await exec(
             bundle.ssh,
-            `mkdir -p "${releaseDir}" && tar -xzf "${remoteTar}" -C "${releaseDir}" && rm -f "${remoteTar}"`
+            `mkdir -p ${escapeShellArg(releaseDir)} && tar -xzf ${escapeShellArg(remoteTar)} -C ${escapeShellArg(releaseDir)} && rm -f ${escapeShellArg(remoteTar)}`
         );
         if (code !== 0) throw new Error(stderr || "remote extract failed");
         extract.succeed(`Extracted ${version}`);
@@ -151,12 +209,12 @@ export async function deploy(opts: { env?: string; artifact?: string; version?: 
         await runRemoteHooks(bundle.ssh, "preDeploy", cfg.hooks?.preDeploy, releaseDir);
 
         // Link shared items
-        if (cfg.shared?.length) {
-            log.verbose(`Linking ${cfg.shared.length} shared items`);
-            log.debug(`Shared items: ${JSON.stringify(cfg.shared)}`);
+        if (sharedItems.length) {
+            log.verbose(`Linking ${sharedItems.length} shared items`);
+            log.debug(`Shared items: ${JSON.stringify(sharedItems)}`);
             const spinShared = log.spinner("Linking shared items...");
-            await linkShared(bundle.ssh, remoteRoot, releaseDir, cfg.shared, cfg.sharedDefaults);
-            spinShared.succeed(`Linking completed for ${cfg.shared.length} shared items`);
+            await linkShared(bundle.ssh, remoteRoot, releaseDir, sharedItems, sharedDefaults);
+            spinShared.succeed(`Linking completed for ${sharedItems.length} shared items`);
         } else {
             log.verbose(`No shared items to link`);
         }
@@ -165,7 +223,7 @@ export async function deploy(opts: { env?: string; artifact?: string; version?: 
         log.verbose(`Switching current symlink to new release`);
         log.info(`Activating new release...`);
 
-        await exec(bundle.ssh, `ln -sfn "${releaseDir}" "${currentLink}"`);
+        await exec(bundle.ssh, `ln -sfn ${escapeShellArg(releaseDir)} ${escapeShellArg(currentLink)}`);
 
         log.ok(`Activated ${version}`);
         log.ok(`Deployed ${version} to [${envName}]`);
@@ -174,13 +232,30 @@ export async function deploy(opts: { env?: string; artifact?: string; version?: 
         log.verbose(`Running post-deploy hooks`);
         await runRemoteHooks(bundle.ssh, "postDeploy", cfg.hooks?.postDeploy, releaseDir);
 
+        const metadataTmpDir = await mkdtemp(path.join(os.tmpdir(), "dploy-release-"));
+        const metadataTmpFile = path.join(metadataTmpDir, RELEASE_METADATA_FILE);
+        const metadata = createReleaseMetadata({
+            version,
+            environment: envName,
+            gitCommit: safeExec("git rev-parse HEAD") ?? null,
+            deployedAt: new Date(),
+            artifactName: path.basename(artifactPath!),
+        });
+        try {
+            await fs.writeJson(metadataTmpFile, metadata, { spaces: 2 });
+            log.verbose(`Uploading release metadata to ${posixJoin(releaseDir, RELEASE_METADATA_FILE)}`);
+            await uploadFile(bundle.sftp, metadataTmpFile, posixJoin(releaseDir, RELEASE_METADATA_FILE));
+        } finally {
+            await fs.remove(metadataTmpDir);
+        }
+
         // Clean old releases
         const keep = env.keepVersions ?? 5;
         log.verbose(`Cleaning old releases, keeping ${keep} versions`);
         await cleanupReleases(bundle, releases, keep, { strict: true });
-        if (cfg.cleanAfterDeploy) {
+        if (cleanAfterDeploy && tmp && tmp !== "/") {
             log.verbose(`Cleaning temporary uploaded directory & files`);
-            await exec(bundle.ssh, `rm -rf "${tmp}"`);
+            await exec(bundle.ssh, `rm -rf ${escapeShellArg(tmp)}`);
         }
 
     } finally {
@@ -188,4 +263,3 @@ export async function deploy(opts: { env?: string; artifact?: string; version?: 
         await close(bundle);
     }
 }
-

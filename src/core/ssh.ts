@@ -4,6 +4,7 @@ import fs from "fs-extra";
 import path from "node:path";
 import { EnvironmentConfig } from "./config.js";
 import { log } from "./logger.js";
+import { escapeShellArg } from "./utils.js";
 
 export type SSHBundle = {
     ssh: Client;
@@ -78,14 +79,23 @@ export function exec(ssh: Client, command: string): Promise<{ code: number; stdo
                     resolve({ code: code ?? 0, stdout, stderr });
                 })
                 .on("data", (d: Buffer) => (stdout += d.toString()))
-                .stderr.on("data", (d: Buffer) => (stderr += d.toString()));
+                .on("error", (streamErr: Error) => {
+                    log.debug(`SSH stream error: ${streamErr.message}`);
+                    reject(streamErr);
+                });
+            stream.stderr
+                .on("data", (d: Buffer) => (stderr += d.toString()))
+                .on("error", (stderrErr: Error) => {
+                    log.debug(`SSH stderr stream error: ${stderrErr.message}`);
+                    reject(stderrErr);
+                });
         });
     });
 }
 
 export async function ensureRemoteDirs(ssh: Client, ...dirs: string[]) {
     log.verbose(`Ensuring remote directories exist: ${dirs.join(', ')}`);
-    const cmd = dirs.map((d) => `mkdir -p "${d}"`).join(" && ");
+    const cmd = dirs.map((d) => `mkdir -p ${escapeShellArg(d)}`).join(" && ");
     log.debug(`Directory creation command: ${cmd}`);
     await exec(ssh, cmd);
 }
@@ -119,5 +129,5 @@ export async function listDirs(sftp: SFTPClient, remotePath: string): Promise<Re
 
 export async function removePath(ssh: Client, remotePath: string) {
     log.debug(`Removing remote path: ${remotePath}`);
-    await exec(ssh, `rm -rf "${remotePath}"`);
+    await exec(ssh, `rm -rf ${escapeShellArg(remotePath)}`);
 }

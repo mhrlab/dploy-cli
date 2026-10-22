@@ -1,9 +1,29 @@
 {
-  "buildDir": "build",
-  "strategy": "include",
-  "include": ["app/**", "bootstrap/**", "config/**", "public/**", "resources/**", "routes/**", "vendor/**", "artisan", "composer.json", "composer.lock"],
-  "shared": ["storage", ".env"],
-  "sharedDefaults": { ".env": ".env.example" },
+  "name": "Laravel",
+  "build": {
+    "buildDir": "build",
+    "strategy": "include",
+    "include": [
+      "app/**",
+      "bootstrap/**",
+      "config/**",
+      "public/**",
+      "resources/**",
+      "routes/**",
+      "vendor/**",
+      "artisan",
+      "composer.json",
+      "composer.lock"
+    ],
+    "shared": [
+      "storage",
+      ".env"
+    ],
+    "sharedDefaults": {
+      ".env": ".env.example"
+    },
+    "cleanAfterDeploy": true
+  },
   "hooks": {
     "postDeploy": [
       "composer install --no-dev --optimize-autoloader",

@@ -71,12 +71,23 @@ async function detectConfigFile(cwd: string): Promise<string | null> {
 }
 
 /**
- * Load .env into process.env (if exists)
+ * Load .env and .env.dploy into process.env (if they exist).
+ * .env.dploy overrides .env for deployment-specific variables.
  */
-function loadDotenv(cwd: string) {
-    const envFile = path.join(cwd, ".env");
+export function loadDotenv(cwd: string) {
+    const defaultEnv = path.join(cwd, ".env");
+    const dployEnv = path.join(cwd, ".env.dploy");
+    const deployEnv = path.join(cwd, ".env.deploy");
+
     try {
-        dotenv.config({ path: envFile });
+        if (fs.existsSync(defaultEnv)) {
+            dotenv.config({ path: defaultEnv });
+        }
+        if (fs.existsSync(dployEnv)) {
+            dotenv.config({ path: dployEnv, override: true });
+        } else if (fs.existsSync(deployEnv)) {
+            dotenv.config({ path: deployEnv, override: true });
+        }
     } catch {
         // ignore if not exists
     }
@@ -269,4 +280,3 @@ export function getEnvName(cliEnv?: string): string {
     log.debug(`Resolved environment name: ${envName} (cli: ${cliEnv}, env: ${process.env.DPLOY_ENV})`);
     return envName;
 }
-

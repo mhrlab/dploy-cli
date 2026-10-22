@@ -8,9 +8,8 @@ import { clean } from "../src/commands/clean.js";
 import { status } from "../src/commands/status.js";
 import { health } from "../src/commands/health.js";
 import { init } from "../src/commands/init.js";
-import {log, setLogLevel} from "../src/core/logger.js";
+import { setLogLevel } from "../src/core/logger.js";
 import { getAppVersion } from "../src/core/utils.js";
-import { loadConfig, getEnvironmentConfig } from "../src/core/config.js";
 
 
 
@@ -47,33 +46,10 @@ async function main() {
         .version(getAppVersion(), "-a, --app-version");
 
     // Hook to set log levels before executing any command
-    program.hook("preAction", async (thisCommand) => {
-        let opts = thisCommand.opts();
+    program.hook("preAction", (thisCommand) => {
+        const opts = thisCommand.opts();
         setLogLevel(!!opts.debug, !!opts.verbose || !!opts.dryRun);
-        const skipFor = ["help", "init"];
-
-        if (skipFor.includes(thisCommand.name())) {
-            log.debug(`[HOOK] Skipping hook for ${thisCommand.name()}`);
-            return;
-        }
-
-        opts = thisCommand.opts();
-        const cwd = process.cwd();
-
-        try {
-            const config = await loadConfig(cwd);
-            const envConf = getEnvironmentConfig(config, opts.env);
-
-            (thisCommand as any).config = config;
-            (thisCommand as any).envConf = envConf;
-        } catch (err) {
-            log.warn(`[HOOK] ${err}`);
-        }
     });
-
-
-
-
 
     // Commands
     program
@@ -93,7 +69,9 @@ async function main() {
     program
         .command("deploy")
         .description("Deploy to remote server")
-        .option("--artifact <path>", "Path to prebuilt artifact (skips build)")
+        .option("--artifact <path>", "Path to a custom archive to upload (skips build)")
+        .option("-A, --archive <path>", "Alias for --artifact")
+        .option("-s, --skip-build", "Skip local build and use an existing artifact")
         .option("-V, --version <ver>", "Override version string")
         .option("-n, --dry-run", "Show planned deploy actions without changing anything")
         .action(deploy);
@@ -101,6 +79,9 @@ async function main() {
     program
         .command("rollback")
         .description("Rollback to previous release")
+        .option("--latest", "Rollback to the previous release without prompting")
+        .option("--to <version>", "Rollback to a specific release by name")
+        .option("-n, --dry-run", "Show what would be changed without switching the symlink")
         .action(rollback);
 
     program
