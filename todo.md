@@ -108,7 +108,7 @@ Review Status: In Progress
   - **Gap**: Only `include` strategy is tested indirectly. `copy`, `exclude`, and `hybrid` strategies have no dedicated tests.
   - **Action**: Add dedicated tests in `tests/strategy.test.ts` covering globbing, optional copy files, and missing required copy files.
 
-- [ ] **[MEDIUM] Unit Tests for Shared Resource Linking**
+- [x] **[MEDIUM] Unit Tests for Shared Resource Linking**
   - **Location**: `tests/shared.test.ts` (new)
   - **Gap**: `linkShared` in `src/features/shared.ts` is completely untested.
   - **Action**: Test creation of shared directories, seeding from default templates, and symlink replacement logic with mock SSH commands.
