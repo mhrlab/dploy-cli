@@ -30,12 +30,10 @@ hooks:
     - go mod download
     - echo "🧪 Running tests"
     - go test ./...
-  postBuild:
     - echo "🏗️ Cross-compiling Go binary for Linux amd64"
     - CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o build/app ./cmd/server || CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o build/app .
   preDeploy:
-    - echo "🗜️ Packaging Go binary artifact"
-    - tar -czf go_app.tar.gz build
+    - echo "🚀 Preparing release on server"
   postDeploy:
     - echo "🚀 Restarting systemd service"
     - sudo systemctl restart ${APP_NAME:-go-app}

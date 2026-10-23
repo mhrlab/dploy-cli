@@ -37,13 +37,11 @@ hooks:
     - echo "📦 Installing Composer dependencies without dev tools"
     - composer install --no-dev --optimize-autoloader --no-interaction
   preDeploy:
-    - echo "🗜️ Packaging CodeIgniter 4 deployment artifact"
-    - tar -czf ci4_app.tar.gz build
-  postDeploy:
     - echo "🚀 Running database migrations"
     - php spark migrate --all --force || true
     - echo "🧹 Clearing application cache"
     - php spark cache:clear || true
+  postDeploy:
     - echo "🔄 Reloading PHP-FPM and Nginx"
     - sudo systemctl reload php8.2-fpm || sudo systemctl reload php-fpm
     - sudo systemctl reload nginx

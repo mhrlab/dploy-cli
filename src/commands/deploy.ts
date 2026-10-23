@@ -3,13 +3,14 @@ import os from "node:os";
 import { loadConfig, getEnvName } from "../core/config.js";
 import { detectVersion, posixJoin, safeExec, escapeShellArg } from "../core/utils.js";
 import { buildArtifact, planBuildArtifact } from "../features/packager.js";
-import { connect, close, ensureRemoteDirs, exec, uploadFile } from "../core/ssh.js";
+import { connect, close, ensureRemoteDirs, exec, uploadFile, switchCurrentSymlink } from "../core/ssh.js";
 import { log } from "../core/logger.js";
 import { linkShared } from "../features/shared.js";
 import {runLocalHooks, runRemoteHooks} from "../core/hooks.js";
 import {cleanupReleases} from "../features/cleaner.js";
 import { resolveDeployArtifact } from "../features/deploy-artifact.js";
 import { verifyArtifactChecksum } from "../features/checksum.js";
+import { performHealthCheck } from "./health.js";
 import fs from "fs-extra";
 import { mkdtemp } from "node:fs/promises";
 import { createReleaseMetadata, RELEASE_METADATA_FILE } from "../features/release-metadata.js";
@@ -130,12 +131,12 @@ export async function deploy(opts: { env?: string; artifact?: string; archive?: 
         if (sharedItems.length) {
             log.info(`[dry-run] Would link shared items: ${sharedItems.join(", ")}`);
         }
-        log.info(`[dry-run] Would switch current symlink to ${currentLink}`);
         if (cfg.hooks?.preDeploy?.length) {
             log.info(`[dry-run] Would run ${cfg.hooks.preDeploy.length} preDeploy hook(s)`);
         } else {
             log.info(`[dry-run] No preDeploy hooks configured`);
         }
+        log.info(`[dry-run] Would switch current symlink atomically to ${currentLink}`);
         if (cfg.hooks?.postDeploy?.length) {
             log.info(`[dry-run] Would run ${cfg.hooks.postDeploy.length} postDeploy hook(s)`);
         } else {
@@ -206,11 +207,7 @@ export async function deploy(opts: { env?: string; artifact?: string; archive?: 
         if (code !== 0) throw new Error(stderr || "remote extract failed");
         extract.succeed(`Extracted ${version}`);
 
-        // run PreDeploy hooks
-        log.verbose(`Running pre-deploy hooks after extraction.`);
-        await runRemoteHooks(bundle.ssh, "preDeploy", cfg.hooks?.preDeploy, releaseDir);
-
-        // Link shared items
+        // Link shared items (must happen before preDeploy so .env and storage are accessible)
         if (sharedItems.length) {
             log.verbose(`Linking ${sharedItems.length} shared items`);
             log.debug(`Shared items: ${JSON.stringify(sharedItems)}`);
@@ -221,16 +218,20 @@ export async function deploy(opts: { env?: string; artifact?: string; archive?: 
             log.verbose(`No shared items to link`);
         }
 
-        // Switch current symlink
+        // run PreDeploy hooks (runs in unzipped releaseDir with shared items linked)
+        log.verbose(`Running pre-deploy hooks after extraction and shared linking.`);
+        await runRemoteHooks(bundle.ssh, "preDeploy", cfg.hooks?.preDeploy, releaseDir);
+
+        // Switch current symlink atomically (activate release)
         log.verbose(`Switching current symlink to new release`);
         log.info(`Activating new release...`);
 
-        await exec(bundle.ssh, `ln -sfn ${escapeShellArg(releaseDir)} ${escapeShellArg(currentLink)}`);
+        await switchCurrentSymlink(bundle.ssh, releaseDir, currentLink);
 
         log.ok(`Activated ${version}`);
         log.ok(`Deployed ${version} to [${envName}]`);
 
-        // run PostDeploy hooks
+        // run PostDeploy hooks (after release is activated, e.g. restart service)
         log.verbose(`Running post-deploy hooks`);
         await runRemoteHooks(bundle.ssh, "postDeploy", cfg.hooks?.postDeploy, releaseDir);
 
@@ -260,6 +261,25 @@ export async function deploy(opts: { env?: string; artifact?: string; archive?: 
         if (cleanAfterDeploy && tmp && tmp !== "/") {
             log.verbose(`Cleaning temporary uploaded directory & files`);
             await exec(bundle.ssh, `rm -rf ${escapeShellArg(tmp)}`);
+        }
+
+        // Optional post-deployment automated health verification
+        const baseUrl = env.baseUrl || process.env.DPLOY_BASE_URL;
+        if (baseUrl) {
+            const healthPath = env.healthCheckPath || "/health";
+            const url = new URL(healthPath, baseUrl).toString();
+            const timeoutMs = Number(env.healthCheckTimeout ?? process.env.DPLOY_HEALTH_CHECK_TIMEOUT ?? 10000);
+            log.info(`Verifying deployment health: GET ${url}`);
+            try {
+                const { ok, status } = await performHealthCheck(url, timeoutMs);
+                if (ok) {
+                    log.ok(`Post-deployment health check passed (${status})`);
+                } else {
+                    log.warn(`⚠️ Post-deployment health check returned status ${status}`);
+                }
+            } catch (err: any) {
+                log.warn(`⚠️ Post-deployment health check request failed: ${err.message}`);
+            }
         }
 
     } finally {

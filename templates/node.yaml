@@ -24,15 +24,13 @@ hooks:
   preBuild:
     - echo "📦 Installing dependencies"
     - npm ci
-  postBuild:
     - echo "🏗️ Building the project"
     - npm run build
   preDeploy:
-    - echo "🗜️ Packaging build files"
-    - tar -czf node_app.tar.gz build
+    - echo "🚀 Preparing release on server"
   postDeploy:
-    - echo "🚀 Restarting PM2 process"
-    - pm2 restart ecosystem.config.js || pm2 start ecosystem.config.js
+    - echo "🔄 Reloading PM2 processes gracefully (Zero-Downtime)"
+    - pm2 reload ecosystem.config.js --update-env || pm2 start ecosystem.config.js
 
 environments:
   default:
@@ -41,6 +39,8 @@ environments:
     port: ${SSH_PORT:-22}
     ssh_key_path: ${SSH_KEY_PATH:-~/.ssh/id_rsa}
     # password: ${SSH_PASSWORD} # Uncomment if using password authentication
+    baseUrl: https://${PROD_HOST:-localhost:3000}
+    healthCheckPath: /health
     provision:
       checkPrerequisites: true
       runtime:

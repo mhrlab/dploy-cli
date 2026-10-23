@@ -28,11 +28,8 @@ hooks:
     - python3 -m venv venv
     - source venv/bin/activate
     - pip install -r requirements.txt
-  postBuild:
-    - echo "📦 Packaging FastAPI app"
-    - tar -czf fastapi_app.tar.gz build
   preDeploy:
-    - echo "⚙️ Preparing deployment"
+    - echo "🚀 Preparing release on server"
   postDeploy:
     - echo "🚀 Restarting Uvicorn service"
     - sudo systemctl restart fastapi.service

@@ -1,7 +1,7 @@
 import { loadConfig, getEnvName } from "../core/config.js";
-import { connect, close, exec } from "../core/ssh.js";
+import { connect, close, switchCurrentSymlink } from "../core/ssh.js";
 import { log } from "../core/logger.js";
-import { posixJoin, escapeShellArg } from "../core/utils.js";
+import { posixJoin } from "../core/utils.js";
 import { collectRemoteStatus } from "../features/status.js";
 import { currentReleaseNameFromTarget, resolveRollbackTarget } from "../features/rollback.js";
 import inquirer from "inquirer";
@@ -88,7 +88,7 @@ export async function rollback(opts: { env?: string; latest?: boolean; to?: stri
         }
 
         log.info(`Rolling back to: ${targetRelease.name}`);
-        await exec(bundle.ssh, `ln -sfn ${escapeShellArg(targetPath)} ${escapeShellArg(currentLink)}`);
+        await switchCurrentSymlink(bundle.ssh, targetPath, currentLink);
         log.ok(`Successfully rolled back to ${targetRelease.name}`);
     } finally {
         log.verbose(`Closing SSH connection`);

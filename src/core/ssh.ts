@@ -176,3 +176,19 @@ export async function removePath(ssh: Client, remotePath: string) {
     log.debug(`Removing remote path: ${remotePath}`);
     await exec(ssh, `rm -rf ${escapeShellArg(remotePath)}`);
 }
+
+/**
+ * Switch the 'current' symlink atomically using the POSIX rename pattern.
+ * Creates a temporary symlink and replaces the target via 'mv -Tf' (with fallback to 'ln -sfn').
+ * The 'rename' syscall is guaranteed atomic in POSIX kernels, preventing transient 404/ENOENT errors during cutover.
+ */
+export async function switchCurrentSymlink(
+    ssh: Client,
+    targetPath: string,
+    currentLink: string
+): Promise<{ code: number; stdout: string; stderr: string }> {
+    log.debug(`Switching current symlink atomically: ${currentLink} -> ${targetPath}`);
+    const tmpLink = `${currentLink}_tmp_${Date.now()}`;
+    const cmd = `(ln -sfn ${escapeShellArg(targetPath)} ${escapeShellArg(tmpLink)} && mv -Tf ${escapeShellArg(tmpLink)} ${escapeShellArg(currentLink)} 2>/dev/null) || ln -sfn ${escapeShellArg(targetPath)} ${escapeShellArg(currentLink)}`;
+    return await exec(ssh, cmd);
+}
