@@ -4,7 +4,8 @@ import * as tar from "tar";
 import { resolveFiles } from "./strategy.js";
 import { DeployConfig } from "../core/config.js";
 import { log } from "../core/logger.js";
-import {getReadableFileSize} from "../core/utils.js";
+import { getReadableFileSize } from "../core/utils.js";
+import { ItemProgressBar } from "../core/progress.js";
 
 
 export type BuildResult = {
@@ -72,7 +73,14 @@ export async function buildArtifact(options: {
 
     log.debug(`Resolved ${files.length} files to copy`);
     log.verbose(`Copying ${files.length} files to staging directory...`);
-    log.info(`Copying ${files.length} files to staging directory...`);
+
+    const progressBar = files.length > 5
+        ? new ItemProgressBar({ total: files.length, label: "Staging files" })
+        : null;
+
+    if (!progressBar) {
+        log.info(`Copying ${files.length} files to staging directory...`);
+    }
 
     for (const f of files) {
         log.debug(`Copying file: ${f.from} -> ${f.to}`);
@@ -83,24 +91,33 @@ export async function buildArtifact(options: {
         }
         await fs.ensureDir(path.dirname(destPath));
         await fs.copy(f.from, destPath, { dereference: false });
+        if (progressBar) {
+            progressBar.tick(1, path.basename(f.to));
+        }
+    }
+
+    if (progressBar) {
+        progressBar.finish(`Staged ${files.length} files into ${path.basename(stagingDir)}`);
     }
 
     log.verbose(`Creating artifact: ${artifactPath}`);
 
     let sizeBytes = 0;
+    const spin = log.spinner(`Compressing deployment archive (${path.basename(artifactPath)})...`);
     try {
         log.debug(`Creating tar archive with gzip compression`);
-        log.info(`Creating deployment archive...`);
         await tar.create({ gzip: true, file: artifactPath, cwd: stagingDir, portable: true, noMtime: true }, ["."]);
         const stats = fs.statSync(artifactPath);
         sizeBytes = stats.size;
+        spin.succeed(`Built ${path.basename(artifactPath)} [ ${getReadableFileSize(sizeBytes)} ]`);
         log.verbose(`Artifact created successfully: ${artifactPath}`);
+    } catch (err) {
+        spin.fail("Failed to create deployment archive");
+        throw err;
     } finally {
         log.verbose(`Removing staging directory: ${stagingDir}`);
         await fs.remove(stagingDir);
     }
-
-    log.ok(`Built ${path.basename(artifactPath)} [ ${getReadableFileSize(sizeBytes)} ]`);
 
     return { artifactPath, stagingDir, sizeBytes, files };
 }

@@ -5,6 +5,7 @@ import path from "node:path";
 import { EnvironmentConfig } from "./config.js";
 import { log } from "./logger.js";
 import { escapeShellArg } from "./utils.js";
+import { TransferProgressBar } from "./progress.js";
 
 export type SSHBundle = {
     ssh: Client;
@@ -100,15 +101,59 @@ export async function ensureRemoteDirs(ssh: Client, ...dirs: string[]) {
     await exec(ssh, cmd);
 }
 
-export async function uploadFile(sftp: SFTPClient, localPath: string, remotePath: string) {
+export interface UploadFileOptions {
+    showProgress?: boolean;
+    label?: string;
+    onProgress?: (transferred: number, chunk: number, total: number) => void;
+}
+
+export async function uploadFile(
+    sftp: SFTPClient,
+    localPath: string,
+    remotePath: string,
+    options?: UploadFileOptions
+) {
     log.verbose(`Uploading file: ${localPath} -> ${remotePath}`);
     const remoteDir = path.posix.dirname(remotePath);
     log.debug(`Ensuring remote directory: ${remoteDir}`);
     await sftp.mkdir(remoteDir, true).catch(() => { });
     log.debug(`Starting file upload`);
-    await sftp.fastPut(localPath, remotePath);
-    log.verbose(`File upload completed`);
+
+    let progress: TransferProgressBar | null = null;
+    let size = 0;
+    try {
+        const stat = await fs.stat(localPath);
+        size = stat.size;
+    } catch {
+        // file might be in-memory or not stat-able
+    }
+
+    const showProgress = options?.showProgress ?? (size > 8192);
+    if (showProgress) {
+        progress = new TransferProgressBar({
+            totalBytes: size,
+            label: options?.label ?? `Uploading ${path.basename(localPath)}`,
+        });
+    }
+
+    await sftp.fastPut(localPath, remotePath, {
+        step: (transferred: number, chunk: number, total: number) => {
+            if (progress) {
+                progress.update(transferred);
+            }
+            if (options?.onProgress) {
+                options.onProgress(transferred, chunk, total);
+            }
+        },
+    });
+
+    if (progress) {
+        progress.finish();
+    } else {
+        log.verbose(`File upload completed: ${localPath}`);
+    }
 }
+
 export type RemoteDir = {
     name: string;
     mtime: Date;

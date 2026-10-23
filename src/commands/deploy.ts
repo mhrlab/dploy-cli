@@ -173,8 +173,10 @@ export async function deploy(opts: { env?: string; artifact?: string; archive?: 
         await ensureRemoteDirs(bundle.ssh, releases, tmp);
 
         log.verbose(`Uploading artifact to remote server`);
-        log.info(`Uploading deployment artifact...`);
-        await uploadFile(bundle.sftp, artifactPath!, remoteTar);
+        await uploadFile(bundle.sftp, artifactPath!, remoteTar, {
+            label: `Uploading artifact (${path.basename(artifactPath!)})`,
+            showProgress: true,
+        });
 
         log.verbose(`Verifying uploaded artifact checksum`);
         const checksum = log.spinner("Verifying checksum...");
@@ -244,7 +246,9 @@ export async function deploy(opts: { env?: string; artifact?: string; archive?: 
         try {
             await fs.writeJson(metadataTmpFile, metadata, { spaces: 2 });
             log.verbose(`Uploading release metadata to ${posixJoin(releaseDir, RELEASE_METADATA_FILE)}`);
-            await uploadFile(bundle.sftp, metadataTmpFile, posixJoin(releaseDir, RELEASE_METADATA_FILE));
+            await uploadFile(bundle.sftp, metadataTmpFile, posixJoin(releaseDir, RELEASE_METADATA_FILE), {
+                showProgress: false,
+            });
         } finally {
             await fs.remove(metadataTmpDir);
         }
