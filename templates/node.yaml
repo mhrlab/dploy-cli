@@ -38,6 +38,9 @@ environments:
   default:
     keepVersions: 5
     deployTo: /var/www/node_app
+    port: ${SSH_PORT:-22}
+    ssh_key_path: ${SSH_KEY_PATH:-~/.ssh/id_rsa}
+    # password: ${SSH_PASSWORD} # Uncomment if using password authentication
     provision:
       checkPrerequisites: true
       runtime:
@@ -53,6 +56,8 @@ environments:
     host: ${STAGING_HOST:-staging.example.com}
     username: ${STAGING_USER:-deploy}
     deployTo: /var/www/node_staging
+    # ssh_key_path: ${STAGING_SSH_KEY_PATH:-~/.ssh/id_rsa}
+    # password: ${STAGING_PASSWORD}
     env:
       NODE_ENV: staging
 
@@ -62,6 +67,8 @@ environments:
     username: ${PROD_USER:-deploy}
     deployTo: /var/www/node_app
     keepVersions: 7
+    # ssh_key_path: ${PROD_SSH_KEY_PATH:-~/.ssh/id_rsa}
+    # password: ${PROD_PASSWORD}
     env:
       NODE_ENV: production
       PORT: 3000

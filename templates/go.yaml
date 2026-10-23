@@ -44,6 +44,9 @@ environments:
   default:
     keepVersions: 5
     deployTo: /var/www/go_app
+    port: ${SSH_PORT:-22}
+    ssh_key_path: ${SSH_KEY_PATH:-~/.ssh/id_rsa}
+    # password: ${SSH_PASSWORD} # Uncomment if using password authentication
     provision:
       checkPrerequisites: true
       runtime:
@@ -71,6 +74,8 @@ environments:
     host: ${STAGING_HOST:-staging.example.com}
     username: ${STAGING_USER:-deploy}
     deployTo: /var/www/go_app_staging
+    # ssh_key_path: ${STAGING_SSH_KEY_PATH:-~/.ssh/id_rsa}
+    # password: ${STAGING_PASSWORD}
     env:
       APP_ENV: staging
       GIN_MODE: debug
@@ -81,6 +86,8 @@ environments:
     username: ${PROD_USER:-deploy}
     deployTo: /var/www/go_app
     keepVersions: 7
+    # ssh_key_path: ${PROD_SSH_KEY_PATH:-~/.ssh/id_rsa}
+    # password: ${PROD_PASSWORD}
     env:
       APP_ENV: production
       GIN_MODE: release

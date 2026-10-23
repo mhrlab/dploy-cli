@@ -36,6 +36,7 @@
     "production": {
       "host": "myserver.com",
       "username": "deploy",
+      "ssh_key_path": "~/.ssh/id_rsa",
       "deployTo": "/var/www/laravel-app",
       "keepVersions": 3
     }

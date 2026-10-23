@@ -41,6 +41,9 @@ environments:
   default:
     keepVersions: 5
     deployTo: /var/www/fastapi_app
+    port: ${SSH_PORT:-22}
+    ssh_key_path: ${SSH_KEY_PATH:-~/.ssh/id_rsa}
+    # password: ${SSH_PASSWORD} # Uncomment if using password authentication
     env:
       ENVIRONMENT: local
       DEBUG: true
@@ -50,6 +53,8 @@ environments:
     host: ${STAGING_HOST:-staging.example.com}
     username: ${STAGING_USER:-deploy}
     deployTo: /var/www/fastapi_staging
+    # ssh_key_path: ${STAGING_SSH_KEY_PATH:-~/.ssh/id_rsa}
+    # password: ${STAGING_PASSWORD}
     env:
       ENVIRONMENT: staging
       DEBUG: false
@@ -60,6 +65,8 @@ environments:
     username: ${PROD_USER:-deploy}
     deployTo: /var/www/fastapi_app
     keepVersions: 10
+    # ssh_key_path: ${PROD_SSH_KEY_PATH:-~/.ssh/id_rsa}
+    # password: ${PROD_PASSWORD}
     env:
       ENVIRONMENT: production
       DEBUG: false

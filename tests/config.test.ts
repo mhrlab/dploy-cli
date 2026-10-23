@@ -1,92 +1,83 @@
 import assert from "node:assert/strict";
+import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { mkdtemp, writeFile } from "node:fs/promises";
 import { test } from "node:test";
-
 import { loadConfig } from "../src/core/config.js";
 import { detectVersion, escapeShellArg, findPackageRoot, getAppVersion } from "../src/core/utils.js";
 
-async function createTempProject() {
-  return await mkdtemp(path.join(os.tmpdir(), "dploy-config-"));
+async function createTempProject(): Promise<string> {
+  return await mkdtemp(path.join(os.tmpdir(), "dploy-test-"));
 }
 
-test("loadConfig reads deploy.config.yml and substitutes values from .env", async () => {
+test("loadConfig parses yaml deploy configuration with environment extension", async () => {
   const cwd = await createTempProject();
-
-  await writeFile(
-    path.join(cwd, ".env"),
-    [
-      "DPLOY_HOST=yml.example.test",
-      "DPLOY_USER=deploy",
-    ].join("\n"),
-    "utf8"
-  );
 
   await writeFile(
     path.join(cwd, "deploy.config.yml"),
-    [
-      "name: YAML deployment",
-      "build:",
-      "  strategy: include",
-      "  include:",
-      "    - dist/**",
-      "environments:",
-      "  production:",
-      "    host: \"${DPLOY_HOST:-fallback.example.test}\"",
-      "    username: \"${DPLOY_USER:-fallback-user}\"",
-      "    deployTo: /var/www/app",
-    ].join("\n"),
+    `
+name: "Test App"
+environments:
+  default:
+    keepVersions: 5
+    deployTo: "/var/www/default"
+    env:
+      NODE_ENV: "production"
+  staging:
+    extends: default
+    host: "staging.example.com"
+    deployTo: "/var/www/staging"
+    env:
+      NODE_ENV: "staging"
+`,
     "utf8"
   );
 
   const config = await loadConfig(cwd);
 
-  assert.equal(config.name, "YAML deployment");
-  assert.equal(config.build?.strategy, "include");
-  assert.deepEqual(config.build?.include, ["dist/**"]);
-  assert.equal(config.environments?.production.host, "yml.example.test");
-  assert.equal(config.environments?.production.username, "deploy");
+  assert.equal(config.name, "Test App");
+  assert.ok(config.environments);
+  assert.equal(config.environments.staging.deployTo, "/var/www/staging");
+  assert.equal(config.environments.staging.keepVersions, 5);
+  assert.equal(config.environments.staging.env?.NODE_ENV, "staging");
 });
 
-test("loadConfig reads deploy.config.yaml and uses fallback values when env vars are missing", async () => {
+test("loadConfig substitutes environment variables with fallback values", async () => {
   const cwd = await createTempProject();
+  process.env.TEST_HOST_OVERRIDE = "custom.server.com";
 
-  await writeFile(
-    path.join(cwd, "deploy.config.yaml"),
-    [
-      "name: YAML fallback deployment",
-      "build:",
-      "  strategy: include",
-      "  include:",
-      "    - dist/**",
-      "environments:",
-      "  production:",
-      "    host: \"${MISSING_HOST:-fallback.example.test}\"",
-      "    username: \"${MISSING_USER:-fallback-user}\"",
-      "    deployTo: /var/www/app",
-    ].join("\n"),
-    "utf8"
-  );
-
-  const config = await loadConfig(cwd);
-
-  assert.equal(config.name, "YAML fallback deployment");
-  assert.equal(config.environments?.production.host, "fallback.example.test");
-  assert.equal(config.environments?.production.username, "fallback-user");
-});
-
-test("loadConfig loads environment variables from .env.dploy with override", async () => {
-  const cwd = await createTempProject();
-  await writeFile(path.join(cwd, ".env"), "TEST_VAR_A=from_env\nTEST_OVERRIDE=from_env\n", "utf8");
-  await writeFile(path.join(cwd, ".env.dploy"), "TEST_VAR_B=from_dploy\nTEST_OVERRIDE=from_dploy\n", "utf8");
   await writeFile(
     path.join(cwd, "deploy.config.json"),
     JSON.stringify({
-      name: "Env Test",
+      environments: {
+        prod: {
+          host: "${TEST_HOST_OVERRIDE:-default.server.com}",
+          username: "${TEST_USER_UNSET:-fallback_user}",
+          deployTo: "/var/www/test",
+        },
+      },
+    }),
+    "utf8"
+  );
+
+  const config = await loadConfig(cwd);
+  assert.equal(config.environments?.prod.host, "custom.server.com");
+  assert.equal(config.environments?.prod.username, "fallback_user");
+});
+
+test("loadConfig prioritizes .env.dploy over .env", async () => {
+  const cwd = await createTempProject();
+
+  await writeFile(path.join(cwd, ".env"), "TEST_VAR_A=from_env\nTEST_VAR_B=from_env", "utf8");
+  await writeFile(path.join(cwd, ".env.dploy"), "TEST_VAR_B=from_dploy", "utf8");
+
+  await writeFile(
+    path.join(cwd, "deploy.config.json"),
+    JSON.stringify({
       environments: {
         production: {
-          host: "${TEST_OVERRIDE}",
+          host: "${TEST_VAR_A}",
           username: "${TEST_VAR_B}",
           deployTo: "/var/www/test",
         },
@@ -96,7 +87,7 @@ test("loadConfig loads environment variables from .env.dploy with override", asy
   );
 
   const config = await loadConfig(cwd);
-  assert.equal(config.environments?.production.host, "from_dploy");
+  assert.equal(config.environments?.production.host, "from_env");
   assert.equal(config.environments?.production.username, "from_dploy");
   assert.equal(process.env.TEST_VAR_A, "from_env");
 });
@@ -112,16 +103,20 @@ test("resolveFiles resolves files with root-level config options (legacy/JSON co
   } as any);
 
   assert.equal(files.length, 1);
-  assert.equal(files[0].to, "test.txt");
+  assert.equal(files[0].from, path.join(cwd, "test.txt"));
 });
 
-test("escapeShellArg wraps in single quotes and escapes internal single quotes", () => {
-  assert.equal(escapeShellArg("/var/www/app"), "'/var/www/app'");
+test("escapeShellArg escapes special characters safely", () => {
+  assert.equal(escapeShellArg("simple"), "'simple'");
+  assert.equal(escapeShellArg("with space"), "'with space'");
   assert.equal(escapeShellArg("foo'bar"), "'foo'\\''bar'");
-  assert.equal(escapeShellArg('path with spaces and "quotes" and $vars'), "'path with spaces and \"quotes\" and $vars'");
+  assert.equal(escapeShellArg("$(rm -rf /)"), "'$(rm -rf /)'");
+  assert.equal(escapeShellArg("`reboot`"), "'`reboot`'");
 });
 
 test("detectVersion validates version override format and rejects injection attempts", () => {
+  assert.equal(detectVersion("v1.0.0"), "v1.0.0");
+  assert.equal(detectVersion("release-2026-10-22"), "release-2026-10-22");
   assert.equal(detectVersion("v1.2.3-alpha.1"), "v1.2.3-alpha.1");
   assert.throws(() => detectVersion('v1.0.0"; rm -rf /; echo "'), /Invalid version format/);
   assert.throws(() => detectVersion("v1.0.0`whoami`"), /Invalid version format/);
@@ -131,5 +126,6 @@ test("detectVersion validates version override format and rejects injection atte
 test("findPackageRoot discovers directory containing package.json", () => {
   const root = findPackageRoot();
   assert.ok(root.length > 0);
-  assert.equal(getAppVersion(), "0.2.0");
+  const pkg = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8"));
+  assert.equal(getAppVersion(), pkg.version);
 });

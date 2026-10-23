@@ -9,21 +9,25 @@ build:
     - public/**
     - system/**
     - writable/**
-    - writable/index.html
-    - writable/**/index.html
-    - package.json
+    - spark
     - composer.json
     - composer.lock
-    - preload.php
-    - spark
     - env
   exclude:
-    - node_modules/**
+    - writable/cache/**
+    - writable/logs/**
+    - writable/session/**
+    - writable/uploads/**
+    - writable/debugbar/**
     - tests/**
     - .git/**
   shared:
     - .env
-    - writable
+    - writable/cache/
+    - writable/logs/
+    - writable/session/
+    - writable/uploads/
+    - writable/debugbar/
   sharedDefaults:
     .env: env
   cleanAfterDeploy: true
@@ -48,6 +52,9 @@ environments:
   default:
     keepVersions: 5
     deployTo: /var/www/ci4_app
+    port: ${SSH_PORT:-22}
+    ssh_key_path: ${SSH_KEY_PATH:-~/.ssh/id_rsa}
+    # password: ${SSH_PASSWORD} # Uncomment if using password authentication
     provision:
       checkPrerequisites: true
       runtime:
@@ -78,6 +85,8 @@ environments:
     host: ${STAGING_HOST:-staging.example.com}
     username: ${STAGING_USER:-deploy}
     deployTo: /var/www/ci4_staging
+    # ssh_key_path: ${STAGING_SSH_KEY_PATH:-~/.ssh/id_rsa}
+    # password: ${STAGING_PASSWORD}
     env:
       CI_ENVIRONMENT: development
       app.baseURL: "https://${STAGING_HOST:-staging.example.com}/"
@@ -88,6 +97,8 @@ environments:
     username: ${PROD_USER:-deploy}
     deployTo: /var/www/ci4_app
     keepVersions: 7
+    # ssh_key_path: ${PROD_SSH_KEY_PATH:-~/.ssh/id_rsa}
+    # password: ${PROD_PASSWORD}
     env:
       CI_ENVIRONMENT: production
       app.baseURL: "https://${PROD_HOST:-prod.example.com}/"

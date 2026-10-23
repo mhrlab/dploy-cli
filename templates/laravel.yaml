@@ -55,7 +55,10 @@ hooks:
 environments:
   default:
     keepVersions: 5
-    deployTo: /home/{SSH_USERNAME}/{APP_NAME}
+    deployTo: /var/www/laravel_app
+    port: ${SSH_PORT:-22}
+    ssh_key_path: ${SSH_KEY_PATH:-~/.ssh/id_rsa}
+    # password: ${SSH_PASSWORD} # Uncomment if using password authentication
     env:
       APP_ENV: production
       APP_DEBUG: true
@@ -66,6 +69,8 @@ environments:
     host: ${STAGING_HOST:-staging.example.com}
     username: ${STAGING_USER:-deploy}
     deployTo: /var/www/staging_app
+    # ssh_key_path: ${STAGING_SSH_KEY_PATH:-~/.ssh/id_rsa}
+    # password: ${STAGING_PASSWORD}
     env:
       APP_ENV: staging
       APP_DEBUG: false
@@ -76,6 +81,8 @@ environments:
     username: ${PROD_USER:-deploy}
     deployTo: /var/www/laravel_app
     keepVersions: 7
+    # ssh_key_path: ${PROD_SSH_KEY_PATH:-~/.ssh/id_rsa}
+    # password: ${PROD_PASSWORD}
     env:
       APP_ENV: production
       APP_DEBUG: false
