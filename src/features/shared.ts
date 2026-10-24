@@ -29,10 +29,22 @@ export async function linkShared(
         const isDirHint = item.endsWith("/") ? "1" : "0";
         log.debug(`Shared path: ${sharedPath}, Release path: ${releasePath}`);
 
-        // Ensure parent directory for sharedPath exists
-        const parentDir = posixJoin(sharedDir, item.replace(/\/$/, "").replace(/\/[^/]*$/, ""));
-        log.debug(`Ensuring parent directory exists for: ${sharedPath}`);
-        await exec(ssh, `mkdir -p ${escapeShellArg(parentDir)}`);
+        // Ensure parent directory for sharedPath exists ONLY if item contains subdirectories
+        const cleanItem = item.replace(/\/$/, "");
+        if (cleanItem.includes("/")) {
+            const parentRel = cleanItem.substring(0, cleanItem.lastIndexOf("/"));
+            const parentDir = posixJoin(sharedDir, parentRel);
+            log.debug(`Ensuring parent directory exists for: ${sharedPath}`);
+            await exec(ssh, `mkdir -p ${escapeShellArg(parentDir)}`);
+        }
+
+        // If item is expected to be a file, heal any empty directory mistakenly created by prior runs
+        if (!item.endsWith("/")) {
+            await exec(
+                ssh,
+                `if [ -d ${escapeShellArg(cleanSharedPath)} ] && [ ! -d ${escapeShellArg(cleanReleasePath)} ]; then rmdir ${escapeShellArg(cleanSharedPath)} 2>/dev/null || true; fi`
+            );
+        }
 
         // Check if shared item already exists
         log.debug(`Checking if shared item exists: ${cleanSharedPath}`);
@@ -45,7 +57,7 @@ export async function linkShared(
             log.debug(`Default source for ${item}: ${defaultSource}`);
 
             if (defaultSource) {
-                // Seed from specified default source in release (e.g. .env -> .env.example)
+                // Seed from specified default source in release (e.g. .env -> .env.example or .env -> env)
                 log.verbose(`Seeding shared item from default source: ${defaultSource}`);
                 const defaultSourcePath = posixJoin(releaseDir, defaultSource);
                 log.debug(`Default source path: ${defaultSourcePath}`);
@@ -68,7 +80,23 @@ export async function linkShared(
                 log.debug(`Initialized shared item`);
             }
         } else {
-            log.verbose(`Shared item already exists, skipping creation`);
+            log.verbose(`Shared item already exists: ${cleanSharedPath}`);
+            // If item is a directory (or writable) and already exists, sync across any missing initial files/subdirectories without overwriting existing files
+            if (item.endsWith("/") || cleanItem === "writable") {
+                await exec(
+                    ssh,
+                    `if [ -d ${escapeShellArg(cleanReleasePath)} ] && [ -d ${escapeShellArg(cleanSharedPath)} ]; then cp -rn ${escapeShellArg(cleanReleasePath)}/. ${escapeShellArg(cleanSharedPath)}/ 2>/dev/null || cp -r ${escapeShellArg(cleanReleasePath)}/. ${escapeShellArg(cleanSharedPath)}/ 2>/dev/null || true; fi`
+                );
+            }
+        }
+
+        // Special handling for CodeIgniter 4 writable directory: ensure standard subdirectories exist
+        if (cleanItem === "writable") {
+            log.verbose(`Ensuring CodeIgniter 4 writable subdirectories in: ${cleanSharedPath}`);
+            await exec(
+                ssh,
+                `mkdir -p ${escapeShellArg(cleanSharedPath)}/cache ${escapeShellArg(cleanSharedPath)}/logs ${escapeShellArg(cleanSharedPath)}/session ${escapeShellArg(cleanSharedPath)}/uploads ${escapeShellArg(cleanSharedPath)}/debugbar`
+            );
         }
 
         // Always remove release copy and link to shared

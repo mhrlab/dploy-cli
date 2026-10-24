@@ -48,6 +48,8 @@ test("linkShared creates shared directory and empty files if they do not exist",
 
   // Checks shared dir was created
   assert.ok(executedCommands.some((c) => c.includes("mkdir -p '/var/www/app/shared'")));
+  // Checks .env was NOT created as a directory
+  assert.ok(!executedCommands.some((c) => c === "mkdir -p '/var/www/app/shared/.env'"));
   // Checks .env was touched
   assert.ok(executedCommands.some((c) => c.includes("touch '/var/www/app/shared/.env'")));
   // Checks uploads directory was created
@@ -185,4 +187,25 @@ test("linkShared normalizes wildcard path like writable/* to directory writable/
       c.includes("ln -sfn '/var/www/app/shared/writable' '/var/www/app/releases/v1/writable'")
     )
   );
+});
+
+test("linkShared does not create .env as directory and ensures writable subdirectories", async () => {
+  const { ssh, executedCommands } = createMockSSH({
+    "[ -e": "0\n",
+  });
+
+  await linkShared(
+    ssh,
+    "/var/www/app",
+    "/var/www/app/releases/v1",
+    [".env", "writable/"],
+    undefined
+  );
+
+  // Must NOT mkdir -p on .env
+  assert.ok(!executedCommands.some((c) => c === "mkdir -p '/var/www/app/shared/.env'"));
+  // Must touch .env as file
+  assert.ok(executedCommands.some((c) => c.includes("touch '/var/www/app/shared/.env'")));
+  // Must ensure writable subdirectories
+  assert.ok(executedCommands.some((c) => c.includes("mkdir -p '/var/www/app/shared/writable'/cache")));
 });

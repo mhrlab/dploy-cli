@@ -213,6 +213,7 @@ export async function provisionSharedResources(
         // Normalize wildcards like "writable/*" to directory "writable/"
         const item = rawItem.endsWith("/*") ? rawItem.slice(0, -1) : rawItem;
         const sharedPath = posixJoin(sharedDir, item);
+        const cleanItem = item.replace(/\/$/, "");
 
         if (item.endsWith("/")) {
             if (dryRun) {
@@ -221,6 +222,13 @@ export async function provisionSharedResources(
                 const res = await execWithSudoFallback(ssh, `mkdir -p ${escapeShellArg(sharedPath)}`);
                 if (res.code === 0) {
                     details.push(`Created shared directory: ${sharedPath}`);
+                    // Special handling for CodeIgniter 4 writable subdirectories
+                    if (cleanItem === "writable") {
+                        await execWithSudoFallback(
+                            ssh,
+                            `mkdir -p ${escapeShellArg(sharedPath)}cache ${escapeShellArg(sharedPath)}logs ${escapeShellArg(sharedPath)}session ${escapeShellArg(sharedPath)}uploads ${escapeShellArg(sharedPath)}debugbar`
+                        );
+                    }
                 } else {
                     hasError = true;
                     const errDetail = res.stderr.trim() || `exit code ${res.code}`;
@@ -228,12 +236,26 @@ export async function provisionSharedResources(
                 }
             }
         } else {
-            const parentDir = posixJoin(sharedDir, item.replace(/\/[^/]*$/, ""));
+            // Ensure parent directory for sharedPath exists ONLY if item contains subdirectories
+            if (cleanItem.includes("/")) {
+                const parentRel = cleanItem.substring(0, cleanItem.lastIndexOf("/"));
+                const parentDir = posixJoin(sharedDir, parentRel);
+                if (dryRun) {
+                    details.push(`[dry-run] Would ensure parent directory: ${parentDir}`);
+                } else {
+                    await execWithSudoFallback(ssh, `mkdir -p ${escapeShellArg(parentDir)}`);
+                }
+            }
 
             if (dryRun) {
                 details.push(`[dry-run] Would ensure shared file: ${sharedPath}`);
             } else {
-                await execWithSudoFallback(ssh, `mkdir -p ${escapeShellArg(parentDir)}`);
+                // Heal any accidental empty directory created where a file was expected
+                await execWithSudoFallback(
+                    ssh,
+                    `if [ -d ${escapeShellArg(sharedPath)} ]; then rmdir ${escapeShellArg(sharedPath)} 2>/dev/null || true; fi`
+                );
+
                 const { stdout } = await exec(ssh, `[ -e ${escapeShellArg(sharedPath)} ] && echo 1 || echo 0`);
                 const exists = stdout.trim() === "1";
 
