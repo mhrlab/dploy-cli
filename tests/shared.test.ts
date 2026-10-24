@@ -106,3 +106,57 @@ test("linkShared skips creation when shared item already exists", async () => {
     )
   );
 });
+
+test("linkShared seeds directory from release artifact when item exists in release (e.g. writable/)", async () => {
+  const { ssh, executedCommands } = createMockSSH({
+    "[ -e": "0\n",
+  });
+
+  await linkShared(
+    ssh,
+    "/var/www/app",
+    "/var/www/app/releases/v1",
+    ["writable/"],
+    undefined
+  );
+
+  // Checks that release item is copied over to shared to preserve starter directories/files
+  assert.ok(
+    executedCommands.some(
+      (c) =>
+        c.includes("cp -r '/var/www/app/releases/v1/writable' '/var/www/app/shared/writable'")
+    )
+  );
+  assert.ok(
+    executedCommands.some((c) =>
+      c.includes("ln -sfn '/var/www/app/shared/writable' '/var/www/app/releases/v1/writable'")
+    )
+  );
+});
+
+test("linkShared auto-detects directories without trailing slash and links cleanly", async () => {
+  const { ssh, executedCommands } = createMockSSH({
+    "[ -e": "0\n",
+  });
+
+  await linkShared(
+    ssh,
+    "/var/www/app",
+    "/var/www/app/releases/v1",
+    ["storage"], // no trailing slash
+    undefined
+  );
+
+  // Checks that directory is inspected and copied without trailing slash issues
+  assert.ok(
+    executedCommands.some(
+      (c) =>
+        c.includes("cp -r '/var/www/app/releases/v1/storage' '/var/www/app/shared/storage'")
+    )
+  );
+  assert.ok(
+    executedCommands.some((c) =>
+      c.includes("ln -sfn '/var/www/app/shared/storage' '/var/www/app/releases/v1/storage'")
+    )
+  );
+});
