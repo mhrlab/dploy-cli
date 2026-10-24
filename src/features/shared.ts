@@ -18,7 +18,9 @@ export async function linkShared(
     log.verbose(`Creating shared directory: ${sharedDir}`);
     await exec(ssh, `mkdir -p ${escapeShellArg(sharedDir)}`);
 
-    for (const item of shared) {
+    for (const rawItem of shared) {
+        // Normalize wildcards like "writable/*" to directory "writable/"
+        const item = rawItem.endsWith("/*") ? rawItem.slice(0, -1) : rawItem;
         log.verbose(`Processing shared item: ${item}`);
         const sharedPath = posixJoin(sharedDir, item);
         const releasePath = posixJoin(releaseDir, item);
@@ -39,7 +41,7 @@ export async function linkShared(
         log.debug(`Shared item exists: ${exists}`);
 
         if (!exists) {
-            const defaultSource = sharedDefaults?.[item];
+            const defaultSource = sharedDefaults?.[rawItem] ?? sharedDefaults?.[item];
             log.debug(`Default source for ${item}: ${defaultSource}`);
 
             if (defaultSource) {

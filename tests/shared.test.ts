@@ -160,3 +160,29 @@ test("linkShared auto-detects directories without trailing slash and links clean
     )
   );
 });
+
+test("linkShared normalizes wildcard path like writable/* to directory writable/", async () => {
+  const { ssh, executedCommands } = createMockSSH({
+    "[ -e": "0\n",
+  });
+
+  await linkShared(
+    ssh,
+    "/var/www/app",
+    "/var/www/app/releases/v1",
+    ["writable/*"],
+    undefined
+  );
+
+  assert.ok(
+    executedCommands.some(
+      (c) =>
+        c.includes("cp -r '/var/www/app/releases/v1/writable' '/var/www/app/shared/writable'")
+    )
+  );
+  assert.ok(
+    executedCommands.some((c) =>
+      c.includes("ln -sfn '/var/www/app/shared/writable' '/var/www/app/releases/v1/writable'")
+    )
+  );
+});

@@ -34,6 +34,23 @@ export interface ProvisionReport {
 export const DEFAULT_PROVISION_DIRS = ["releases", "shared", "tmp", "logs"];
 
 /**
+ * Execute command with sudo -n fallback if the primary unprivileged command fails.
+ */
+async function execWithSudoFallback(ssh: Client, command: string): Promise<{ code: number; stdout: string; stderr: string }> {
+    const res = await exec(ssh, command);
+    if (res.code === 0) return res;
+
+    log.debug(`Command failed (code ${res.code}), attempting with sudo -n: ${command}`);
+    const sudoRes = await exec(ssh, `sudo -n ${command}`);
+    if (sudoRes.code === 0) {
+        log.debug(`Command succeeded with sudo -n: ${command}`);
+        return sudoRes;
+    }
+
+    return res;
+}
+
+/**
  * Check if remote host has required binaries installed (tar, curl, runtime).
  */
 export async function checkRemotePrerequisites(
@@ -122,15 +139,31 @@ export async function provisionDirectories(
     const dirSet = new Set<string>([...DEFAULT_PROVISION_DIRS, ...customDirs]);
     const dirs = Array.from(dirSet);
     const details: string[] = [];
+    let hasError = false;
 
     for (const dir of dirs) {
         const fullPath = posixJoin(deployTo, dir);
         if (dryRun) {
             details.push(`[dry-run] Would create directory: ${fullPath}`);
         } else {
-            await exec(ssh, `mkdir -p ${escapeShellArg(fullPath)}`);
-            details.push(`Created directory: ${fullPath}`);
+            const res = await execWithSudoFallback(ssh, `mkdir -p ${escapeShellArg(fullPath)}`);
+            if (res.code === 0) {
+                details.push(`Created directory: ${fullPath}`);
+            } else {
+                hasError = true;
+                const errDetail = res.stderr.trim() || `exit code ${res.code}`;
+                details.push(`✗ Failed to create directory: ${fullPath} (${errDetail})`);
+            }
         }
+    }
+
+    if (hasError) {
+        return {
+            step: "dirs",
+            status: "failed",
+            message: "Failed to create directory structure (check permissions or sudo)",
+            details,
+        };
     }
 
     return {
@@ -154,6 +187,7 @@ export async function provisionSharedResources(
 ): Promise<ProvisionStepResult> {
     const sharedDir = posixJoin(deployTo, "shared");
     const details: string[] = [];
+    let hasError = false;
 
     if (!sharedItems.length) {
         return {
@@ -164,18 +198,34 @@ export async function provisionSharedResources(
     }
 
     if (!dryRun) {
-        await exec(ssh, `mkdir -p ${escapeShellArg(sharedDir)}`);
+        const res = await execWithSudoFallback(ssh, `mkdir -p ${escapeShellArg(sharedDir)}`);
+        if (res.code !== 0) {
+            return {
+                step: "shared",
+                status: "failed",
+                message: `Failed to create shared directory: ${res.stderr.trim() || `exit code ${res.code}`}`,
+                details: [`Failed to create ${sharedDir}`],
+            };
+        }
     }
 
-    for (const item of sharedItems) {
+    for (const rawItem of sharedItems) {
+        // Normalize wildcards like "writable/*" to directory "writable/"
+        const item = rawItem.endsWith("/*") ? rawItem.slice(0, -1) : rawItem;
         const sharedPath = posixJoin(sharedDir, item);
 
         if (item.endsWith("/")) {
             if (dryRun) {
                 details.push(`[dry-run] Would create shared directory: ${sharedPath}`);
             } else {
-                await exec(ssh, `mkdir -p ${escapeShellArg(sharedPath)}`);
-                details.push(`Created shared directory: ${sharedPath}`);
+                const res = await execWithSudoFallback(ssh, `mkdir -p ${escapeShellArg(sharedPath)}`);
+                if (res.code === 0) {
+                    details.push(`Created shared directory: ${sharedPath}`);
+                } else {
+                    hasError = true;
+                    const errDetail = res.stderr.trim() || `exit code ${res.code}`;
+                    details.push(`✗ Failed to create shared directory: ${sharedPath} (${errDetail})`);
+                }
             }
         } else {
             const parentDir = posixJoin(sharedDir, item.replace(/\/[^/]*$/, ""));
@@ -183,18 +233,33 @@ export async function provisionSharedResources(
             if (dryRun) {
                 details.push(`[dry-run] Would ensure shared file: ${sharedPath}`);
             } else {
-                await exec(ssh, `mkdir -p ${escapeShellArg(parentDir)}`);
+                await execWithSudoFallback(ssh, `mkdir -p ${escapeShellArg(parentDir)}`);
                 const { stdout } = await exec(ssh, `[ -e ${escapeShellArg(sharedPath)} ] && echo 1 || echo 0`);
                 const exists = stdout.trim() === "1";
 
                 if (!exists || force) {
-                    await exec(ssh, `touch ${escapeShellArg(sharedPath)}`);
-                    details.push(`Created shared file: ${sharedPath}`);
+                    const res = await execWithSudoFallback(ssh, `touch ${escapeShellArg(sharedPath)}`);
+                    if (res.code === 0) {
+                        details.push(`Created shared file: ${sharedPath}`);
+                    } else {
+                        hasError = true;
+                        const errDetail = res.stderr.trim() || `exit code ${res.code}`;
+                        details.push(`✗ Failed to create shared file: ${sharedPath} (${errDetail})`);
+                    }
                 } else {
                     details.push(`Shared file already exists: ${sharedPath}`);
                 }
             }
         }
+    }
+
+    if (hasError) {
+        return {
+            step: "shared",
+            status: "failed",
+            message: "Failed to initialize one or more shared resources",
+            details,
+        };
     }
 
     return {
@@ -223,14 +288,21 @@ export async function provisionPermissions(
     }
 
     const details: string[] = [];
+    let hasError = false;
 
     // 1. Directory mode
     if (permissions.mode) {
         if (dryRun) {
             details.push(`[dry-run] Would set directory mode ${permissions.mode} on ${deployTo}`);
         } else {
-            await exec(ssh, `chmod ${escapeShellArg(permissions.mode)} ${escapeShellArg(deployTo)}`);
-            details.push(`Set directory mode ${permissions.mode} on ${deployTo}`);
+            const res = await execWithSudoFallback(ssh, `chmod ${escapeShellArg(permissions.mode)} ${escapeShellArg(deployTo)}`);
+            if (res.code === 0) {
+                details.push(`Set directory mode ${permissions.mode} on ${deployTo}`);
+            } else {
+                hasError = true;
+                const errDetail = res.stderr.trim() || `exit code ${res.code}`;
+                details.push(`✗ Failed to set directory mode on ${deployTo} (${errDetail})`);
+            }
         }
     }
 
@@ -240,8 +312,14 @@ export async function provisionPermissions(
         if (dryRun) {
             details.push(`[dry-run] Would set recursive mode ${permissions.sharedMode} on ${sharedDir}`);
         } else {
-            await exec(ssh, `chmod -R ${escapeShellArg(permissions.sharedMode)} ${escapeShellArg(sharedDir)} 2>/dev/null || true`);
-            details.push(`Set recursive mode ${permissions.sharedMode} on ${sharedDir}`);
+            const res = await execWithSudoFallback(ssh, `chmod -R ${escapeShellArg(permissions.sharedMode)} ${escapeShellArg(sharedDir)}`);
+            if (res.code === 0) {
+                details.push(`Set recursive mode ${permissions.sharedMode} on ${sharedDir}`);
+            } else {
+                hasError = true;
+                const errDetail = res.stderr.trim() || `exit code ${res.code}`;
+                details.push(`✗ Failed to set mode on ${sharedDir} (${errDetail})`);
+            }
         }
     }
 
@@ -251,9 +329,24 @@ export async function provisionPermissions(
         if (dryRun) {
             details.push(`[dry-run] Would change ownership to ${ownership} on ${deployTo}`);
         } else {
-            await exec(ssh, `chown -R ${escapeShellArg(ownership)} ${escapeShellArg(deployTo)} 2>/dev/null || true`);
-            details.push(`Set ownership to ${ownership} on ${deployTo}`);
+            const res = await execWithSudoFallback(ssh, `chown -R ${escapeShellArg(ownership)} ${escapeShellArg(deployTo)}`);
+            if (res.code === 0) {
+                details.push(`Set ownership to ${ownership} on ${deployTo}`);
+            } else {
+                hasError = true;
+                const errDetail = res.stderr.trim() || `exit code ${res.code}`;
+                details.push(`✗ Failed to set ownership to ${ownership} on ${deployTo} (${errDetail})`);
+            }
         }
+    }
+
+    if (hasError) {
+        return {
+            step: "permissions",
+            status: "failed",
+            message: "Failed to configure permissions or ownership (check sudo privileges)",
+            details,
+        };
     }
 
     return {
@@ -321,10 +414,12 @@ export async function provisionServices(
     let allActive = true;
     for (const s of serviceConfigs) {
         const type = s.type ?? "systemd";
+        if (!s.name) continue;
+
         if (type === "systemd") {
             const check = await exec(
                 ssh,
-                `systemctl is-active ${escapeShellArg(s.name!)} 2>&1 || true`
+                `systemctl is-active ${escapeShellArg(s.name)} 2>&1 || true`
             );
             const state = check.stdout.trim();
             details.push(`Systemd service '${s.name}' state: ${state}`);
@@ -334,7 +429,7 @@ export async function provisionServices(
         } else if (type === "pm2") {
             const check = await exec(
                 ssh,
-                `pm2 describe ${escapeShellArg(s.name!)} >/dev/null 2>&1 && echo running || echo not_found`
+                `pm2 describe ${escapeShellArg(s.name)} >/dev/null 2>&1 && echo running || echo not_found`
             );
             const state = check.stdout.trim();
             details.push(`PM2 service '${s.name}' state: ${state}`);
@@ -408,6 +503,9 @@ export async function executeProvisioning(
     if (shouldRun("dirs") && (provCfg.createDirs !== false)) {
         const res = await provisionDirectories(bundle.ssh, deployTo, provCfg.dirs, dryRun);
         steps.push(res);
+        if (res.status === "failed") {
+            success = false;
+        }
     }
 
     // 3. Shared resource setup
@@ -416,12 +514,18 @@ export async function executeProvisioning(
         const defaults = env.sharedDefaults ?? provCfg.sharedDefaults ?? {};
         const res = await provisionSharedResources(bundle.ssh, deployTo, shared, defaults, dryRun, force);
         steps.push(res);
+        if (res.status === "failed") {
+            success = false;
+        }
     }
 
     // 4. Permissions
     if (shouldRun("permissions") && (provCfg.configurePermissions !== false)) {
         const res = await provisionPermissions(bundle.ssh, deployTo, provCfg.permissions, dryRun);
         steps.push(res);
+        if (res.status === "failed") {
+            success = false;
+        }
     }
 
     // 5. Service verification
@@ -461,51 +565,71 @@ export function planProvisioningOffline(
         return only === step;
     };
 
+    // 1. Prereqs
     if (shouldRun("prereqs")) {
-        steps.push({
-            step: "prereqs",
-            status: "planned",
-            message: "Prerequisites check planned",
-            details: [
-                "Would check for binary: tar",
-                "Would check for binary: curl",
-                ...(provCfg.runtime
-                    ? Object.entries(provCfg.runtime).map(([k, v]) => `Would check for runtime: ${k}${v ? ` (>= ${v})` : ""}`)
-                    : []),
-            ],
-        });
+        const details: string[] = [];
+        if (options.skipChecks || provCfg.checkPrerequisites === false) {
+            steps.push({
+                step: "prereqs",
+                status: "skipped",
+                message: "Prerequisites check skipped",
+            });
+        } else {
+            details.push("Would check for binary: tar");
+            details.push("Would check for binary: curl");
+            if (provCfg.runtime) {
+                for (const [bin, ver] of Object.entries(provCfg.runtime)) {
+                    details.push(`Would check for runtime: ${bin}${ver ? ` (>= ${ver})` : ""}`);
+                }
+            }
+            steps.push({
+                step: "prereqs",
+                status: "planned",
+                message: "Prerequisites verification planned",
+                details,
+            });
+        }
     }
 
+    // 2. Dirs
     if (shouldRun("dirs") && (provCfg.createDirs !== false)) {
         const dirSet = new Set<string>([...DEFAULT_PROVISION_DIRS, ...(provCfg.dirs ?? [])]);
+        const details = Array.from(dirSet).map((d) => `[dry-run] Would create directory: ${posixJoin(deployTo, d)}`);
         steps.push({
             step: "dirs",
             status: "planned",
             message: `${dirSet.size} directory path(s) planned`,
-            details: Array.from(dirSet).map((d: string) => `[dry-run] Would create directory: ${posixJoin(deployTo, d)}`),
+            details,
         });
     }
 
+    // 3. Shared
     if (shouldRun("shared") && (provCfg.seedShared !== false)) {
-        const shared: string[] = (env.shared ?? provCfg.shared ?? []) as string[];
+        const shared = (env.shared ?? provCfg.shared ?? []) as string[];
+        const sharedDir = posixJoin(deployTo, "shared");
+        const details = shared.map((item) => {
+            const cleanItem = item.endsWith("/*") ? item.slice(0, -1) : item;
+            const fullPath = posixJoin(sharedDir, cleanItem);
+            return cleanItem.endsWith("/")
+                ? `[dry-run] Would create shared directory: ${fullPath}`
+                : `[dry-run] Would ensure shared file: ${fullPath}`;
+        });
         steps.push({
             step: "shared",
             status: "planned",
             message: `${shared.length} shared item(s) planned`,
-            details: shared.map((s: string) => `[dry-run] Would initialize shared resource: ${posixJoin(deployTo, "shared", s)}`),
+            details,
         });
     }
 
-    if (shouldRun("permissions") && (provCfg.configurePermissions !== false) && provCfg.permissions) {
+    // 4. Permissions
+    if (shouldRun("permissions") && (provCfg.configurePermissions !== false)) {
+        const p = provCfg.permissions;
         const details: string[] = [];
-        if (provCfg.permissions.mode) {
-            details.push(`[dry-run] Would set directory mode ${provCfg.permissions.mode} on ${deployTo}`);
-        }
-        if (provCfg.permissions.sharedMode) {
-            details.push(`[dry-run] Would set recursive mode ${provCfg.permissions.sharedMode} on ${posixJoin(deployTo, "shared")}`);
-        }
-        if (provCfg.permissions.owner || provCfg.permissions.group) {
-            const ownership = [provCfg.permissions.owner, provCfg.permissions.group].filter(Boolean).join(":");
+        if (p?.mode) details.push(`[dry-run] Would set directory mode ${p.mode} on ${deployTo}`);
+        if (p?.sharedMode) details.push(`[dry-run] Would set recursive mode ${p.sharedMode} on ${posixJoin(deployTo, "shared")}`);
+        if (p?.owner || p?.group) {
+            const ownership = [p.owner, p.group].filter(Boolean).join(":");
             details.push(`[dry-run] Would change ownership to ${ownership} on ${deployTo}`);
         }
         steps.push({
@@ -516,15 +640,15 @@ export function planProvisioningOffline(
         });
     }
 
+    // 5. Service
     const services = normalizeServices(provCfg.service, provCfg.services);
     if (shouldRun("service") && services.length > 0) {
+        const details = services.map((s) => `[dry-run] Would verify ${s.type ?? "systemd"} service '${s.name}'`);
         steps.push({
             step: "service",
             status: "planned",
-            message: `${services.length} service check(s) planned`,
-            details: services.map(
-                (s) => `[dry-run] Would verify ${s.type ?? "systemd"} service: ${s.name}`
-            ),
+            message: `${services.length} service(s) planned for verification`,
+            details,
         });
     }
 

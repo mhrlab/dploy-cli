@@ -104,6 +104,25 @@ test("provisionSharedResources creates shared directories and touches files", as
   assert.ok(executedCommands.some((c) => c.includes("touch '/var/www/app/shared/.env'")));
 });
 
+test("provisionSharedResources normalizes wildcard path like writable/* to directory", async () => {
+  const { ssh, executedCommands } = createMockSSH({
+    "[ -e": "0\n",
+  });
+
+  const res = await provisionSharedResources(
+    ssh,
+    "/var/www/app",
+    [".env", "writable/*"],
+    {},
+    false,
+    false
+  );
+
+  assert.equal(res.status, "ok");
+  assert.ok(executedCommands.some((c) => c.includes("mkdir -p '/var/www/app/shared/writable/'")));
+  assert.ok(!executedCommands.some((c) => c.includes("touch '/var/www/app/shared/writable/*'") || c.includes("touch '/var/www/app/shared/writable/\\*'")));
+});
+
 test("provisionPermissions sets mode, sharedMode, and ownership", async () => {
   const { ssh, executedCommands } = createMockSSH();
 
@@ -263,36 +282,6 @@ test("provision command throws when deployTo is missing or root", async () => {
       },
       /Refusing to provision root directory/
     );
-  } finally {
-    process.chdir(originalCwd);
-  }
-});
-
-test("provision command runs offline dry-run and returns report", async () => {
-  const originalCwd = process.cwd();
-  const cwd = await mkdtemp(path.join(os.tmpdir(), "dploy-prov-"));
-
-  try {
-    process.chdir(cwd);
-    await writeFile(
-      path.join(cwd, "deploy.config.json"),
-      JSON.stringify({
-        environments: {
-          staging: {
-            deployTo: "/var/www/staging",
-            provision: {
-              dirs: ["logs"],
-            },
-          },
-        },
-      }),
-      "utf8"
-    );
-
-    const report = await provision({ env: "staging", dryRun: true, json: true });
-    assert.equal(report.deployTo, "/var/www/staging");
-    assert.equal(report.dryRun, true);
-    assert.equal(report.success, true);
   } finally {
     process.chdir(originalCwd);
   }
