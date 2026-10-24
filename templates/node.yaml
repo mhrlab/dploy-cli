@@ -24,20 +24,30 @@ hooks:
   preBuild:
     - echo "📦 Installing dependencies"
     - npm ci
-  postBuild:
     - echo "🏗️ Building the project"
     - npm run build
   preDeploy:
-    - echo "🗜️ Packaging build files"
-    - tar -czf node_app.tar.gz build
+    - echo "🚀 Preparing release on server"
   postDeploy:
-    - echo "🚀 Restarting PM2 process"
-    - pm2 restart ecosystem.config.js || pm2 start ecosystem.config.js
+    - echo "🔄 Reloading PM2 processes gracefully (Zero-Downtime)"
+    - pm2 reload ecosystem.config.js --update-env || pm2 start ecosystem.config.js
 
 environments:
   default:
     keepVersions: 5
     deployTo: /var/www/node_app
+    port: ${SSH_PORT:-22}
+    ssh_key_path: ${SSH_KEY_PATH:-~/.ssh/id_rsa}
+    # password: ${SSH_PASSWORD} # Uncomment if using password authentication
+    baseUrl: https://${PROD_HOST:-localhost:3000}
+    healthCheckPath: /health
+    provision:
+      checkPrerequisites: true
+      runtime:
+        node: "20"
+      permissions:
+        mode: "755"
+        sharedMode: "775"
     env:
       NODE_ENV: development
 
@@ -46,6 +56,8 @@ environments:
     host: ${STAGING_HOST:-staging.example.com}
     username: ${STAGING_USER:-deploy}
     deployTo: /var/www/node_staging
+    # ssh_key_path: ${STAGING_SSH_KEY_PATH:-~/.ssh/id_rsa}
+    # password: ${STAGING_PASSWORD}
     env:
       NODE_ENV: staging
 
@@ -55,6 +67,8 @@ environments:
     username: ${PROD_USER:-deploy}
     deployTo: /var/www/node_app
     keepVersions: 7
+    # ssh_key_path: ${PROD_SSH_KEY_PATH:-~/.ssh/id_rsa}
+    # password: ${PROD_PASSWORD}
     env:
       NODE_ENV: production
       PORT: 3000

@@ -1,0 +1,92 @@
+# deploy.config.yml
+name: Go + Systemd
+
+build:
+  strategy: include
+  buildDir: build
+  include:
+    - build/app
+    - config/**
+    - public/**
+    - templates/**
+    - migrations/**
+  exclude:
+    - "*.go"
+    - go.mod
+    - go.sum
+    - tests/**
+    - .git/**
+  shared:
+    - .env
+    - logs
+    - uploads
+  sharedDefaults:
+    .env: .env.example
+  cleanAfterDeploy: true
+
+hooks:
+  preBuild:
+    - echo "📦 Downloading Go dependencies"
+    - go mod download
+    - echo "🧪 Running tests"
+    - go test ./...
+    - echo "🏗️ Cross-compiling Go binary for Linux amd64"
+    - CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o build/app ./cmd/server || CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o build/app .
+  preDeploy:
+    - echo "🚀 Preparing release on server"
+  postDeploy:
+    - echo "🚀 Restarting systemd service"
+    - sudo systemctl restart ${APP_NAME:-go-app}
+
+environments:
+  default:
+    keepVersions: 5
+    deployTo: /var/www/go_app
+    port: ${SSH_PORT:-22}
+    ssh_key_path: ${SSH_KEY_PATH:-~/.ssh/id_rsa}
+    # password: ${SSH_PASSWORD} # Uncomment if using password authentication
+    provision:
+      checkPrerequisites: true
+      runtime:
+        go: "1.21"
+      dirs:
+        - logs
+        - uploads
+      permissions:
+        mode: "755"
+        sharedMode: "775"
+        owner: ${PROV_OWNER:-deploy}
+        group: ${PROV_GROUP:-www-data}
+      service:
+        type: systemd
+        name: ${APP_NAME:-go-app}
+      services:
+        - redis
+        - postgresql
+    env:
+      PORT: 8080
+      GIN_MODE: release
+
+  staging:
+    extends: default
+    host: ${STAGING_HOST:-staging.example.com}
+    username: ${STAGING_USER:-deploy}
+    deployTo: /var/www/go_app_staging
+    # ssh_key_path: ${STAGING_SSH_KEY_PATH:-~/.ssh/id_rsa}
+    # password: ${STAGING_PASSWORD}
+    env:
+      APP_ENV: staging
+      GIN_MODE: debug
+
+  production:
+    extends: default
+    host: ${PROD_HOST:-prod.example.com}
+    username: ${PROD_USER:-deploy}
+    deployTo: /var/www/go_app
+    keepVersions: 7
+    # ssh_key_path: ${PROD_SSH_KEY_PATH:-~/.ssh/id_rsa}
+    # password: ${PROD_PASSWORD}
+    env:
+      APP_ENV: production
+      GIN_MODE: release
+      PORT: 8080

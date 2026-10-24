@@ -29,7 +29,7 @@ Review Status: In Progress
 - [x] **[HIGH] [SEC-03] Fix Local Path Traversal in Packaging / Staging**
   - **Location**: `src/features/packager.ts:58-61`, `src/features/strategy.ts:25-32`
   - **Issue**: `copy` strategy entries copy files directly to `path.join(stagingDir, f.to)` without verifying that `f.to` stays inside `stagingDir`. Traversal paths (e.g. `../../target`) can overwrite arbitrary files on the local machine during packaging.
-  - **Fix**: Validate that `path.resolve(stagingDir, f.to)` is strictly contained within `path.resolve(stagingDir)`.
+  - **Fix**: Validate that `path.resolve(stagingDir, f.to)` is strictly contained within `path.resolve(stagingDir)` .
 
 - [x] **[MEDIUM] [SEC-04] Disable Dangerous Symlink Dereferencing During Artifact Packaging**
   - **Location**: `src/features/packager.ts:60`
@@ -118,12 +118,12 @@ Review Status: In Progress
 ## 6. Feature Roadmap
 
 ### 6.1 Operational & Safety Features
-- [ ] **Health-Gated Deploys**: Hit health endpoint post-deploy and fail if response is unhealthy.
-- [ ] **Auto-Rollback on Failed Health Check**: Automatically revert `current` symlink to previous release if health check fails.
-- [ ] **Deployment Retries**: Retry SSH connect, SFTP upload, and health check on transient network failure.
-- [ ] **Non-Interactive CI Mode**: Add `--yes` / `--non-interactive` flag to suppress all prompts for CI/CD runs.
-- [ ] **JSON Output Flag**: Support `--json` on `status` and `list` commands for scripting/piping.
-- [ ] **Keep Local Artifact Flag**: Add `--keep-artifact` to preserve local `.tar.gz` archive after deployment.
+- [x] **Health-Gated Deploys**: Hit health endpoint post-deploy and fail if response is unhealthy.
+- [x] **Auto-Rollback on Failed Health Check**: Automatically revert `current` symlink to previous release if health check fails.
+- [x] **Deployment Retries**: Retry SSH connect, SFTP upload, and health check on transient network failure.
+- [x] **Non-Interactive CI Mode**: Add `--yes` / `--non-interactive` flag to suppress all prompts for CI/CD runs.
+- [x] **JSON Output Flag**: Support `--json` on `status` and `list` commands for scripting/piping.
+- [x] **Keep Local Artifact Flag**: Add `--keep-artifact` to preserve local `.tar.gz` archive after deployment.
 
 ### 6.2 Build & Packaging Enhancements
 - [ ] **`.dployignore` Support**: Respect `.dployignore` file for deployment packaging instead of relying solely on config globs.
@@ -141,14 +141,14 @@ Review Status: In Progress
 ## 7. Feature Spec: `dploy provision`
 
 ### Goal
-Add a dedicated command (`dploy provision` / alias `dploy setup-server`) to prepare a fresh server for deployments in an idempotent manner without polluting the core deploy flow.
+[x] Add a dedicated command (`dploy provision` / alias `dploy setup-server`) to prepare a fresh server for deployments in an idempotent manner without polluting the core deploy flow.
 
 ### Command Options
 - `-e, --env <env>`: Target environment (default: `production`).
 - `-n, --dry-run`: Preview planned server changes without executing.
 - `--force`: Re-run all steps even if directories/files exist.
 - `--skip-checks`: Skip prerequisite verification (tar, curl, runtime).
-- `--only <step>`: Run a specific provisioning step (`dirs`, `shared`, `permissions`, `runtime`, `service`, `health`).
+- `--only <step>`: Run a specific provisioning step (`prereqs`, `dirs`, `shared`, `permissions`, `service`).
 - `--json`: Output machine-readable JSON status.
 
 ### Configuration Schema (`provision` block in `deploy.config.yml`)
@@ -182,8 +182,14 @@ environments:
         name: myapp
 ```
 
-### Planned Implementation Phases
-1. **Phase 1: Core Provisioning**: `src/commands/provision.ts`, base directory creation, shared seeding, permission application, dry-run mode.
-2. **Phase 2: Prerequisite Checks & Idempotency**: Verify remote binaries (`tar`, `curl`, `node`), safe non-destructive checks, `--json` output.
-3. **Phase 3: Service & Web Server Integration**: Systemd / PM2 service templates and nginx config generation.
-4. **Phase 4: Starter Templates & Documentation**: Update `templates/` and `README.md` with provisioning defaults.
+### Implementation Details
+- [x] **Core Provisioning & Feature Engine**: Implemented `src/features/provisioner.ts` with prerequisite checks (`tar`, `curl`, configured runtimes), remote directory layout creation, shared directory/file seeding, permission and ownership enforcement, and systemd / PM2 service verification.
+- [x] **Command CLI Integration**: Implemented `src/commands/provision.ts` with alias `setup-server` in `bin/dploy.ts`, supporting `--dry-run`, `--force`, `--skip-checks`, `--only <step>`, and `--json`.
+- [x] **Offline Dry-Run & Safe Validation**: Refuses root `/` provisioning, ensures safe argument escaping via `escapeShellArg`, and supports offline dry-run when remote host is not reachable.
+- [x] **Starter Templates & Types**: Updated `src/core/config.ts` with TypeScript interfaces and added default provisioning config to `templates/node.yaml`.
+- [x] **Automated Test Suite**: Added comprehensive unit tests in `tests/provision.test.ts` covering live execution, `--only` filtering, prerequisite failures, and offline dry-run JSON output.
+
+## 8. Bugs
+### Implementation 
+- [x] fix options conflict for Inconsistent `-e/--env` Add `.option("-e, --env <env>", "Target environment (default: production)")` to all environment-specific commands (`deploy`, `rollback`, `status`, `clean`, `list`, `health`).
+- [x] fix option conflict for duplicate archive flags. `deploy` has `--artifact <path>` AND `-A,` `--archive <path>`. Two different flags doing the exact same thing clutters CLI documentation and autocomplete.

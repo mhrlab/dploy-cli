@@ -4,7 +4,7 @@ import { log } from "../core/logger.js";
 import { posixJoin } from "../core/utils.js";
 import { fetchRemoteReleases, formatReleaseLabel } from "../features/release-metadata.js";
 
-export async function list(opts: { env?: string }) {
+export async function list(opts: { env?: string; json?: boolean }) {
     log.debug(`List command started with options: ${JSON.stringify(opts)}`);
 
     const cfg = await loadConfig();
@@ -18,14 +18,17 @@ export async function list(opts: { env?: string }) {
     const releases = posixJoin((env.deployTo ? env.deployTo : ''), "releases");
     log.debug(`Releases directory: ${releases}`);
 
-    log.info(`Connecting to ${env.username}@${env.host} to list releases`);
-    const spin = log.spinner("Connecting");
+    if (!opts.json) {
+        log.info(`Connecting to ${env.username}@${env.host} to list releases`);
+    }
+
+    const spin = opts.json ? null : log.spinner("Connecting");
     const bundle = await connect(env).catch((e) => {
-        spin.fail("SSH connect failed");
+        if (spin) spin.fail("SSH connect failed");
         log.err(e.message || String(e));
         process.exit(1);
     });
-    spin.succeed("Connected");
+    if (spin) spin.succeed("Connected");
 
     try {
         log.verbose(`Listing releases in: ${releases}`);
@@ -33,7 +36,21 @@ export async function list(opts: { env?: string }) {
 
         log.debug(`Found ${releasesWithMetadata.length} releases: ${JSON.stringify(releasesWithMetadata)}`);
 
-        if (!releasesWithMetadata.length) {
+        if (opts.json) {
+            console.log(
+                JSON.stringify(
+                    {
+                        environment: envName,
+                        host: env.host,
+                        deployTo: env.deployTo,
+                        total: releasesWithMetadata.length,
+                        releases: releasesWithMetadata,
+                    },
+                    null,
+                    2
+                )
+            );
+        } else if (!releasesWithMetadata.length) {
             log.warn("No releases found");
         } else {
             log.ok(`Found ${releasesWithMetadata.length} release(s):`);

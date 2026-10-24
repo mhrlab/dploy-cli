@@ -1,10 +1,14 @@
 import assert from "node:assert/strict";
 import os from "node:os";
 import path from "node:path";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 import { mkdtemp, mkdir, writeFile } from "node:fs/promises";
 import { test } from "node:test";
 import { build } from "../src/commands/build.js";
 import { health } from "../src/commands/health.js";
+
+const execFileAsync = promisify(execFile);
 
 async function createTempWorkspace() {
   return await mkdtemp(path.join(os.tmpdir(), "dploy-cmd-"));
@@ -98,4 +102,34 @@ test("health command throws error when baseUrl is missing", async () => {
   } finally {
     process.chdir(originalCwd);
   }
+});
+
+test("CLI commands display consistent -e, --env option in --help", async () => {
+  const cliPath = path.resolve("dist/bin/dploy.js");
+  const envCommands = ["deploy", "rollback", "list", "clean", "status", "health", "provision"];
+
+  for (const cmd of envCommands) {
+    const { stdout } = await execFileAsync(process.execPath, [cliPath, cmd, "--help"]);
+    assert.match(
+      stdout,
+      /-e, --env <env>\s+Target environment \(default: production\)/,
+      `Command '${cmd}' should include -e, --env option in help output`
+    );
+  }
+});
+
+test("deploy command displays unified -A, --artifact option without duplicate --archive clutter", async () => {
+  const cliPath = path.resolve("dist/bin/dploy.js");
+  const { stdout } = await execFileAsync(process.execPath, [cliPath, "deploy", "--help"]);
+
+  assert.match(
+    stdout,
+    /-A, --artifact <path>\s+Path to a custom archive to upload \(skips build\)/,
+    "deploy --help should show consolidated -A, --artifact"
+  );
+  assert.equal(
+    stdout.includes("--archive"),
+    false,
+    "deploy --help should not list duplicate --archive in visible options"
+  );
 });

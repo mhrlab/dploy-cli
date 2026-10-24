@@ -3,18 +3,30 @@ import os from "node:os";
 import { loadConfig, getEnvName } from "../core/config.js";
 import { detectVersion, posixJoin, safeExec, escapeShellArg } from "../core/utils.js";
 import { buildArtifact, planBuildArtifact } from "../features/packager.js";
-import { connect, close, ensureRemoteDirs, exec, uploadFile } from "../core/ssh.js";
+import { connect, close, ensureRemoteDirs, exec, uploadFile, switchCurrentSymlink } from "../core/ssh.js";
 import { log } from "../core/logger.js";
 import { linkShared } from "../features/shared.js";
-import {runLocalHooks, runRemoteHooks} from "../core/hooks.js";
-import {cleanupReleases} from "../features/cleaner.js";
+import { runLocalHooks, runRemoteHooks } from "../core/hooks.js";
+import { cleanupReleases } from "../features/cleaner.js";
 import { resolveDeployArtifact } from "../features/deploy-artifact.js";
 import { verifyArtifactChecksum } from "../features/checksum.js";
+import { performHealthCheckWithRetry } from "./health.js";
 import fs from "fs-extra";
 import { mkdtemp } from "node:fs/promises";
 import { createReleaseMetadata, RELEASE_METADATA_FILE } from "../features/release-metadata.js";
 
-export async function deploy(opts: { env?: string; artifact?: string; archive?: string; version?: string; dryRun?: boolean; skipBuild?: boolean }) {
+export async function deploy(opts: {
+    env?: string;
+    artifact?: string;
+    archive?: string;
+    version?: string;
+    dryRun?: boolean;
+    skipBuild?: boolean;
+    keepArtifact?: boolean;
+    autoRollback?: boolean;
+    healthGate?: boolean;
+    healthRetries?: number;
+}) {
     log.debug(`Deploy command started with options: ${JSON.stringify(opts)}`);
 
     const cwd = process.cwd();
@@ -35,6 +47,7 @@ export async function deploy(opts: { env?: string; artifact?: string; archive?: 
     const sharedItems: string[] = cfg.shared ?? cfg.build?.shared ?? [];
     const sharedDefaults: Record<string, string> | undefined = cfg.sharedDefaults ?? cfg.build?.sharedDefaults;
     const cleanAfterDeploy: boolean = cfg.cleanAfterDeploy ?? cfg.build?.cleanAfterDeploy ?? false;
+    const keepLocalArtifact: boolean = opts.keepArtifact ?? cfg.keepArtifact ?? env.keepArtifact ?? false;
 
     const version = detectVersion(opts.version);
     log.verbose(`Deployment version: ${version}`);
@@ -130,12 +143,12 @@ export async function deploy(opts: { env?: string; artifact?: string; archive?: 
         if (sharedItems.length) {
             log.info(`[dry-run] Would link shared items: ${sharedItems.join(", ")}`);
         }
-        log.info(`[dry-run] Would switch current symlink to ${currentLink}`);
         if (cfg.hooks?.preDeploy?.length) {
             log.info(`[dry-run] Would run ${cfg.hooks.preDeploy.length} preDeploy hook(s)`);
         } else {
             log.info(`[dry-run] No preDeploy hooks configured`);
         }
+        log.info(`[dry-run] Would switch current symlink atomically to ${currentLink}`);
         if (cfg.hooks?.postDeploy?.length) {
             log.info(`[dry-run] Would run ${cfg.hooks.postDeploy.length} postDeploy hook(s)`);
         } else {
@@ -146,6 +159,13 @@ export async function deploy(opts: { env?: string; artifact?: string; archive?: 
             log.info(`[dry-run] Would remove temporary upload directory ${tmp}`);
         }
         log.info(`[dry-run] Would verify SHA256 checksum after upload`);
+        if (shouldBuild) {
+            if (keepLocalArtifact) {
+                log.info(`[dry-run] Would preserve local build artifact: ${path.basename(artifactPath!)}`);
+            } else {
+                log.info(`[dry-run] Would remove local build artifact: ${path.basename(artifactPath!)}`);
+            }
+        }
         return;
     }
 
@@ -173,8 +193,10 @@ export async function deploy(opts: { env?: string; artifact?: string; archive?: 
         await ensureRemoteDirs(bundle.ssh, releases, tmp);
 
         log.verbose(`Uploading artifact to remote server`);
-        log.info(`Uploading deployment artifact...`);
-        await uploadFile(bundle.sftp, artifactPath!, remoteTar);
+        await uploadFile(bundle.sftp, artifactPath!, remoteTar, {
+            label: `Uploading artifact (${path.basename(artifactPath!)})`,
+            showProgress: true,
+        });
 
         log.verbose(`Verifying uploaded artifact checksum`);
         const checksum = log.spinner("Verifying checksum...");
@@ -204,11 +226,7 @@ export async function deploy(opts: { env?: string; artifact?: string; archive?: 
         if (code !== 0) throw new Error(stderr || "remote extract failed");
         extract.succeed(`Extracted ${version}`);
 
-        // run PreDeploy hooks
-        log.verbose(`Running pre-deploy hooks after extraction.`);
-        await runRemoteHooks(bundle.ssh, "preDeploy", cfg.hooks?.preDeploy, releaseDir);
-
-        // Link shared items
+        // Link shared items (must happen before preDeploy so .env and storage are accessible)
         if (sharedItems.length) {
             log.verbose(`Linking ${sharedItems.length} shared items`);
             log.debug(`Shared items: ${JSON.stringify(sharedItems)}`);
@@ -219,18 +237,83 @@ export async function deploy(opts: { env?: string; artifact?: string; archive?: 
             log.verbose(`No shared items to link`);
         }
 
-        // Switch current symlink
+        // run PreDeploy hooks (runs in unzipped releaseDir with shared items linked)
+        log.verbose(`Running pre-deploy hooks after extraction and shared linking.`);
+        await runRemoteHooks(bundle.ssh, "preDeploy", cfg.hooks?.preDeploy, releaseDir);
+
+        // Capture previous release target for safe health-gate auto-rollback
+        const { stdout: previousTargetRaw } = await exec(bundle.ssh, `readlink ${escapeShellArg(currentLink)} || true`);
+        const previousTarget = previousTargetRaw.trim() || null;
+        log.debug(`Previous release symlink target: ${previousTarget || "(none)"}`);
+
+        // Switch current symlink atomically (activate release)
         log.verbose(`Switching current symlink to new release`);
         log.info(`Activating new release...`);
 
-        await exec(bundle.ssh, `ln -sfn ${escapeShellArg(releaseDir)} ${escapeShellArg(currentLink)}`);
+        await switchCurrentSymlink(bundle.ssh, releaseDir, currentLink);
 
         log.ok(`Activated ${version}`);
         log.ok(`Deployed ${version} to [${envName}]`);
 
-        // run PostDeploy hooks
+        // run PostDeploy hooks (after release is activated, e.g. restart service)
         log.verbose(`Running post-deploy hooks`);
         await runRemoteHooks(bundle.ssh, "postDeploy", cfg.hooks?.postDeploy, releaseDir);
+
+        // Optional post-deployment health check & auto-rollback gating
+        const baseUrl = env.baseUrl || process.env.DPLOY_BASE_URL;
+        if (baseUrl) {
+            const healthPath = env.healthCheckPath || "/health";
+            const url = new URL(healthPath, baseUrl).toString();
+            const timeoutMs = Number(env.healthCheckTimeout ?? process.env.DPLOY_HEALTH_CHECK_TIMEOUT ?? 10000);
+            const retries = Number(opts.healthRetries ?? env.healthCheckRetries ?? 3);
+            const intervalMs = Number(env.healthCheckInterval ?? 2000);
+            const isGated = opts.healthGate !== false && env.healthGate !== false;
+            const shouldAutoRollback = opts.autoRollback !== false && env.autoRollback !== false;
+
+            log.info(`Verifying deployment health: GET ${url} (timeout: ${timeoutMs}ms, retries: ${retries})`);
+            const spinHealth = log.spinner("Verifying service health...");
+
+            const healthResult = await performHealthCheckWithRetry(url, {
+                timeoutMs,
+                retries,
+                intervalMs,
+                onRetry: (err, attempt, nextDelay) => {
+                    log.warn(`Health check attempt ${attempt}/${retries} failed (${err.message}). Retrying in ${nextDelay}ms...`);
+                },
+            });
+
+            if (healthResult.ok) {
+                spinHealth.succeed(`Post-deployment health check passed (${healthResult.status})`);
+                log.ok(`Service verified healthy on [${envName}]`);
+            } else {
+                spinHealth.fail(`Post-deployment health check failed (status: ${healthResult.status || "unreachable"})`);
+                log.err(`❌ Health check failed for ${url}: status ${healthResult.status || "unreachable"}`);
+
+                if (isGated) {
+                    if (shouldAutoRollback && previousTarget) {
+                        log.warn(`Initiating automatic rollback to previous release (${path.posix.basename(previousTarget)})...`);
+                        const spinRollback = log.spinner("Rolling back symlink to previous release...");
+                        await switchCurrentSymlink(bundle.ssh, previousTarget, currentLink);
+                        spinRollback.succeed(`Rolled back 'current' symlink to ${path.posix.basename(previousTarget)}`);
+                        log.ok(`✓ Successfully restored previous release: ${path.posix.basename(previousTarget)}`);
+
+                        throw new Error(
+                            `Health gate failed: GET ${url} returned status ${healthResult.status || "unreachable"}. Automatically rolled back to ${path.posix.basename(previousTarget)}.`
+                        );
+                    } else if (shouldAutoRollback && !previousTarget) {
+                        throw new Error(
+                            `Health gate failed: GET ${url} returned status ${healthResult.status || "unreachable"}. No previous release available to rollback.`
+                        );
+                    } else {
+                        throw new Error(
+                            `Health gate failed: GET ${url} returned status ${healthResult.status || "unreachable"}.`
+                        );
+                    }
+                } else {
+                    log.warn(`⚠️ Post-deployment health check failed, but health-gating is disabled`);
+                }
+            }
+        }
 
         const metadataTmpDir = await mkdtemp(path.join(os.tmpdir(), "dploy-release-"));
         const metadataTmpFile = path.join(metadataTmpDir, RELEASE_METADATA_FILE);
@@ -244,7 +327,9 @@ export async function deploy(opts: { env?: string; artifact?: string; archive?: 
         try {
             await fs.writeJson(metadataTmpFile, metadata, { spaces: 2 });
             log.verbose(`Uploading release metadata to ${posixJoin(releaseDir, RELEASE_METADATA_FILE)}`);
-            await uploadFile(bundle.sftp, metadataTmpFile, posixJoin(releaseDir, RELEASE_METADATA_FILE));
+            await uploadFile(bundle.sftp, metadataTmpFile, posixJoin(releaseDir, RELEASE_METADATA_FILE), {
+                showProgress: false,
+            });
         } finally {
             await fs.remove(metadataTmpDir);
         }
@@ -256,6 +341,16 @@ export async function deploy(opts: { env?: string; artifact?: string; archive?: 
         if (cleanAfterDeploy && tmp && tmp !== "/") {
             log.verbose(`Cleaning temporary uploaded directory & files`);
             await exec(bundle.ssh, `rm -rf ${escapeShellArg(tmp)}`);
+        }
+
+        // Clean up or keep local artifact
+        if (shouldBuild && artifactPath) {
+            if (!keepLocalArtifact) {
+                log.verbose(`Cleaning up local build artifact: ${artifactPath}`);
+                await fs.remove(artifactPath).catch(() => {});
+            } else {
+                log.ok(`Preserved local build artifact: ${path.basename(artifactPath)}`);
+            }
         }
 
     } finally {

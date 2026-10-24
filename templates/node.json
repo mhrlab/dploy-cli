@@ -26,6 +26,7 @@
     "production": {
       "host": "myserver.com",
       "username": "deploy",
+      "ssh_key_path": "~/.ssh/id_rsa",
       "deployTo": "/var/www/myapp",
       "keepVersions": 5
     }

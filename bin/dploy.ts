@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { Command } from "commander";
+import { Command, Option } from "commander";
 import { build } from "../src/commands/build.js";
 import { deploy } from "../src/commands/deploy.js";
 import { rollback } from "../src/commands/rollback.js";
@@ -8,6 +8,7 @@ import { clean } from "../src/commands/clean.js";
 import { status } from "../src/commands/status.js";
 import { health } from "../src/commands/health.js";
 import { init } from "../src/commands/init.js";
+import { provision } from "../src/commands/provision.js";
 import { setLogLevel } from "../src/core/logger.js";
 import { getAppVersion } from "../src/core/utils.js";
 
@@ -36,9 +37,10 @@ async function main() {
 
     // Global options
     program
-        .option("-e, --env <env>", "Environment name (default: production)", "production")
+        .option("-e, --env <env>", "Target environment (default: production)")
         .option("-v, --verbose", "Enable verbose logging")
-        .option("-d, --debug", "Enable debug logging");
+        .option("-d, --debug", "Enable debug logging")
+        .option("-y, --yes", "Automatic yes to prompts; non-interactive mode");
 
     program
         .name("dploy")
@@ -62,48 +64,75 @@ async function main() {
         .description("Build and package the project (copy strategy)")
         .option("-V, --version <ver>", "Override version string")
         .option("-n, --dry-run", "Show planned build actions without writing files")
-        .action(async (opts) => {
-            await build(opts);
+        .action(async (opts, cmd) => {
+            await build(cmd.optsWithGlobals());
         });
 
     program
         .command("deploy")
         .description("Deploy to remote server")
-        .option("--artifact <path>", "Path to a custom archive to upload (skips build)")
-        .option("-A, --archive <path>", "Alias for --artifact")
+        .option("-e, --env <env>", "Target environment (default: production)")
+        .option("-A, --artifact <path>", "Path to a custom archive to upload (skips build)")
+        .addOption(new Option("--archive <path>", "Alias for --artifact").hideHelp())
         .option("-s, --skip-build", "Skip local build and use an existing artifact")
         .option("-V, --version <ver>", "Override version string")
         .option("-n, --dry-run", "Show planned deploy actions without changing anything")
-        .action(deploy);
+        .option("--keep-artifact", "Preserve local build artifact archive after deployment")
+        .option("--no-auto-rollback", "Disable automatic rollback if health check fails")
+        .option("--no-health-gate", "Do not abort deployment if health check fails")
+        .action((opts, cmd) => deploy(cmd.optsWithGlobals()));
 
     program
         .command("rollback")
         .description("Rollback to previous release")
+        .option("-e, --env <env>", "Target environment (default: production)")
         .option("--latest", "Rollback to the previous release without prompting")
         .option("--to <version>", "Rollback to a specific release by name")
         .option("-n, --dry-run", "Show what would be changed without switching the symlink")
-        .action(rollback);
+        .option("-y, --yes", "Automatic yes to prompts; roll back to previous release without prompt")
+        .option("--non-interactive", "Run in non-interactive mode without terminal prompts")
+        .action((opts, cmd) => rollback(cmd.optsWithGlobals()));
 
     program
         .command("list")
         .description("List releases on remote")
-        .action(list);
+        .option("-e, --env <env>", "Target environment (default: production)")
+        .option("--json", "Output machine-readable JSON status")
+        .action((opts, cmd) => list(cmd.optsWithGlobals()));
 
     program
         .command("clean")
         .description("Remove old releases beyond keepVersions")
+        .option("-e, --env <env>", "Target environment (default: production)")
         .option("-n, --dry-run", "Show which releases would be removed without deleting them")
-        .action(clean);
+        .action((opts, cmd) => clean(cmd.optsWithGlobals()));
 
     program
         .command("status")
         .description("Show current release and remote deployment status")
-        .action(status);
+        .option("-e, --env <env>", "Target environment (default: production)")
+        .option("--json", "Output machine-readable JSON status")
+        .action((opts, cmd) => status(cmd.optsWithGlobals()));
 
     program
         .command("health")
         .description("Call the health endpoint")
-        .action(health);
+        .option("-e, --env <env>", "Target environment (default: production)")
+        .action((opts, cmd) => health(cmd.optsWithGlobals()));
+
+    program
+        .command("provision")
+        .alias("setup-server")
+        .description("Prepare a fresh remote server for deployments")
+        .option("-e, --env <env>", "Target environment (default: production)")
+        .option("-n, --dry-run", "Preview planned server changes without executing")
+        .option("--force", "Re-run all steps even if directories/files exist")
+        .option("--skip-checks", "Skip prerequisite verification (tar, curl, runtime)")
+        .option("--only <step>", "Run a specific provisioning step (prereqs, dirs, shared, permissions, service)")
+        .option("--json", "Output machine-readable JSON status")
+        .action(async (opts, cmd) => {
+            await provision(cmd.optsWithGlobals());
+        });
 
     program.parse(process.argv);
 }
