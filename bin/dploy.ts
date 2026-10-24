@@ -37,7 +37,7 @@ async function main() {
 
     // Global options
     program
-        .option("-e, --env <env>", "Environment name (default: production)", "production")
+        .option("-e, --env <env>", "Target environment (default: production)")
         .option("-v, --verbose", "Enable verbose logging")
         .option("-d, --debug", "Enable debug logging");
 
@@ -63,48 +63,54 @@ async function main() {
         .description("Build and package the project (copy strategy)")
         .option("-V, --version <ver>", "Override version string")
         .option("-n, --dry-run", "Show planned build actions without writing files")
-        .action(async (opts) => {
-            await build(opts);
+        .action(async (opts, cmd) => {
+            await build(cmd.optsWithGlobals());
         });
 
     program
         .command("deploy")
         .description("Deploy to remote server")
+        .option("-e, --env <env>", "Target environment (default: production)")
         .option("--artifact <path>", "Path to a custom archive to upload (skips build)")
         .option("-A, --archive <path>", "Alias for --artifact")
         .option("-s, --skip-build", "Skip local build and use an existing artifact")
         .option("-V, --version <ver>", "Override version string")
         .option("-n, --dry-run", "Show planned deploy actions without changing anything")
-        .action(deploy);
+        .action((opts, cmd) => deploy(cmd.optsWithGlobals()));
 
     program
         .command("rollback")
         .description("Rollback to previous release")
+        .option("-e, --env <env>", "Target environment (default: production)")
         .option("--latest", "Rollback to the previous release without prompting")
         .option("--to <version>", "Rollback to a specific release by name")
         .option("-n, --dry-run", "Show what would be changed without switching the symlink")
-        .action(rollback);
+        .action((opts, cmd) => rollback(cmd.optsWithGlobals()));
 
     program
         .command("list")
         .description("List releases on remote")
-        .action(list);
+        .option("-e, --env <env>", "Target environment (default: production)")
+        .action((opts, cmd) => list(cmd.optsWithGlobals()));
 
     program
         .command("clean")
         .description("Remove old releases beyond keepVersions")
+        .option("-e, --env <env>", "Target environment (default: production)")
         .option("-n, --dry-run", "Show which releases would be removed without deleting them")
-        .action(clean);
+        .action((opts, cmd) => clean(cmd.optsWithGlobals()));
 
     program
         .command("status")
         .description("Show current release and remote deployment status")
-        .action(status);
+        .option("-e, --env <env>", "Target environment (default: production)")
+        .action((opts, cmd) => status(cmd.optsWithGlobals()));
 
     program
         .command("health")
         .description("Call the health endpoint")
-        .action(health);
+        .option("-e, --env <env>", "Target environment (default: production)")
+        .action((opts, cmd) => health(cmd.optsWithGlobals()));
 
     program
         .command("provision")
@@ -116,8 +122,8 @@ async function main() {
         .option("--skip-checks", "Skip prerequisite verification (tar, curl, runtime)")
         .option("--only <step>", "Run a specific provisioning step (prereqs, dirs, shared, permissions, service)")
         .option("--json", "Output machine-readable JSON status")
-        .action(async (opts) => {
-            await provision(opts);
+        .action(async (opts, cmd) => {
+            await provision(cmd.optsWithGlobals());
         });
 
     program.parse(process.argv);

@@ -29,7 +29,7 @@ Review Status: In Progress
 - [x] **[HIGH] [SEC-03] Fix Local Path Traversal in Packaging / Staging**
   - **Location**: `src/features/packager.ts:58-61`, `src/features/strategy.ts:25-32`
   - **Issue**: `copy` strategy entries copy files directly to `path.join(stagingDir, f.to)` without verifying that `f.to` stays inside `stagingDir`. Traversal paths (e.g. `../../target`) can overwrite arbitrary files on the local machine during packaging.
-  - **Fix**: Validate that `path.resolve(stagingDir, f.to)` is strictly contained within `path.resolve(stagingDir)`.
+  - **Fix**: Validate that `path.resolve(stagingDir, f.to)` is strictly contained within `path.resolve(stagingDir)` .
 
 - [x] **[MEDIUM] [SEC-04] Disable Dangerous Symlink Dereferencing During Artifact Packaging**
   - **Location**: `src/features/packager.ts:60`
@@ -188,3 +188,8 @@ environments:
 - [x] **Offline Dry-Run & Safe Validation**: Refuses root `/` provisioning, ensures safe argument escaping via `escapeShellArg`, and supports offline dry-run when remote host is not reachable.
 - [x] **Starter Templates & Types**: Updated `src/core/config.ts` with TypeScript interfaces and added default provisioning config to `templates/node.yaml`.
 - [x] **Automated Test Suite**: Added comprehensive unit tests in `tests/provision.test.ts` covering live execution, `--only` filtering, prerequisite failures, and offline dry-run JSON output.
+
+## 8. Bugs
+### Implementation 
+- [x] fix options conflict for Inconsistent `-e/--env` Add `.option("-e, --env <env>", "Target environment (default: production)")` to all environment-specific commands (`deploy`, `rollback`, `status`, `clean`, `list`, `health`).
+- [ ] fix option conflict for duplicate archive flags. `deploy` has `--artifact <path>` AND `-A,` `--archive <path>`. Two different flags doing the exact same thing clutters CLI documentation and autocomplete.
