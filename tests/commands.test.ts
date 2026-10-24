@@ -117,3 +117,19 @@ test("CLI commands display consistent -e, --env option in --help", async () => {
     );
   }
 });
+
+test("deploy command displays unified -A, --artifact option without duplicate --archive clutter", async () => {
+  const cliPath = path.resolve("dist/bin/dploy.js");
+  const { stdout } = await execFileAsync(process.execPath, [cliPath, "deploy", "--help"]);
+
+  assert.match(
+    stdout,
+    /-A, --artifact <path>\s+Path to a custom archive to upload \(skips build\)/,
+    "deploy --help should show consolidated -A, --artifact"
+  );
+  assert.equal(
+    stdout.includes("--archive"),
+    false,
+    "deploy --help should not list duplicate --archive in visible options"
+  );
+});

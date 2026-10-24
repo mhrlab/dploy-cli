@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { Command } from "commander";
+import { Command, Option } from "commander";
 import { build } from "../src/commands/build.js";
 import { deploy } from "../src/commands/deploy.js";
 import { rollback } from "../src/commands/rollback.js";
@@ -71,8 +71,8 @@ async function main() {
         .command("deploy")
         .description("Deploy to remote server")
         .option("-e, --env <env>", "Target environment (default: production)")
-        .option("--artifact <path>", "Path to a custom archive to upload (skips build)")
-        .option("-A, --archive <path>", "Alias for --artifact")
+        .option("-A, --artifact <path>", "Path to a custom archive to upload (skips build)")
+        .addOption(new Option("--archive <path>", "Alias for --artifact").hideHelp())
         .option("-s, --skip-build", "Skip local build and use an existing artifact")
         .option("-V, --version <ver>", "Override version string")
         .option("-n, --dry-run", "Show planned deploy actions without changing anything")

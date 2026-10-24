@@ -192,4 +192,4 @@ environments:
 ## 8. Bugs
 ### Implementation 
 - [x] fix options conflict for Inconsistent `-e/--env` Add `.option("-e, --env <env>", "Target environment (default: production)")` to all environment-specific commands (`deploy`, `rollback`, `status`, `clean`, `list`, `health`).
-- [ ] fix option conflict for duplicate archive flags. `deploy` has `--artifact <path>` AND `-A,` `--archive <path>`. Two different flags doing the exact same thing clutters CLI documentation and autocomplete.
+- [x] fix option conflict for duplicate archive flags. `deploy` has `--artifact <path>` AND `-A,` `--archive <path>`. Two different flags doing the exact same thing clutters CLI documentation and autocomplete.
