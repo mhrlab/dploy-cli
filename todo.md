@@ -118,12 +118,12 @@ Review Status: In Progress
 ## 6. Feature Roadmap
 
 ### 6.1 Operational & Safety Features
-- [ ] **Health-Gated Deploys**: Hit health endpoint post-deploy and fail if response is unhealthy.
-- [ ] **Auto-Rollback on Failed Health Check**: Automatically revert `current` symlink to previous release if health check fails.
-- [ ] **Deployment Retries**: Retry SSH connect, SFTP upload, and health check on transient network failure.
-- [ ] **Non-Interactive CI Mode**: Add `--yes` / `--non-interactive` flag to suppress all prompts for CI/CD runs.
-- [ ] **JSON Output Flag**: Support `--json` on `status` and `list` commands for scripting/piping.
-- [ ] **Keep Local Artifact Flag**: Add `--keep-artifact` to preserve local `.tar.gz` archive after deployment.
+- [x] **Health-Gated Deploys**: Hit health endpoint post-deploy and fail if response is unhealthy.
+- [x] **Auto-Rollback on Failed Health Check**: Automatically revert `current` symlink to previous release if health check fails.
+- [x] **Deployment Retries**: Retry SSH connect, SFTP upload, and health check on transient network failure.
+- [x] **Non-Interactive CI Mode**: Add `--yes` / `--non-interactive` flag to suppress all prompts for CI/CD runs.
+- [x] **JSON Output Flag**: Support `--json` on `status` and `list` commands for scripting/piping.
+- [x] **Keep Local Artifact Flag**: Add `--keep-artifact` to preserve local `.tar.gz` archive after deployment.
 
 ### 6.2 Build & Packaging Enhancements
 - [ ] **`.dployignore` Support**: Respect `.dployignore` file for deployment packaging instead of relying solely on config globs.

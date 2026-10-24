@@ -62,6 +62,10 @@ export interface DeployConfig {
     hooks?: HookConfig;
     provision?: ProvisionConfig;
     environments?: Record<string, EnvironmentConfig>;
+    keepArtifact?: boolean;
+    cleanAfterDeploy?: boolean;
+    shared?: string[];
+    sharedDefaults?: Record<string, string>;
     [key: string]: any;
 }
 
@@ -69,11 +73,21 @@ export interface EnvironmentConfig {
     extends?: string;
     username?: string;
     host?: string;
+    port?: number;
     password?: string;
     ssh_key?: string;
     ssh_key_path?: string;
     deployTo?: string;
     keepVersions?: number;
+    baseUrl?: string;
+    healthCheckPath?: string;
+    healthCheckTimeout?: number;
+    healthCheckRetries?: number;
+    healthCheckInterval?: number;
+    healthGate?: boolean;
+    autoRollback?: boolean;
+    retries?: number;
+    keepArtifact?: boolean;
     env?: Record<string, string>;
     provision?: ProvisionConfig;
     [key: string]: any;

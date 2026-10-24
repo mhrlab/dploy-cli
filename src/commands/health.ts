@@ -1,10 +1,50 @@
 import { loadConfig, getEnvName } from "../core/config.js";
 import { log } from "../core/logger.js";
+import { withRetry } from "../core/retry.js";
 
 export async function performHealthCheck(url: string, timeoutMs: number = 10000): Promise<{ ok: boolean; status: number; text: string }> {
     const res = await fetch(url, { signal: AbortSignal.timeout(timeoutMs) });
     const text = await res.text();
     return { ok: res.ok, status: res.status, text };
+}
+
+export async function performHealthCheckWithRetry(
+    url: string,
+    options: {
+        timeoutMs?: number;
+        retries?: number;
+        intervalMs?: number;
+        onRetry?: (error: any, attempt: number, nextDelayMs: number) => void;
+    } = {}
+): Promise<{ ok: boolean; status: number; text: string }> {
+    const timeoutMs = options.timeoutMs ?? 10000;
+    const retries = Math.max(1, options.retries ?? 3);
+    const intervalMs = options.intervalMs ?? 2000;
+
+    try {
+        return await withRetry(
+            async (attempt) => {
+                const res = await performHealthCheck(url, timeoutMs);
+                if (!res.ok) {
+                    throw new Error(`Endpoint returned HTTP ${res.status}`);
+                }
+                return res;
+            },
+            {
+                retries,
+                delayMs: intervalMs,
+                backoffFactor: 1.0,
+                onRetry: options.onRetry,
+            }
+        );
+    } catch {
+        // Fallback: query one last time to capture actual error response or status
+        try {
+            return await performHealthCheck(url, timeoutMs);
+        } catch (probeErr: any) {
+            return { ok: false, status: 0, text: probeErr.message || String(probeErr) };
+        }
+    }
 }
 
 export async function health(opts: { env?: string }) {
@@ -28,11 +68,20 @@ export async function health(opts: { env?: string }) {
 
     const url = new URL(path, base).toString();
     const timeoutMs = Number(env.healthCheckTimeout ?? process.env.DPLOY_HEALTH_CHECK_TIMEOUT ?? 10000);
-    log.info(`Performing health check: GET ${url} (timeout: ${timeoutMs}ms)`);
+    const retries = Number(env.healthCheckRetries ?? 3);
+    const intervalMs = Number(env.healthCheckInterval ?? 2000);
+    log.info(`Performing health check: GET ${url} (timeout: ${timeoutMs}ms, retries: ${retries})`);
 
     try {
-        log.verbose(`Sending HTTP request to health endpoint`);
-        const { ok, status, text } = await performHealthCheck(url, timeoutMs);
+        log.verbose(`Sending HTTP request to health endpoint with retries`);
+        const { ok, status, text } = await performHealthCheckWithRetry(url, {
+            timeoutMs,
+            retries,
+            intervalMs,
+            onRetry: (err, attempt, nextDelay) => {
+                log.warn(`Health check attempt ${attempt}/${retries} failed (${err.message}). Retrying in ${nextDelay}ms...`);
+            },
+        });
         log.debug(`Health check response - status: ${status}, content length: ${text.length}`);
 
         if (ok) {
@@ -41,7 +90,7 @@ export async function health(opts: { env?: string }) {
                 console.log(text);
             }
         } else {
-            log.warn(`Health check failed (${status})`);
+            log.warn(`Health check failed (${status || "unreachable"})`);
             if (text.trim()) {
                 console.log(text);
             }

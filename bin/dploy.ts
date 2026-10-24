@@ -39,7 +39,8 @@ async function main() {
     program
         .option("-e, --env <env>", "Target environment (default: production)")
         .option("-v, --verbose", "Enable verbose logging")
-        .option("-d, --debug", "Enable debug logging");
+        .option("-d, --debug", "Enable debug logging")
+        .option("-y, --yes", "Automatic yes to prompts; non-interactive mode");
 
     program
         .name("dploy")
@@ -76,6 +77,9 @@ async function main() {
         .option("-s, --skip-build", "Skip local build and use an existing artifact")
         .option("-V, --version <ver>", "Override version string")
         .option("-n, --dry-run", "Show planned deploy actions without changing anything")
+        .option("--keep-artifact", "Preserve local build artifact archive after deployment")
+        .option("--no-auto-rollback", "Disable automatic rollback if health check fails")
+        .option("--no-health-gate", "Do not abort deployment if health check fails")
         .action((opts, cmd) => deploy(cmd.optsWithGlobals()));
 
     program
@@ -85,12 +89,15 @@ async function main() {
         .option("--latest", "Rollback to the previous release without prompting")
         .option("--to <version>", "Rollback to a specific release by name")
         .option("-n, --dry-run", "Show what would be changed without switching the symlink")
+        .option("-y, --yes", "Automatic yes to prompts; roll back to previous release without prompt")
+        .option("--non-interactive", "Run in non-interactive mode without terminal prompts")
         .action((opts, cmd) => rollback(cmd.optsWithGlobals()));
 
     program
         .command("list")
         .description("List releases on remote")
         .option("-e, --env <env>", "Target environment (default: production)")
+        .option("--json", "Output machine-readable JSON status")
         .action((opts, cmd) => list(cmd.optsWithGlobals()));
 
     program
@@ -104,6 +111,7 @@ async function main() {
         .command("status")
         .description("Show current release and remote deployment status")
         .option("-e, --env <env>", "Target environment (default: production)")
+        .option("--json", "Output machine-readable JSON status")
         .action((opts, cmd) => status(cmd.optsWithGlobals()));
 
     program

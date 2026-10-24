@@ -6,16 +6,27 @@ import { buildArtifact, planBuildArtifact } from "../features/packager.js";
 import { connect, close, ensureRemoteDirs, exec, uploadFile, switchCurrentSymlink } from "../core/ssh.js";
 import { log } from "../core/logger.js";
 import { linkShared } from "../features/shared.js";
-import {runLocalHooks, runRemoteHooks} from "../core/hooks.js";
-import {cleanupReleases} from "../features/cleaner.js";
+import { runLocalHooks, runRemoteHooks } from "../core/hooks.js";
+import { cleanupReleases } from "../features/cleaner.js";
 import { resolveDeployArtifact } from "../features/deploy-artifact.js";
 import { verifyArtifactChecksum } from "../features/checksum.js";
-import { performHealthCheck } from "./health.js";
+import { performHealthCheckWithRetry } from "./health.js";
 import fs from "fs-extra";
 import { mkdtemp } from "node:fs/promises";
 import { createReleaseMetadata, RELEASE_METADATA_FILE } from "../features/release-metadata.js";
 
-export async function deploy(opts: { env?: string; artifact?: string; archive?: string; version?: string; dryRun?: boolean; skipBuild?: boolean }) {
+export async function deploy(opts: {
+    env?: string;
+    artifact?: string;
+    archive?: string;
+    version?: string;
+    dryRun?: boolean;
+    skipBuild?: boolean;
+    keepArtifact?: boolean;
+    autoRollback?: boolean;
+    healthGate?: boolean;
+    healthRetries?: number;
+}) {
     log.debug(`Deploy command started with options: ${JSON.stringify(opts)}`);
 
     const cwd = process.cwd();
@@ -36,6 +47,7 @@ export async function deploy(opts: { env?: string; artifact?: string; archive?: 
     const sharedItems: string[] = cfg.shared ?? cfg.build?.shared ?? [];
     const sharedDefaults: Record<string, string> | undefined = cfg.sharedDefaults ?? cfg.build?.sharedDefaults;
     const cleanAfterDeploy: boolean = cfg.cleanAfterDeploy ?? cfg.build?.cleanAfterDeploy ?? false;
+    const keepLocalArtifact: boolean = opts.keepArtifact ?? cfg.keepArtifact ?? env.keepArtifact ?? false;
 
     const version = detectVersion(opts.version);
     log.verbose(`Deployment version: ${version}`);
@@ -147,6 +159,13 @@ export async function deploy(opts: { env?: string; artifact?: string; archive?: 
             log.info(`[dry-run] Would remove temporary upload directory ${tmp}`);
         }
         log.info(`[dry-run] Would verify SHA256 checksum after upload`);
+        if (shouldBuild) {
+            if (keepLocalArtifact) {
+                log.info(`[dry-run] Would preserve local build artifact: ${path.basename(artifactPath!)}`);
+            } else {
+                log.info(`[dry-run] Would remove local build artifact: ${path.basename(artifactPath!)}`);
+            }
+        }
         return;
     }
 
@@ -222,6 +241,11 @@ export async function deploy(opts: { env?: string; artifact?: string; archive?: 
         log.verbose(`Running pre-deploy hooks after extraction and shared linking.`);
         await runRemoteHooks(bundle.ssh, "preDeploy", cfg.hooks?.preDeploy, releaseDir);
 
+        // Capture previous release target for safe health-gate auto-rollback
+        const { stdout: previousTargetRaw } = await exec(bundle.ssh, `readlink ${escapeShellArg(currentLink)} || true`);
+        const previousTarget = previousTargetRaw.trim() || null;
+        log.debug(`Previous release symlink target: ${previousTarget || "(none)"}`);
+
         // Switch current symlink atomically (activate release)
         log.verbose(`Switching current symlink to new release`);
         log.info(`Activating new release...`);
@@ -234,6 +258,62 @@ export async function deploy(opts: { env?: string; artifact?: string; archive?: 
         // run PostDeploy hooks (after release is activated, e.g. restart service)
         log.verbose(`Running post-deploy hooks`);
         await runRemoteHooks(bundle.ssh, "postDeploy", cfg.hooks?.postDeploy, releaseDir);
+
+        // Optional post-deployment health check & auto-rollback gating
+        const baseUrl = env.baseUrl || process.env.DPLOY_BASE_URL;
+        if (baseUrl) {
+            const healthPath = env.healthCheckPath || "/health";
+            const url = new URL(healthPath, baseUrl).toString();
+            const timeoutMs = Number(env.healthCheckTimeout ?? process.env.DPLOY_HEALTH_CHECK_TIMEOUT ?? 10000);
+            const retries = Number(opts.healthRetries ?? env.healthCheckRetries ?? 3);
+            const intervalMs = Number(env.healthCheckInterval ?? 2000);
+            const isGated = opts.healthGate !== false && env.healthGate !== false;
+            const shouldAutoRollback = opts.autoRollback !== false && env.autoRollback !== false;
+
+            log.info(`Verifying deployment health: GET ${url} (timeout: ${timeoutMs}ms, retries: ${retries})`);
+            const spinHealth = log.spinner("Verifying service health...");
+
+            const healthResult = await performHealthCheckWithRetry(url, {
+                timeoutMs,
+                retries,
+                intervalMs,
+                onRetry: (err, attempt, nextDelay) => {
+                    log.warn(`Health check attempt ${attempt}/${retries} failed (${err.message}). Retrying in ${nextDelay}ms...`);
+                },
+            });
+
+            if (healthResult.ok) {
+                spinHealth.succeed(`Post-deployment health check passed (${healthResult.status})`);
+                log.ok(`Service verified healthy on [${envName}]`);
+            } else {
+                spinHealth.fail(`Post-deployment health check failed (status: ${healthResult.status || "unreachable"})`);
+                log.err(`❌ Health check failed for ${url}: status ${healthResult.status || "unreachable"}`);
+
+                if (isGated) {
+                    if (shouldAutoRollback && previousTarget) {
+                        log.warn(`Initiating automatic rollback to previous release (${path.posix.basename(previousTarget)})...`);
+                        const spinRollback = log.spinner("Rolling back symlink to previous release...");
+                        await switchCurrentSymlink(bundle.ssh, previousTarget, currentLink);
+                        spinRollback.succeed(`Rolled back 'current' symlink to ${path.posix.basename(previousTarget)}`);
+                        log.ok(`✓ Successfully restored previous release: ${path.posix.basename(previousTarget)}`);
+
+                        throw new Error(
+                            `Health gate failed: GET ${url} returned status ${healthResult.status || "unreachable"}. Automatically rolled back to ${path.posix.basename(previousTarget)}.`
+                        );
+                    } else if (shouldAutoRollback && !previousTarget) {
+                        throw new Error(
+                            `Health gate failed: GET ${url} returned status ${healthResult.status || "unreachable"}. No previous release available to rollback.`
+                        );
+                    } else {
+                        throw new Error(
+                            `Health gate failed: GET ${url} returned status ${healthResult.status || "unreachable"}.`
+                        );
+                    }
+                } else {
+                    log.warn(`⚠️ Post-deployment health check failed, but health-gating is disabled`);
+                }
+            }
+        }
 
         const metadataTmpDir = await mkdtemp(path.join(os.tmpdir(), "dploy-release-"));
         const metadataTmpFile = path.join(metadataTmpDir, RELEASE_METADATA_FILE);
@@ -263,22 +343,13 @@ export async function deploy(opts: { env?: string; artifact?: string; archive?: 
             await exec(bundle.ssh, `rm -rf ${escapeShellArg(tmp)}`);
         }
 
-        // Optional post-deployment automated health verification
-        const baseUrl = env.baseUrl || process.env.DPLOY_BASE_URL;
-        if (baseUrl) {
-            const healthPath = env.healthCheckPath || "/health";
-            const url = new URL(healthPath, baseUrl).toString();
-            const timeoutMs = Number(env.healthCheckTimeout ?? process.env.DPLOY_HEALTH_CHECK_TIMEOUT ?? 10000);
-            log.info(`Verifying deployment health: GET ${url}`);
-            try {
-                const { ok, status } = await performHealthCheck(url, timeoutMs);
-                if (ok) {
-                    log.ok(`Post-deployment health check passed (${status})`);
-                } else {
-                    log.warn(`⚠️ Post-deployment health check returned status ${status}`);
-                }
-            } catch (err: any) {
-                log.warn(`⚠️ Post-deployment health check request failed: ${err.message}`);
+        // Clean up or keep local artifact
+        if (shouldBuild && artifactPath) {
+            if (!keepLocalArtifact) {
+                log.verbose(`Cleaning up local build artifact: ${artifactPath}`);
+                await fs.remove(artifactPath).catch(() => {});
+            } else {
+                log.ok(`Preserved local build artifact: ${path.basename(artifactPath)}`);
             }
         }
 

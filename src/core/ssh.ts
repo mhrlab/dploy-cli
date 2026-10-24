@@ -6,13 +6,14 @@ import { EnvironmentConfig } from "./config.js";
 import { log } from "./logger.js";
 import { escapeShellArg } from "./utils.js";
 import { TransferProgressBar } from "./progress.js";
+import { withRetry } from "./retry.js";
 
 export type SSHBundle = {
     ssh: Client;
     sftp: SFTPClient;
 };
 
-export async function connect(env: EnvironmentConfig): Promise<SSHBundle> {
+async function createConnection(env: EnvironmentConfig): Promise<SSHBundle> {
     log.debug(`SSH connect initiated for ${env.username}@${env.host}:${env.port || 22}`);
 
     const ssh = new Client();
@@ -53,6 +54,22 @@ export async function connect(env: EnvironmentConfig): Promise<SSHBundle> {
     log.verbose(`SFTP connection established`);
 
     return { ssh, sftp };
+}
+
+export async function connect(
+    env: EnvironmentConfig,
+    options?: { retries?: number; delayMs?: number }
+): Promise<SSHBundle> {
+    const retries = options?.retries ?? env.retries ?? 3;
+    const delayMs = options?.delayMs ?? 1500;
+
+    return withRetry(() => createConnection(env), {
+        retries,
+        delayMs,
+        onRetry: (err, attempt, nextDelay) => {
+            log.warn(`SSH connection attempt ${attempt}/${retries} failed (${err.message || String(err)}). Retrying in ${nextDelay}ms...`);
+        },
+    });
 }
 
 export async function close(bundle: SSHBundle) {
@@ -104,6 +121,7 @@ export async function ensureRemoteDirs(ssh: Client, ...dirs: string[]) {
 export interface UploadFileOptions {
     showProgress?: boolean;
     label?: string;
+    retries?: number;
     onProgress?: (transferred: number, chunk: number, total: number) => void;
 }
 
@@ -136,16 +154,28 @@ export async function uploadFile(
         });
     }
 
-    await sftp.fastPut(localPath, remotePath, {
-        step: (transferred: number, chunk: number, total: number) => {
-            if (progress) {
-                progress.update(transferred);
-            }
-            if (options?.onProgress) {
-                options.onProgress(transferred, chunk, total);
-            }
+    const retries = options?.retries ?? 2;
+    await withRetry(
+        async () => {
+            await sftp.fastPut(localPath, remotePath, {
+                step: (transferred: number, chunk: number, total: number) => {
+                    if (progress) {
+                        progress.update(transferred);
+                    }
+                    if (options?.onProgress) {
+                        options.onProgress(transferred, chunk, total);
+                    }
+                },
+            });
         },
-    });
+        {
+            retries,
+            delayMs: 1000,
+            onRetry: (err, attempt, nextDelay) => {
+                log.warn(`SFTP upload attempt ${attempt}/${retries} failed (${err.message || String(err)}). Retrying in ${nextDelay}ms...`);
+            },
+        }
+    );
 
     if (progress) {
         progress.finish();
@@ -166,7 +196,7 @@ export async function listDirs(sftp: SFTPClient, remotePath: string): Promise<Re
         .filter((e) => e.type === "d")
         .map((e) => ({
             name: e.name,
-            mtime: new Date((e.modifyTime || e.accessTime) ?? Date.now()) // ssh2-sftp-client gives modifyTime in ms
+            mtime: new Date((e.modifyTime || e.accessTime) ?? Date.now())
         }));
     log.debug(`Found directories: ${JSON.stringify(dirs)}`);
     return dirs;
