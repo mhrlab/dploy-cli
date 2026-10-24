@@ -115,7 +115,13 @@ export async function ensureRemoteDirs(ssh: Client, ...dirs: string[]) {
     log.verbose(`Ensuring remote directories exist: ${dirs.join(', ')}`);
     const cmd = dirs.map((d) => `mkdir -p ${escapeShellArg(d)}`).join(" && ");
     log.debug(`Directory creation command: ${cmd}`);
-    await exec(ssh, cmd);
+    const { code, stderr } = await exec(ssh, cmd);
+    if (code !== 0) {
+        throw new Error(
+            `Failed to create remote directories on server (${dirs.join(', ')}): ${stderr.trim() || `exit code ${code}`}.\n` +
+            `Please check that the remote user has permission to create directories inside the target path, or run 'dploy provision'.`
+        );
+    }
 }
 
 export interface UploadFileOptions {
@@ -157,16 +163,31 @@ export async function uploadFile(
     const retries = options?.retries ?? 2;
     await withRetry(
         async () => {
-            await sftp.fastPut(localPath, remotePath, {
-                step: (transferred: number, chunk: number, total: number) => {
-                    if (progress) {
-                        progress.update(transferred);
+            try {
+                await sftp.fastPut(localPath, remotePath, {
+                    step: (transferred: number, chunk: number, total: number) => {
+                        if (progress) {
+                            progress.update(transferred);
+                        }
+                        if (options?.onProgress) {
+                            options.onProgress(transferred, chunk, total);
+                        }
+                    },
+                });
+            } catch (err: any) {
+                if (err?.message?.includes("No such file") || err?.code === 2) {
+                    const localExists = await fs.pathExists(localPath);
+                    if (localExists) {
+                        throw new Error(
+                            `Remote destination directory '${remoteDir}' does not exist or is not writable on the server (SFTP error: No such file).\n` +
+                            `Please ensure '${remoteDir}' exists and is owned/writable by the SSH user (e.g. run 'dploy provision' or 'sudo mkdir -p ${remoteDir} && sudo chown -R $USER:$USER ${remoteDir}').`
+                        );
+                    } else {
+                        throw new Error(`Local file '${localPath}' does not exist on disk.`);
                     }
-                    if (options?.onProgress) {
-                        options.onProgress(transferred, chunk, total);
-                    }
-                },
-            });
+                }
+                throw err;
+            }
         },
         {
             retries,

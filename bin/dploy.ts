@@ -134,7 +134,7 @@ async function main() {
             await provision(cmd.optsWithGlobals());
         });
 
-    program.parse(process.argv);
+    await program.parseAsync(process.argv);
 }
 
 // ✅ Run main entry
