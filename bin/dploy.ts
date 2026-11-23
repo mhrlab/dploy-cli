@@ -152,6 +152,8 @@ async function main() {
         .option("--certbot", "Obtain Let's Encrypt SSL via Certbot")
         .option("--service", "Create and enable a systemd background service")
         .option("--exec-start <cmd>", "ExecStart command for systemd unit")
+        .option("--queue-worker", "Create and enable a background queue worker (e.g. for Laravel/PHP)")
+        .option("--worker-command <cmd>", "Command for the queue worker service")
         .action(async (opts, cmd) => {
             await setup(cmd.optsWithGlobals());
         });

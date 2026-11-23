@@ -57,3 +57,19 @@ test("generateSystemdUnit generates systemd service unit file with correct direc
     assert.ok(unit.includes("Restart=always"));
     assert.ok(unit.includes("WantedBy=multi-user.target"));
 });
+
+test("generateSystemdUnit generates queue worker service unit file for Laravel", async () => {
+    const unit = await generateSystemdUnit({
+        appName: "laravel-app",
+        user: "www-data",
+        workingDir: "/var/www/laravel-app/current",
+        execStart: "php artisan queue:work --sleep=3 --tries=3",
+        isQueueWorker: true,
+    });
+
+    assert.ok(unit.includes("Description=laravel-app Queue Worker"));
+    assert.ok(unit.includes("User=www-data"));
+    assert.ok(unit.includes("WorkingDirectory=/var/www/laravel-app/current"));
+    assert.ok(unit.includes("ExecStart=php artisan queue:work --sleep=3 --tries=3"));
+    assert.ok(unit.includes("SyslogIdentifier=laravel-app-worker"));
+});

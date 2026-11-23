@@ -20,6 +20,7 @@ export interface SystemdConfigParams {
     user: string;
     workingDir: string;
     execStart: string;
+    isQueueWorker?: boolean;
 }
 
 export function getServicesTemplatesDir(): string {
@@ -66,7 +67,8 @@ export async function generateNginxConfig(params: NginxConfigParams): Promise<st
 
 export async function generateSystemdUnit(params: SystemdConfigParams): Promise<string> {
     const templatesDir = getServicesTemplatesDir();
-    const templatePath = path.join(templatesDir, "systemd.service");
+    const templateName = params.isQueueWorker ? "laravel-worker.service" : "systemd.service";
+    const templatePath = path.join(templatesDir, templateName);
     let content = await fs.readFile(templatePath, "utf8");
 
     content = content.replace(/\{\{APP_NAME\}\}/g, params.appName);

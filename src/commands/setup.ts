@@ -22,6 +22,8 @@ export interface SetupOptions {
     certbot?: boolean;
     service?: boolean;
     execStart?: string;
+    queueWorker?: boolean;
+    workerCommand?: string;
 }
 
 export async function setup(opts: SetupOptions) {
@@ -49,6 +51,8 @@ export async function setup(opts: SetupOptions) {
     let setupCertbot = opts.certbot;
     let setupService = opts.service;
     let execStart = opts.execStart;
+    let setupWorker = opts.queueWorker;
+    let workerCommand = opts.workerCommand;
 
     if (!webserver && process.stdin.isTTY) {
         const ans = await inquirer.prompt([
@@ -158,6 +162,30 @@ export async function setup(opts: SetupOptions) {
         }
     }
 
+    if (kind === "php" && setupWorker === undefined && process.stdin.isTTY) {
+        const ans = await inquirer.prompt([
+            {
+                type: "confirm",
+                name: "worker",
+                message: "Configure a systemd queue worker (e.g. Laravel queue:work)?",
+                default: true,
+            },
+        ]);
+        setupWorker = ans.worker;
+
+        if (setupWorker && !workerCommand) {
+            const workerAns = await inquirer.prompt([
+                {
+                    type: "input",
+                    name: "workerCommand",
+                    message: "Queue worker command:",
+                    default: "php artisan queue:work --sleep=3 --tries=3 --max-time=3600",
+                },
+            ]);
+            workerCommand = workerAns.workerCommand;
+        }
+    }
+
     const domains = (domainInput || "example.com").split(/\s+/).filter(Boolean);
     const primaryDomain = domains[0] || "app";
 
@@ -193,6 +221,19 @@ export async function setup(opts: SetupOptions) {
         });
     }
 
+    // 3. Generate Laravel/PHP Queue Worker Systemd unit
+    let workerUnit: string | undefined;
+    const workerServiceName = `${defaultAppName}-worker`;
+    if (setupWorker) {
+        workerUnit = await generateSystemdUnit({
+            appName: defaultAppName,
+            user: env.username,
+            workingDir: posixJoin(deployTo, "current"),
+            execStart: workerCommand || "php artisan queue:work --sleep=3 --tries=3 --max-time=3600",
+            isQueueWorker: true,
+        });
+    }
+
     // If dry-run, output planned files and finish
     if (opts.dryRun) {
         log.info("[dry-run] Planned server setup configurations:");
@@ -203,6 +244,10 @@ export async function setup(opts: SetupOptions) {
         if (systemdUnit) {
             console.log(`\n--- [Systemd Unit: /etc/systemd/system/${defaultAppName}.service] ---`);
             console.log(systemdUnit);
+        }
+        if (workerUnit) {
+            console.log(`\n--- [Queue Worker Unit: /etc/systemd/system/${workerServiceName}.service] ---`);
+            console.log(workerUnit);
         }
         if (setupCertbot) {
             log.info(`[dry-run] Would execute: sudo certbot --nginx -d ${domains.join(" -d ")} --non-interactive --agree-tos`);
@@ -247,6 +292,18 @@ export async function setup(opts: SetupOptions) {
             await exec(bundle.ssh, "sudo -n systemctl daemon-reload");
             await exec(bundle.ssh, `sudo -n systemctl enable ${escapeShellArg(defaultAppName)}`);
             log.ok(`Systemd unit ${defaultAppName}.service enabled`);
+        }
+
+        if (workerUnit) {
+            log.info(`Configuring queue worker service ${workerServiceName}.service...`);
+            const workerPath = `/etc/systemd/system/${workerServiceName}.service`;
+            const tmpWorker = `/tmp/${workerServiceName}.service`;
+
+            await bundle.sftp.put(Buffer.from(workerUnit, "utf8"), tmpWorker);
+            await exec(bundle.ssh, `sudo -n mv -f ${escapeShellArg(tmpWorker)} ${escapeShellArg(workerPath)}`);
+            await exec(bundle.ssh, "sudo -n systemctl daemon-reload");
+            await exec(bundle.ssh, `sudo -n systemctl enable ${escapeShellArg(workerServiceName)}`);
+            log.ok(`Systemd queue worker ${workerServiceName}.service enabled`);
         }
 
         if (setupCertbot) {
