@@ -13,8 +13,15 @@ export async function clean(opts: { env?: string; dryRun?: boolean }) {
 
     const env = cfg.environments?.[envName];
     if (!env) throw new Error(`Unknown environment: ${envName}`);
+    if (!env.deployTo || typeof env.deployTo !== "string" || !env.deployTo.trim()) {
+        throw new Error(`Environment '${envName}' is missing required 'deployTo' path`);
+    }
+    const remoteRoot = env.deployTo.trim();
+    if (remoteRoot === "/") {
+        throw new Error(`Invalid deployTo path: cannot clean directly from root '/'`);
+    }
 
-    const releases = posixJoin((env.deployTo ? env.deployTo : ''), "releases");
+    const releases = posixJoin(remoteRoot, "releases");
     const keep = env.keepVersions ?? 5;
     log.debug(`Releases directory: ${releases}, Keeping versions: ${keep}`);
 
