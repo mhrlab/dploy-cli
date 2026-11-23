@@ -25,8 +25,10 @@ export function safeExec(cmd: string): string | undefined {
 }
 
 export function assertValidVersion(version: string): void {
-    if (!/^[a-zA-Z0-9._-]+$/.test(version)) {
-        throw new Error(`Invalid version format: '${version}'. Only alphanumeric, '.', '_', and '-' are allowed.`);
+    if (version === "." || version === ".." || !/^[a-zA-Z0-9][a-zA-Z0-9._-]*$/.test(version)) {
+        throw new Error(
+            `Invalid version format: '${version}'. Must start with an alphanumeric character and contain only alphanumeric, '.', '_', and '-'.`
+        );
     }
 }
 
@@ -39,7 +41,18 @@ export function detectVersion(override?: string): string {
         assertValidVersion(override);
         return override;
     }
-    const pkgVersion = safeExec("node -p \"require('./package.json').version\"");
+    let pkgVersion: string | undefined;
+    const localPkg = path.resolve(process.cwd(), "package.json");
+    if (fs.existsSync(localPkg)) {
+        try {
+            const parsed = JSON.parse(readFileSync(localPkg, "utf8"));
+            if (typeof parsed.version === "string" && parsed.version.trim()) {
+                pkgVersion = parsed.version.trim();
+            }
+        } catch {
+            // ignore if invalid json
+        }
+    }
     const shortSha = safeExec("git rev-parse --short HEAD");
     const now = new Date();
     const stamp = now.toISOString().replace(/[-:T.Z]/g, "").slice(0, 14); // YYYYMMDDHHMMSS
