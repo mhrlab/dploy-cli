@@ -20,20 +20,43 @@ import { getAppVersion } from "../src/core/utils.js";
 
 
 
+// 🧩 Helper to detect user abort / cancellation errors
+function isUserAbortError(err: any): boolean {
+    if (!err) return false;
+    const name = err.name || "";
+    const msg = err.message || String(err);
+    return (
+        name === "ExitPromptError" ||
+        name === "AbortError" ||
+        /SIGINT/i.test(msg) ||
+        /user force closed/i.test(msg) ||
+        /prompt was cancelled/i.test(msg) ||
+        /operation was aborted/i.test(msg) ||
+        /canceled/i.test(msg) ||
+        /cancelled/i.test(msg)
+    );
+}
+
 // 🧩 Global SIGINT handler (Ctrl + C)
 process.on("SIGINT", () => {
     console.log("\n⚠️  Operation cancelled by user.\n");
     process.exit(0);
 });
 
+// 🧩 Global SIGTERM handler
+process.on("SIGTERM", () => {
+    console.log("\n⚠️  Operation terminated.\n");
+    process.exit(0);
+});
+
 // 🧩 Global unhandled rejection handler (for Inquirer ExitPromptError, etc.)
 process.on("unhandledRejection", (err: any) => {
-    if (err?.name === "ExitPromptError" || /SIGINT/i.test(err?.message)) {
-        console.log("\n⚠️  Prompt cancelled by user.\n");
+    if (isUserAbortError(err)) {
+        console.log("\n⚠️  Operation cancelled by user.\n");
         process.exit(0);
     }
 
-    console.error("❌ Unhandled error:", err);
+    console.error("❌ Unhandled error:", err?.message || err);
     process.exit(1);
 });
 
@@ -81,7 +104,8 @@ async function main() {
         .option("-A, --artifact <path>", "Path to a custom archive to upload (skips build)")
         .addOption(new Option("--archive <path>", "Alias for --artifact").hideHelp())
         .option("-s, --skip-build", "Skip local build and use an existing artifact")
-        .option("-V, --version <ver>", "Override version string")
+        .option("--version-override <ver>", "Override version string")
+        .addOption(new Option("-V, --version <ver>", "Override version string (alias)").hideHelp())
         .option("-n, --dry-run", "Show planned deploy actions without changing anything")
         .option("--keep-artifact", "Preserve local build artifact archive after deployment")
         .option("--no-auto-rollback", "Disable automatic rollback if health check fails")
@@ -243,11 +267,11 @@ async function main() {
 
 // ✅ Run main entry
 main().catch((err) => {
-    if (err?.name === "ExitPromptError" || /SIGINT/i.test(err?.message)) {
-        console.log("\n⚠️  Prompt cancelled by user.\n");
+    if (isUserAbortError(err)) {
+        console.log("\n⚠️  Operation cancelled by user.\n");
         process.exit(0);
     }
 
-    console.error("❌ CLI Error:", err);
+    console.error("❌ CLI Error:", err?.message || err);
     process.exit(1);
 });

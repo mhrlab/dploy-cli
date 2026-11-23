@@ -23,6 +23,7 @@ export interface DeployOptions {
     artifact?: string;
     archive?: string;
     version?: string;
+    versionOverride?: string;
     dryRun?: boolean;
     skipBuild?: boolean;
     keepArtifact?: boolean;
@@ -314,7 +315,7 @@ export async function deploy(opts: DeployOptions) {
     const deployer = process.env.USER || process.env.USERNAME || "unknown";
 
     const version = detectVersion({
-        override: opts.version,
+        override: opts.versionOverride || opts.version,
         versionCommand: cfg.versionCommand,
         versionFile: cfg.versionFile,
     });
