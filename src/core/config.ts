@@ -3,7 +3,8 @@ import path from "node:path";
 import * as dotenv from "dotenv";
 import yaml from "js-yaml";
 import { log } from "./logger.js";
-import {expandTilde} from "./utils.js";
+import { expandTilde } from "./utils.js";
+import { assertValidDeployConfig } from "./config-validator.js";
 
 
 type AnyObject = Record<string, any>;
@@ -303,6 +304,8 @@ function normalizeSSHConfig(config: DeployConfig): DeployConfig {
             }
         }
     }
+
+    assertValidDeployConfig(config);
 
     return config;
 }

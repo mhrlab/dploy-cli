@@ -126,13 +126,13 @@ Review Status: In Progress
 - [x] **Keep Local Artifact Flag**: Add `--keep-artifact` to preserve local `.tar.gz` archive after deployment.
 
 ### 6.2 Build & Packaging Enhancements
-- [ ] **`.dployignore` Support**: Respect `.dployignore` file for deployment packaging instead of relying solely on config globs.
+- [x] **`.dployignore` Support**: Respect `.dployignore` file for deployment packaging instead of relying solely on config globs.
 - [ ] **Alternative Packaging Formats**: Support `.zip` and plain uncompressed directory synchronization.
-- [ ] **Artifact Caching**: Skip rebuilding artifact if source files and git SHA have not changed.
+- [x] **Artifact Caching**: Skip rebuilding artifact if source files and git SHA have not changed.
 - [ ] **Incremental Deploy Mode**: Support delta uploads (rsync-style) for large codebases.
 
 ### 6.3 Configuration System Improvements
-- [ ] **Config Schema Validation**: Use a schema validator (e.g. Zod or JSON Schema) to provide immediate error messages on missing/invalid config fields.
+- [x] **Config Schema Validation**: Use a schema validator (e.g. Zod or JSON Schema) to provide immediate error messages on missing/invalid config fields.
 - [ ] **Base Config File Inheritance**: Support `extends` across separate config files (e.g. `deploy.base.yml`), not just across environment blocks.
 - [ ] **Template Placeholder Substitution in Hooks**: Allow hooks to interpolate `${RELEASE_DIR}`, `${VERSION}`, `${PREVIOUS_RELEASE}`.
 
