@@ -123,6 +123,32 @@ test("detectVersion validates version override format and rejects injection atte
   assert.throws(() => detectVersion("v1.0.0$(id)"), /Invalid version format/);
 });
 
+test("loadConfig ignores prototype pollution keys", async () => {
+  const cwd = await createTempProject();
+
+  await writeFile(
+    path.join(cwd, "deploy.config.json"),
+    JSON.stringify({
+      name: "Pollution Test",
+      __proto__: { polluted: true },
+      environments: {
+        base: {
+          deployTo: "/var/www/base",
+        },
+        staging: {
+          extends: "base",
+          constructor: { polluted: true },
+        },
+      },
+    }),
+    "utf8"
+  );
+
+  const config = await loadConfig(cwd);
+  assert.equal((Object.prototype as any).polluted, undefined);
+  assert.equal(config.name, "Pollution Test");
+});
+
 test("findPackageRoot discovers directory containing package.json", () => {
   const root = findPackageRoot();
   assert.ok(root.length > 0);
