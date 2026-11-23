@@ -9,7 +9,11 @@ export async function build(opts: { version?: string; dryRun?: boolean }) {
     log.debug(`Build started with options: ${JSON.stringify(opts)}`);
     const cwd = process.cwd();
     const cfg = await loadConfig(cwd);
-    const version = detectVersion(opts.version);
+    const version = detectVersion({
+        override: opts.version,
+        versionCommand: cfg.versionCommand,
+        versionFile: cfg.versionFile,
+    });
     log.verbose(`Build version: ${version}`);
 
     log.info(`Starting build process for version ${version}`);

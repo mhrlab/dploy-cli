@@ -58,6 +58,8 @@ export interface ProvisionConfig {
 
 export interface DeployConfig {
     name?: string;
+    versionCommand?: string;
+    versionFile?: string;
     build?: BuildConfig;
     hooks?: HookConfig;
     provision?: ProvisionConfig;
