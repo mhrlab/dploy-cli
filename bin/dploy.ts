@@ -9,6 +9,7 @@ import { status } from "../src/commands/status.js";
 import { health } from "../src/commands/health.js";
 import { init } from "../src/commands/init.js";
 import { provision } from "../src/commands/provision.js";
+import { setup } from "../src/commands/setup.js";
 import { ssh } from "../src/commands/ssh.js";
 import { run } from "../src/commands/run.js";
 import { envPush, envPull, envSet } from "../src/commands/env.js";
@@ -136,6 +137,23 @@ async function main() {
         .option("--json", "Output machine-readable JSON status")
         .action(async (opts, cmd) => {
             await provision(cmd.optsWithGlobals());
+        });
+
+    program
+        .command("setup")
+        .description("Interactive server setup wizard: configure Nginx, background services, and SSL")
+        .option("-e, --env <env>", "Target environment (default: production)")
+        .option("-n, --dry-run", "Preview planned Nginx and systemd configs without touching the server")
+        .option("--webserver <type>", "Web server type (nginx, none)")
+        .option("--kind <type>", "App type (node, php, spa)")
+        .option("--domain <domain>", "Domain name(s)")
+        .option("--port <port>", "Upstream port for Node.js reverse proxy")
+        .option("--php-socket <path>", "PHP-FPM socket path")
+        .option("--certbot", "Obtain Let's Encrypt SSL via Certbot")
+        .option("--service", "Create and enable a systemd background service")
+        .option("--exec-start <cmd>", "ExecStart command for systemd unit")
+        .action(async (opts, cmd) => {
+            await setup(cmd.optsWithGlobals());
         });
 
     program

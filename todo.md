@@ -277,22 +277,22 @@ environments:
 
 ### 10.1 Web Server & Service Provisioning Wizard (`dploy setup`)
 Interactive server onboarding for fresh VPS/Ubuntu/Debian instances to configure web servers, process managers, and reverse proxies automatically.
-- [ ] **Interactive Onboarding Prompts (`src/commands/setup.ts`)**
-  - [ ] Web server selection: Nginx (default), Apache, None.
-  - [ ] App type selection: Static/SPA (`current/dist`), Node.js (reverse proxy to port), PHP/Laravel (PHP-FPM socket), Python/Go/Docker.
-  - [ ] Domain / hostname inputs (e.g. `app.example.com`, `example.com`).
-  - [ ] Upstream port or PHP-FPM socket path input.
-  - [ ] Automated SSL / Let's Encrypt prompt (`certbot --nginx -d <domain>`).
-- [ ] **Template Engine & Config Generation (`templates/services/`)**
-  - [ ] Nginx virtual host templates for SPA, Node.js proxy, and PHP-FPM with security headers, gzip, and static asset caching.
-  - [ ] Systemd unit file generator (`/etc/systemd/system/<app>.service`) with auto-restart, logging, and environment file loading.
-  - [ ] PM2 ecosystem generation if user selects PM2.
-- [ ] **Remote Installation & Execution Workflow**
-  - [ ] Check installed binaries via SSH (`which nginx`, `which certbot`, `which node`).
-  - [ ] Install missing dependencies via `apt-get` if prompted/permitted by user (`sudo apt update && sudo apt install -y nginx`).
-  - [ ] Upload and enable virtual hosts (`/etc/nginx/sites-available/<domain>` -> `/etc/nginx/sites-enabled/`).
-  - [ ] Validate Nginx config (`nginx -t`) before issuing reload (`systemctl reload nginx`).
-  - [ ] Add `--dry-run` flag to display generated service configurations without executing on remote host.
+- [x] **Interactive Onboarding Prompts (`src/commands/setup.ts`)**
+  - [x] Web server selection: Nginx (default), Apache, None.
+  - [x] App type selection: Static/SPA (`current/dist`), Node.js (reverse proxy to port), PHP/Laravel (PHP-FPM socket), Python/Go/Docker.
+  - [x] Domain / hostname inputs (e.g. `app.example.com`, `example.com`).
+  - [x] Upstream port or PHP-FPM socket path input.
+  - [x] Automated SSL / Let's Encrypt prompt (`certbot --nginx -d <domain>`).
+- [x] **Template Engine & Config Generation (`templates/services/`)**
+  - [x] Nginx virtual host templates for SPA, Node.js proxy, and PHP-FPM with security headers, gzip, and static asset caching.
+  - [x] Systemd unit file generator (`/etc/systemd/system/<app>.service`) with auto-restart, logging, and environment file loading.
+  - [x] PM2 ecosystem generation if user selects PM2.
+- [x] **Remote Installation & Execution Workflow**
+  - [x] Check installed binaries via SSH (`which nginx`, `which certbot`, `which node`).
+  - [x] Install missing dependencies via `apt-get` if prompted/permitted by user (`sudo apt update && sudo apt install -y nginx`).
+  - [x] Upload and enable virtual hosts (`/etc/nginx/sites-available/<domain>` -> `/etc/nginx/sites-enabled/`).
+  - [x] Validate Nginx config (`nginx -t`) before issuing reload (`systemctl reload nginx`).
+  - [x] Add `--dry-run` flag to display generated service configurations without executing on remote host.
 
 ---
 
