@@ -193,3 +193,81 @@ environments:
 ### Implementation 
 - [x] fix options conflict for Inconsistent `-e/--env` Add `.option("-e, --env <env>", "Target environment (default: production)")` to all environment-specific commands (`deploy`, `rollback`, `status`, `clean`, `list`, `health`).
 - [x] fix option conflict for duplicate archive flags. `deploy` has `--artifact <path>` AND `-A,` `--archive <path>`. Two different flags doing the exact same thing clutters CLI documentation and autocomplete.
+
+---
+
+## 9. Comprehensive Bug & Issue Fixes (Review & Hardening)
+
+### 9.1 Tier 1: Critical Safety & Runtime Cutover
+- [x] **[CRITICAL] [SEC-01] Validate `deployTo` in `clean.ts` to Prevent Remote Root Deletion**
+  - **Location**: `src/commands/clean.ts:17`
+  - **Issue**: Unvalidated `deployTo` defaults to `"/releases"` and deletes `/releases` on root server filesystem.
+  - **Fix**: Require `deployTo` exists, is non-empty, and is not `"/"`.
+
+- [x] **[CRITICAL] [QUAL-01] Surface Symlink Cutover Failures in `deploy.ts` and `rollback.ts`**
+  - **Location**: `src/core/ssh.ts:236-245`, `src/commands/deploy.ts:253`, `src/commands/rollback.ts:108`
+  - **Issue**: `switchCurrentSymlink` exit codes are ignored; failed cutovers report success.
+  - **Fix**: Make `switchCurrentSymlink` throw an `Error` on non-zero exit code and clean up temporary symlinks on fallback.
+
+- [x] **[HIGH] [QUAL-02] Check Return Codes on Critical Remote Commands in `shared.ts` and `ssh.ts`**
+  - **Location**: `src/features/shared.ts:19, 105`, `src/core/ssh.ts:228`
+  - **Issue**: `mkdir -p`, `ln -sfn`, and `removePath` ignore exit codes, silently proceeding on failure.
+  - **Fix**: Check `code === 0` on all critical remote executions and throw on error.
+
+- [x] **[MEDIUM] [QUAL-04] Fix Open SSH Socket Leak on SFTP Connect Failure**
+  - **Location**: `src/core/ssh.ts:39-56`
+  - **Issue**: If `sftp.connect` fails, the `ssh` client socket is never closed.
+  - **Fix**: Add try/catch around `sftp.connect` to close `ssh` if SFTP initialization fails.
+
+### 9.2 Tier 2: Security & Shared Resource Hardening
+- [x] **[HIGH] [SEC-02] Prevent Path Traversal in `shared` Configuration Items**
+  - **Location**: `src/features/shared.ts:25-28`, `src/features/provisioner.ts:240-275`
+  - **Issue**: Unvalidated shared items (e.g. `.` or `..`) can delete the release directory or arbitrary paths.
+  - **Fix**: Validate each shared item to ensure it is relative, does not escape root, and is not `.` or `..`.
+
+- [x] **[HIGH] [QUAL-03] Prevent Data Overwrite Hazard in `shared.ts` Fallback**
+  - **Location**: `src/features/shared.ts:88`
+  - **Issue**: Fallback `cp -r` overwrites existing files in `shared/` with release defaults.
+  - **Fix**: Use non-clobbering sync (`rsync -a --ignore-existing` or explicit file check).
+
+- [x] **[MEDIUM] [SEC-04] Prevent Prototype Pollution in Config Loader**
+  - **Location**: `src/core/config.ts:153-157, 165-181`
+  - **Issue**: `deepMerge` and `substituteEnv` do not guard against `__proto__`, `constructor`, `prototype`.
+  - **Fix**: Filter dangerous object keys.
+
+- [x] **[MEDIUM] [SEC-05] Tighten Version Validation Regex Against Directory Traversal**
+  - **Location**: `src/core/utils.ts:27-31`
+  - **Issue**: Regex matches `.` and `..`.
+  - **Fix**: Require version to start with alphanumeric and forbid `.` and `..`.
+
+### 9.3 Tier 3: CLI Polish, Performance & Consistency
+- [x] **[MEDIUM] [QUAL-06] Fix `init` Skipping `.env.dploy.example` for YAML Templates**
+  - **Location**: `src/commands/init.ts:70-84`
+  - **Issue**: Only copies `.env.dploy.example` when `ext === ".json"`.
+  - **Fix**: Remove `ext === ".json"` check.
+
+- [x] **[MEDIUM] [PERF-01] Replace Synchronous Blocking I/O in Async Call Paths**
+  - **Location**: `src/core/config.ts:217`, `src/core/utils.ts:93, 118`, `src/features/packager.ts:110`
+  - **Issue**: `readFileSync` and `statSync` block the event loop.
+  - **Fix**: Use non-blocking async `fs` methods.
+
+- [x] **[MEDIUM] [PERF-02] Read `package.json` Directly Without Subprocess in `detectVersion`**
+  - **Location**: `src/core/utils.ts:42`
+  - **Issue**: `safeExec("node -p ...")` spawns node process with 150ms latency and requires node in PATH.
+  - **Fix**: Read `./package.json` directly from disk.
+
+- [x] **[MEDIUM] [PERF-03] Eliminate Redundant 4th HTTP Probe in Health Check Catch Block**
+  - **Location**: `src/commands/health.ts:41-47`
+  - **Issue**: Catch block executes an extra probe adding up to 10s delay on failures.
+  - **Fix**: Retain last attempt result within `withRetry`.
+
+- [x] **[LOW] [QUAL-07] Fix Syntax Typo in Interactive Rollback UI**
+  - **Location**: `src/commands/rollback.ts:71`
+  - **Issue**: Stray `\"` in template string.
+  - **Fix**: Remove `\"`.
+
+- [x] **[LOW] [QUAL-08] Fix Typo in `tsconfig.json` Include Path**
+  - **Location**: `tsconfig.json:13`
+  - **Issue**: Lists `"dploy.config.json"`.
+  - **Fix**: Update to `"deploy.config.json"`.
+
