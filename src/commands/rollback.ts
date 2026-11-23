@@ -28,7 +28,13 @@ export async function rollback(opts: {
     log.debug(`Releases directory: ${releasesDir}, Current link: ${currentLink}`);
 
     log.info(`Connecting to ${env.username}@${env.host} to perform rollback`);
-    const bundle = await connect(env);
+    const spin = log.spinner(`Connecting to ${env.username}@${env.host}`);
+    const bundle = await connect(env).catch((e) => {
+        spin.fail("SSH connect failed");
+        log.err(e.message || String(e));
+        throw e;
+    });
+    spin.succeed("Connected");
     try {
         const remoteStatus = await collectRemoteStatus(bundle, envName, env.deployTo);
         const sortedReleases = remoteStatus.releases;

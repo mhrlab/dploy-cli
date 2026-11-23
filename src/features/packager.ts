@@ -68,6 +68,20 @@ export async function buildArtifact(options: {
     log.verbose(`Creating output directory: ${outDir}`);
     await fs.ensureDir(outDir);
 
+    // Artifact Caching: Check if artifact already exists
+    if (await fs.pathExists(artifactPath)) {
+        const stats = await fs.stat(artifactPath);
+        if (stats.size > 0) {
+            log.ok(`Artifact already cached for version ${version} (${path.basename(artifactPath)} [${getReadableFileSize(stats.size)}]) - skipping compression`);
+            return {
+                artifactPath,
+                stagingDir,
+                sizeBytes: stats.size,
+                files,
+            };
+        }
+    }
+
     log.verbose(`Creating staging directory: ${stagingDir}`);
     await fs.emptyDir(stagingDir);
 

@@ -9,10 +9,33 @@ import { status } from "../src/commands/status.js";
 import { health } from "../src/commands/health.js";
 import { init } from "../src/commands/init.js";
 import { provision } from "../src/commands/provision.js";
+import { setup } from "../src/commands/setup.js";
+import { ssh } from "../src/commands/ssh.js";
+import { run } from "../src/commands/run.js";
+import { envPush, envPull, envSet } from "../src/commands/env.js";
+import { logs } from "../src/commands/logs.js";
+import { down, up } from "../src/commands/maintenance.js";
 import { setLogLevel } from "../src/core/logger.js";
 import { getAppVersion } from "../src/core/utils.js";
 
 
+
+// 🧩 Helper to detect user abort / cancellation errors
+function isUserAbortError(err: any): boolean {
+    if (!err) return false;
+    const name = err.name || "";
+    const msg = err.message || String(err);
+    return (
+        name === "ExitPromptError" ||
+        name === "AbortError" ||
+        /SIGINT/i.test(msg) ||
+        /user force closed/i.test(msg) ||
+        /prompt was cancelled/i.test(msg) ||
+        /operation was aborted/i.test(msg) ||
+        /canceled/i.test(msg) ||
+        /cancelled/i.test(msg)
+    );
+}
 
 // 🧩 Global SIGINT handler (Ctrl + C)
 process.on("SIGINT", () => {
@@ -20,14 +43,20 @@ process.on("SIGINT", () => {
     process.exit(0);
 });
 
+// 🧩 Global SIGTERM handler
+process.on("SIGTERM", () => {
+    console.log("\n⚠️  Operation terminated.\n");
+    process.exit(0);
+});
+
 // 🧩 Global unhandled rejection handler (for Inquirer ExitPromptError, etc.)
 process.on("unhandledRejection", (err: any) => {
-    if (err?.name === "ExitPromptError" || /SIGINT/i.test(err?.message)) {
-        console.log("\n⚠️  Prompt cancelled by user.\n");
+    if (isUserAbortError(err)) {
+        console.log("\n⚠️  Operation cancelled by user.\n");
         process.exit(0);
     }
 
-    console.error("❌ Unhandled error:", err);
+    console.error("❌ Unhandled error:", err?.message || err);
     process.exit(1);
 });
 
@@ -75,11 +104,14 @@ async function main() {
         .option("-A, --artifact <path>", "Path to a custom archive to upload (skips build)")
         .addOption(new Option("--archive <path>", "Alias for --artifact").hideHelp())
         .option("-s, --skip-build", "Skip local build and use an existing artifact")
-        .option("-V, --version <ver>", "Override version string")
+        .option("--version-override <ver>", "Override version string")
+        .addOption(new Option("-V, --version <ver>", "Override version string (alias)").hideHelp())
         .option("-n, --dry-run", "Show planned deploy actions without changing anything")
         .option("--keep-artifact", "Preserve local build artifact archive after deployment")
         .option("--no-auto-rollback", "Disable automatic rollback if health check fails")
         .option("--no-health-gate", "Do not abort deployment if health check fails")
+        .option("--maintenance", "Put site into maintenance mode during deployment")
+        .option("--backup-db", "Take automated pre-deployment database backup before release cutover")
         .action((opts, cmd) => deploy(cmd.optsWithGlobals()));
 
     program
@@ -134,16 +166,112 @@ async function main() {
             await provision(cmd.optsWithGlobals());
         });
 
+    program
+        .command("setup")
+        .description("Interactive server setup wizard: configure Nginx, background services, and SSL")
+        .option("-e, --env <env>", "Target environment (default: production)")
+        .option("-n, --dry-run", "Preview planned Nginx and systemd configs without touching the server")
+        .option("--webserver <type>", "Web server type (nginx, none)")
+        .option("--kind <type>", "App type (node, php, spa)")
+        .option("--domain <domain>", "Domain name(s)")
+        .option("--port <port>", "Upstream port for Node.js reverse proxy")
+        .option("--php-socket <path>", "PHP-FPM socket path")
+        .option("--certbot", "Obtain Let's Encrypt SSL via Certbot")
+        .option("--service", "Create and enable a systemd background service")
+        .option("--exec-start <cmd>", "ExecStart command for systemd unit")
+        .option("--queue-worker", "Create and enable a background queue worker (e.g. for Laravel/PHP)")
+        .option("--worker-command <cmd>", "Command for the queue worker service")
+        .action(async (opts, cmd) => {
+            await setup(cmd.optsWithGlobals());
+        });
+
+    program
+        .command("ssh")
+        .description("Open an interactive SSH terminal on the remote server")
+        .option("-e, --env <env>", "Target environment (default: production)")
+        .action(async (opts, cmd) => {
+            await ssh(cmd.optsWithGlobals());
+        });
+
+    program
+        .command("run <command>")
+        .description("Execute an ad-hoc command on the remote server inside current release")
+        .option("-e, --env <env>", "Target environment (default: production)")
+        .option("--release <name>", "Execute inside a specific release directory instead of current")
+        .action(async (command, opts, cmd) => {
+            await run(command, cmd.optsWithGlobals());
+        });
+
+    program
+        .command("env:push")
+        .description("Upload local .env to remote shared/.env with automatic backup")
+        .option("-e, --env <env>", "Target environment (default: production)")
+        .option("-f, --file <path>", "Specific local .env file to upload")
+        .option("--force", "Overwrite remote .env without interactive prompt")
+        .option("-y, --yes", "Automatic yes to prompts")
+        .action(async (opts, cmd) => {
+            await envPush(cmd.optsWithGlobals());
+        });
+
+    program
+        .command("env:pull")
+        .description("Download remote shared/.env to local file")
+        .option("-e, --env <env>", "Target environment (default: production)")
+        .option("-o, --out <path>", "Destination local path (default: .env.<env>.remote)")
+        .option("--force", "Overwrite local file if it already exists")
+        .option("-y, --yes", "Automatic yes to prompts")
+        .action(async (opts, cmd) => {
+            await envPull(cmd.optsWithGlobals());
+        });
+
+    program
+        .command("env:set <pair>")
+        .description("Set or update a KEY=VALUE variable in remote shared/.env")
+        .option("-e, --env <env>", "Target environment (default: production)")
+        .action(async (pair, opts, cmd) => {
+            await envSet(pair, cmd.optsWithGlobals());
+        });
+
+    program
+        .command("logs")
+        .description("Stream or tail remote application/server logs")
+        .option("-e, --env <env>", "Target environment (default: production)")
+        .option("-f, --follow", "Follow log output (stream real-time)")
+        .option("-n, --lines <count>", "Number of lines to show (default: 50)")
+        .option("--type <type>", "Log type: app, nginx, pm2, or systemd")
+        .option("--file <path>", "Specific remote log file to tail")
+        .action(async (opts, cmd) => {
+            await logs(cmd.optsWithGlobals());
+        });
+
+    program
+        .command("down")
+        .description("Put the remote site into maintenance mode")
+        .option("-e, --env <env>", "Target environment (default: production)")
+        .option("-m, --message <msg>", "Custom maintenance message")
+        .option("--retry <seconds>", "Suggested Retry-After header value in seconds (default: 300)")
+        .action(async (opts, cmd) => {
+            await down(cmd.optsWithGlobals());
+        });
+
+    program
+        .command("up")
+        .description("Take the remote site out of maintenance mode (restore traffic)")
+        .option("-e, --env <env>", "Target environment (default: production)")
+        .action(async (opts, cmd) => {
+            await up(cmd.optsWithGlobals());
+        });
+
     await program.parseAsync(process.argv);
 }
 
 // ✅ Run main entry
 main().catch((err) => {
-    if (err?.name === "ExitPromptError" || /SIGINT/i.test(err?.message)) {
-        console.log("\n⚠️  Prompt cancelled by user.\n");
+    if (isUserAbortError(err)) {
+        console.log("\n⚠️  Operation cancelled by user.\n");
         process.exit(0);
     }
 
-    console.error("❌ CLI Error:", err);
+    console.error("❌ CLI Error:", err?.message || err);
     process.exit(1);
 });

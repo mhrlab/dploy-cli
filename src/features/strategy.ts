@@ -4,11 +4,27 @@ import path from "node:path";
 import { DeployConfig } from "../core/config.js";
 import { log } from "../core/logger.js";
 
+export async function loadDployIgnore(cwd: string): Promise<string[]> {
+    const ignorePath = path.join(cwd, ".dployignore");
+    if (await fs.pathExists(ignorePath)) {
+        try {
+            const content = await fs.readFile(ignorePath, "utf8");
+            return content
+                .split(/\r?\n/)
+                .map((line) => line.trim())
+                .filter((line) => line && !line.startsWith("#"));
+        } catch {}
+    }
+    return [];
+}
+
 export async function resolveFiles(cwd: string, cfg: DeployConfig): Promise<{ from: string; to: string }[]> {
     const strategy = cfg.build?.strategy ?? cfg.strategy ?? "copy";
     const copyEntries = cfg.build?.copy ?? cfg.copy ?? [];
     const include = cfg.build?.include ?? cfg.include ?? [];
-    const exclude = cfg.build?.exclude ?? cfg.exclude ?? [];
+    const configExclude = cfg.build?.exclude ?? cfg.exclude ?? [];
+    const dployIgnore = await loadDployIgnore(cwd);
+    const exclude = Array.from(new Set([...configExclude, ...dployIgnore]));
 
     log.debug(`Resolving files using strategy: ${strategy}`);
     log.debug(`Strategy config - copy: ${copyEntries.length}, include: ${include.length}, exclude: ${exclude.length}`);

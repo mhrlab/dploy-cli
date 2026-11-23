@@ -126,13 +126,13 @@ Review Status: In Progress
 - [x] **Keep Local Artifact Flag**: Add `--keep-artifact` to preserve local `.tar.gz` archive after deployment.
 
 ### 6.2 Build & Packaging Enhancements
-- [ ] **`.dployignore` Support**: Respect `.dployignore` file for deployment packaging instead of relying solely on config globs.
+- [x] **`.dployignore` Support**: Respect `.dployignore` file for deployment packaging instead of relying solely on config globs.
 - [ ] **Alternative Packaging Formats**: Support `.zip` and plain uncompressed directory synchronization.
-- [ ] **Artifact Caching**: Skip rebuilding artifact if source files and git SHA have not changed.
+- [x] **Artifact Caching**: Skip rebuilding artifact if source files and git SHA have not changed.
 - [ ] **Incremental Deploy Mode**: Support delta uploads (rsync-style) for large codebases.
 
 ### 6.3 Configuration System Improvements
-- [ ] **Config Schema Validation**: Use a schema validator (e.g. Zod or JSON Schema) to provide immediate error messages on missing/invalid config fields.
+- [x] **Config Schema Validation**: Use a schema validator (e.g. Zod or JSON Schema) to provide immediate error messages on missing/invalid config fields.
 - [ ] **Base Config File Inheritance**: Support `extends` across separate config files (e.g. `deploy.base.yml`), not just across environment blocks.
 - [ ] **Template Placeholder Substitution in Hooks**: Allow hooks to interpolate `${RELEASE_DIR}`, `${VERSION}`, `${PREVIOUS_RELEASE}`.
 
@@ -277,100 +277,100 @@ environments:
 
 ### 10.1 Web Server & Service Provisioning Wizard (`dploy setup`)
 Interactive server onboarding for fresh VPS/Ubuntu/Debian instances to configure web servers, process managers, and reverse proxies automatically.
-- [ ] **Interactive Onboarding Prompts (`src/commands/setup.ts`)**
-  - [ ] Web server selection: Nginx (default), Apache, None.
-  - [ ] App type selection: Static/SPA (`current/dist`), Node.js (reverse proxy to port), PHP/Laravel (PHP-FPM socket), Python/Go/Docker.
-  - [ ] Domain / hostname inputs (e.g. `app.example.com`, `example.com`).
-  - [ ] Upstream port or PHP-FPM socket path input.
-  - [ ] Automated SSL / Let's Encrypt prompt (`certbot --nginx -d <domain>`).
-- [ ] **Template Engine & Config Generation (`templates/services/`)**
-  - [ ] Nginx virtual host templates for SPA, Node.js proxy, and PHP-FPM with security headers, gzip, and static asset caching.
-  - [ ] Systemd unit file generator (`/etc/systemd/system/<app>.service`) with auto-restart, logging, and environment file loading.
-  - [ ] PM2 ecosystem generation if user selects PM2.
-- [ ] **Remote Installation & Execution Workflow**
-  - [ ] Check installed binaries via SSH (`which nginx`, `which certbot`, `which node`).
-  - [ ] Install missing dependencies via `apt-get` if prompted/permitted by user (`sudo apt update && sudo apt install -y nginx`).
-  - [ ] Upload and enable virtual hosts (`/etc/nginx/sites-available/<domain>` -> `/etc/nginx/sites-enabled/`).
-  - [ ] Validate Nginx config (`nginx -t`) before issuing reload (`systemctl reload nginx`).
-  - [ ] Add `--dry-run` flag to display generated service configurations without executing on remote host.
+- [x] **Interactive Onboarding Prompts (`src/commands/setup.ts`)**
+  - [x] Web server selection: Nginx (default), Apache, None.
+  - [x] App type selection: Static/SPA (`current/dist`), Node.js (reverse proxy to port), PHP/Laravel (PHP-FPM socket), Python/Go/Docker.
+  - [x] Domain / hostname inputs (e.g. `app.example.com`, `example.com`).
+  - [x] Upstream port or PHP-FPM socket path input.
+  - [x] Automated SSL / Let's Encrypt prompt (`certbot --nginx -d <domain>`).
+- [x] **Template Engine & Config Generation (`templates/services/`)**
+  - [x] Nginx virtual host templates for SPA, Node.js proxy, and PHP-FPM with security headers, gzip, and static asset caching.
+  - [x] Systemd unit file generator (`/etc/systemd/system/<app>.service`) with auto-restart, logging, and environment file loading.
+  - [x] PM2 ecosystem generation if user selects PM2.
+- [x] **Remote Installation & Execution Workflow**
+  - [x] Check installed binaries via SSH (`which nginx`, `which certbot`, `which node`).
+  - [x] Install missing dependencies via `apt-get` if prompted/permitted by user (`sudo apt update && sudo apt install -y nginx`).
+  - [x] Upload and enable virtual hosts (`/etc/nginx/sites-available/<domain>` -> `/etc/nginx/sites-enabled/`).
+  - [x] Validate Nginx config (`nginx -t`) before issuing reload (`systemctl reload nginx`).
+  - [x] Add `--dry-run` flag to display generated service configurations without executing on remote host.
 
 ---
 
 ### 10.2 Remote Environment & Secret Synchronization (`dploy env:*`)
 Eliminate the need to manually SSH into remote servers to edit `.env` files with nano/vim.
-- [ ] **`dploy env:push`**
-  - [ ] Support flags `-e <env>`, `--file <local-path>` (defaults to `.env.<env>` or `.env`).
-  - [ ] Safely upload to `<deployTo>/shared/.env`.
-  - [ ] Prompt for confirmation before overwriting unless `--force` / `--yes` is specified.
-  - [ ] Automatic remote backup: rename old `.env` to `.env.bak.<timestamp>` before replacing.
-- [ ] **`dploy env:pull`**
-  - [ ] Download `<deployTo>/shared/.env` to local file (e.g. `.env.<env>.remote` or `.env`).
-  - [ ] Add safety check to prevent overwriting local `.env` without `--force`.
-- [ ] **`dploy env:set KEY=VALUE`**
-  - [ ] Parse remote `.env`, update or append the specific key-value pair, and save back to `<deployTo>/shared/.env`.
+- [x] **`dploy env:push`**
+  - [x] Support flags `-e <env>`, `--file <local-path>` (defaults to `.env.<env>` or `.env`).
+  - [x] Safely upload to `<deployTo>/shared/.env`.
+  - [x] Prompt for confirmation before overwriting unless `--force` / `--yes` is specified.
+  - [x] Automatic remote backup: rename old `.env` to `.env.bak.<timestamp>` before replacing.
+- [x] **`dploy env:pull`**
+  - [x] Download `<deployTo>/shared/.env` to local file (e.g. `.env.<env>.remote` or `.env`).
+  - [x] Add safety check to prevent overwriting local `.env` without `--force`.
+- [x] **`dploy env:set KEY=VALUE`**
+  - [x] Parse remote `.env`, update or append the specific key-value pair, and save back to `<deployTo>/shared/.env`.
 
 ---
 
 ### 10.3 Direct Remote Shell & Command Runner (`dploy ssh` & `dploy run`)
 Direct CLI shortcuts for remote server administration without manually looking up credentials or IP addresses.
-- [ ] **`dploy ssh -e <env>`**
-  - [ ] Read environment configuration (host, user, port, key/password).
-  - [ ] Spawn native interactive SSH session (`child_process.spawn("ssh", [...])`) or pty forward.
-  - [ ] Automatically set starting working directory to `<deployTo>/current`.
-- [ ] **`dploy run "<command>" -e <env>`**
-  - [ ] Execute arbitrary ad-hoc remote commands inside `<deployTo>/current` (e.g. `dploy run "php artisan migrate --force"` or `dploy run "npm run db:migrate"`).
-  - [ ] Stream stdout/stderr in real time to local console.
+- [x] **`dploy ssh -e <env>`**
+  - [x] Read environment configuration (host, user, port, key/password).
+  - [x] Spawn native interactive SSH session (`child_process.spawn("ssh", [...])`) or pty forward.
+  - [x] Automatically set starting working directory to `<deployTo>/current`.
+- [x] **`dploy run "<command>" -e <env>`**
+  - [x] Execute arbitrary ad-hoc remote commands inside `<deployTo>/current` (e.g. `dploy run "php artisan migrate --force"` or `dploy run "npm run db:migrate"`).
+  - [x] Stream stdout/stderr in real time to local console.
 
 ---
 
 ### 10.4 Automated Database Backups Pre-Deployment (`backupBeforeDeploy`)
 Guard against destructive schema migrations by taking snapshots before switching traffic.
-- [ ] **Config Schema Extension in `DeployConfig`**
-  - [ ] Add `database?: { type: "mysql" | "postgres" | "sqlite", name?: string, keep?: number }` or `backupBeforeDeploy?: boolean`.
-- [ ] **Backup Execution in Deployment Pipeline**
-  - [ ] Execute `mysqldump` or `pg_dump` over SSH into `<deployTo>/backups/db-<version>-<timestamp>.sql.gz`.
-  - [ ] Retain latest N database backups (matching `keepVersions`).
-  - [ ] Abort deployment and alert user if backup fails before release cutover.
+- [x] **Config Schema Extension in `DeployConfig`**
+  - [x] Add `database?: { type: "mysql" | "postgres" | "sqlite", name?: string, keep?: number }` or `backupBeforeDeploy?: boolean`.
+- [x] **Backup Execution in Deployment Pipeline**
+  - [x] Execute `mysqldump` or `pg_dump` over SSH into `<deployTo>/backups/db-<version>-<timestamp>.sql.gz`.
+  - [x] Retain latest N database backups (matching `keepVersions`).
+  - [x] Abort deployment and alert user if backup fails before release cutover.
 
 ---
 
 ### 10.5 Deployment Notifications & Webhooks (Slack, Discord, Telegram)
 Real-time alerts on deployment status, failures, and rollbacks for engineering teams.
-- [ ] **Notification Configuration in `deploy.config.yml`**
-  - [ ] Support channels: `slack`, `discord`, `telegram`, or generic HTTP `webhook`.
-  - [ ] Event triggers: `on: [start, success, failure, rollback]`.
-- [ ] **Payload Dispatcher (`src/features/notifications.ts`)**
-  - [ ] Send rich embed/payload containing version, git commit, commit message, deployer, environment, duration, and status.
-  - [ ] Non-blocking execution so notification failure never blocks or fails a deployment.
+- [x] **Notification Configuration in `deploy.config.yml`**
+  - [x] Support channels: `slack`, `discord`, `telegram`, or generic HTTP `webhook`.
+  - [x] Event triggers: `on: [start, success, failure, rollback]`.
+- [x] **Payload Dispatcher (`src/features/notifications.ts`)**
+  - [x] Send rich embed/payload containing version, git commit, commit message, deployer, environment, duration, and status.
+  - [x] Non-blocking execution so notification failure never blocks or fails a deployment.
 
 ---
 
 ### 10.6 Maintenance Mode Controls (`dploy down` / `dploy up`)
 Gracefully take websites offline during major upgrades or database schema changes.
-- [ ] **`dploy down -e <env>`**
-  - [ ] Create maintenance flag file (`<deployTo>/shared/maintenance.flag` or `current/down`).
-  - [ ] Support custom message, retry-after header, or maintenance HTML template.
-- [ ] **`dploy up -e <env>`**
-  - [ ] Remove maintenance flag file to immediately restore normal traffic.
-- [ ] **Integration with Deployment Pipeline**
-  - [ ] Add option `maintenanceMode: true` in `deploy.config.yml` to automatically toggle `down` before hooks and `up` after healthcheck passes.
+- [x] **`dploy down -e <env>`**
+  - [x] Create maintenance flag file (`<deployTo>/shared/maintenance.flag` or `current/down`).
+  - [x] Support custom message, retry-after header, or maintenance HTML template.
+- [x] **`dploy up -e <env>`**
+  - [x] Remove maintenance flag file to immediately restore normal traffic.
+- [x] **Integration with Deployment Pipeline**
+  - [x] Add option `maintenanceMode: true` in `deploy.config.yml` to automatically toggle `down` before hooks and `up` after healthcheck passes.
 
 ---
 
 ### 10.7 Live Remote Log Streaming (`dploy logs`)
 Stream server, application, and error logs directly to the local terminal.
-- [ ] **`dploy logs -e <env>`**
-  - [ ] Support flags: `-f, --follow` (tail live), `-n <lines>` (default 50), `--type <app|nginx|pm2|systemd>`.
-  - [ ] Execute remote `tail -n 50 -f <logPath>` over SSH stream and pipe output locally with timestamps.
+- [x] **`dploy logs -e <env>`**
+  - [x] Support flags: `-f, --follow` (tail live), `-n <lines>` (default 50), `--type <app|nginx|pm2|systemd>`.
+  - [x] Execute remote `tail -n 50 -f <logPath>` over SSH stream and pipe output locally with timestamps.
 
 ---
 
 ### 10.8 Multi-Server / Cluster Deployments
 Support deploying to multiple web/worker instances for scalable architectures.
-- [ ] **Config Schema Support for Multiple Hosts**
-  - [ ] Allow `hosts: string[]` under `environments.<name>` in addition to single `host`.
-- [ ] **Deployment Strategies**
-  - [ ] Parallel deployment across all hosts.
-  - [ ] Rolling deployment (deploy host 1 -> health check -> deploy host 2) for zero downtime on clusters without taking all nodes offline.
+- [x] **Config Schema Support for Multiple Hosts**
+  - [x] Allow `hosts: string[]` under `environments.<name>` in addition to single `host`.
+- [x] **Deployment Strategies**
+  - [x] Parallel deployment across all hosts.
+  - [x] Rolling deployment (deploy host 1 -> health check -> deploy host 2) for zero downtime on clusters without taking all nodes offline.
 
 

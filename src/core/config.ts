@@ -3,7 +3,9 @@ import path from "node:path";
 import * as dotenv from "dotenv";
 import yaml from "js-yaml";
 import { log } from "./logger.js";
-import {expandTilde} from "./utils.js";
+import { expandTilde } from "./utils.js";
+import { assertValidDeployConfig } from "./config-validator.js";
+import { NotificationTarget } from "../features/notifications.js";
 
 
 type AnyObject = Record<string, any>;
@@ -56,6 +58,19 @@ export interface ProvisionConfig {
     [key: string]: any;
 }
 
+export interface DatabaseBackupConfig {
+    enabled?: boolean;
+    type?: "mysql" | "postgres" | "sqlite";
+    name?: string;
+    user?: string;
+    password?: string;
+    host?: string;
+    port?: number;
+    path?: string;
+    keep?: number;
+    extraArgs?: string[];
+}
+
 export interface DeployConfig {
     name?: string;
     versionCommand?: string;
@@ -63,6 +78,9 @@ export interface DeployConfig {
     build?: BuildConfig;
     hooks?: HookConfig;
     provision?: ProvisionConfig;
+    database?: DatabaseBackupConfig;
+    maintenanceMode?: boolean;
+    notifications?: NotificationTarget[];
     environments?: Record<string, EnvironmentConfig>;
     keepArtifact?: boolean;
     cleanAfterDeploy?: boolean;
@@ -75,6 +93,8 @@ export interface EnvironmentConfig {
     extends?: string;
     username?: string;
     host?: string;
+    hosts?: string[];
+    strategy?: "parallel" | "rolling";
     port?: number;
     password?: string;
     ssh_key?: string;
@@ -92,6 +112,9 @@ export interface EnvironmentConfig {
     keepArtifact?: boolean;
     env?: Record<string, string>;
     provision?: ProvisionConfig;
+    database?: DatabaseBackupConfig;
+    maintenanceMode?: boolean;
+    notifications?: NotificationTarget[];
     [key: string]: any;
 }
 
@@ -286,6 +309,8 @@ function normalizeSSHConfig(config: DeployConfig): DeployConfig {
             }
         }
     }
+
+    assertValidDeployConfig(config);
 
     return config;
 }

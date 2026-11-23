@@ -1,0 +1,18 @@
+[Unit]
+Description={{APP_NAME}} Queue Worker
+After=network.target
+
+[Service]
+Type=simple
+User={{USER}}
+WorkingDirectory={{WORKING_DIR}}
+ExecStart={{EXEC_START}}
+Restart=always
+RestartSec=3
+StandardOutput=syslog
+StandardError=syslog
+SyslogIdentifier={{APP_NAME}}-worker
+EnvironmentFile=-{{WORKING_DIR}}/.env
+
+[Install]
+WantedBy=multi-user.target
