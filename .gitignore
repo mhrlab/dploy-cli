@@ -6,6 +6,7 @@ dist/
 build/
 *.js
 *.js.map
+!scripts/*.js
 
 # TypeScript cache
 *.tsbuildinfo
