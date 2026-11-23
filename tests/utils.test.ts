@@ -57,6 +57,14 @@ test("detectVersion supports JSON versionFile", async () => {
   assert.match(version, /^v5\.5\.5-/);
 });
 
+test("detectVersion rejects versionFile outside workspace directory", async () => {
+  const cwd = await createTempWorkspace();
+  assert.throws(
+    () => detectVersion({ cwd, versionFile: "../outside.txt" }),
+    /Invalid versionFile: '..\/outside.txt' resolves outside the workspace directory/
+  );
+});
+
 test("detectVersion prioritizes VERSION file over composer.json and package.json", async () => {
   const cwd = await createTempWorkspace();
   await writeFile(path.join(cwd, "VERSION"), "4.0.0\n", "utf8");

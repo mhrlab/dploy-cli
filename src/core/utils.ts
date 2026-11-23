@@ -16,9 +16,9 @@ export function expandTilde(p?: string): string | undefined {
 }
 
 
-export function safeExec(cmd: string): string | undefined {
+export function safeExec(cmd: string, cwd?: string): string | undefined {
     try {
-        return execSync(cmd, { stdio: ["ignore", "pipe", "ignore"] }).toString().trim();
+        return execSync(cmd, { cwd, stdio: ["ignore", "pipe", "ignore"] }).toString().trim();
     } catch {
         return undefined;
     }
@@ -71,7 +71,7 @@ export function detectVersion(
 
     // 2. Custom versionCommand configured in deploy.config.yml
     if (opts.versionCommand) {
-        const cmdOutput = safeExec(opts.versionCommand);
+        const cmdOutput = safeExec(opts.versionCommand, cwd);
         if (cmdOutput) {
             const candidate = cmdOutput.split(/\r?\n/)[0].trim();
             if (candidate) {
@@ -82,7 +82,7 @@ export function detectVersion(
     }
 
     // 3. Git tag check: exact match first, then nearest tag
-    const gitExactTag = safeExec("git describe --tags --exact-match 2>/dev/null");
+    const gitExactTag = safeExec("git describe --tags --exact-match", cwd);
     if (gitExactTag) {
         const candidate = gitExactTag.trim();
         if (candidate && isValidVersionString(candidate)) {
@@ -90,7 +90,7 @@ export function detectVersion(
         }
     }
 
-    const gitNearestTag = safeExec("git describe --tags 2>/dev/null");
+    const gitNearestTag = safeExec("git describe --tags", cwd);
     if (gitNearestTag) {
         const candidate = gitNearestTag.trim();
         if (candidate && isValidVersionString(candidate)) {
@@ -108,9 +108,11 @@ export function detectVersion(
 
     // 4a. Custom versionFile
     if (opts.versionFile) {
-        const customPath = path.isAbsolute(opts.versionFile)
-            ? opts.versionFile
-            : path.resolve(cwd, opts.versionFile);
+        const customPath = path.resolve(cwd, opts.versionFile);
+        const rel = path.relative(cwd, customPath);
+        if (rel.startsWith("..") || path.isAbsolute(rel)) {
+            throw new Error(`Invalid versionFile: '${opts.versionFile}' resolves outside the workspace directory`);
+        }
         if (fs.existsSync(customPath)) {
             try {
                 if (customPath.endsWith(".json")) {
@@ -171,7 +173,7 @@ export function detectVersion(
     }
 
     // 5. Existing fallback: manifestVersion + shortSha, or timestamp + shortSha
-    const shortSha = safeExec("git rev-parse --short HEAD");
+    const shortSha = safeExec("git rev-parse --short HEAD", cwd);
     const now = new Date();
     const stamp = now.toISOString().replace(/[-:T.Z]/g, "").slice(0, 14); // YYYYMMDDHHMMSS
 

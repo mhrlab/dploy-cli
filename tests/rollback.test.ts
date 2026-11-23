@@ -30,3 +30,14 @@ test("resolveRollbackTarget matches an explicit release name", () => {
 
   assert.equal(target?.name, "v2");
 });
+
+test("resolveRollbackTarget rejects path traversal and malicious versions in opts.to", () => {
+  const releases = [
+    { name: "v3", mtime: new Date("2025-01-03T00:00:00Z") },
+    { name: "v2", mtime: new Date("2025-01-02T00:00:00Z") },
+  ];
+
+  assert.throws(() => resolveRollbackTarget(releases, "v3", { to: "../../../etc/passwd" }), /Invalid version format/);
+  assert.throws(() => resolveRollbackTarget(releases, "v3", { to: "." }), /Invalid version format/);
+  assert.throws(() => resolveRollbackTarget(releases, "v3", { to: "v2; rm -rf /" }), /Invalid version format/);
+});

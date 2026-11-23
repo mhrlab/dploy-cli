@@ -1,5 +1,6 @@
 import path from "node:path";
 import type { RemoteRelease } from "./status.js";
+import { assertValidVersion } from "../core/utils.js";
 
 export type RollbackOptions = {
     latest?: boolean;
@@ -23,6 +24,7 @@ export function resolveRollbackTarget(
     }
 
     if (opts.to) {
+        assertValidVersion(opts.to);
         const target = releases.find((release) => release.name === opts.to);
         if (!target) {
             throw new Error(`Release '${opts.to}' not found`);
