@@ -14,6 +14,7 @@ import { ssh } from "../src/commands/ssh.js";
 import { run } from "../src/commands/run.js";
 import { envPush, envPull, envSet } from "../src/commands/env.js";
 import { logs } from "../src/commands/logs.js";
+import { down, up } from "../src/commands/maintenance.js";
 import { setLogLevel } from "../src/core/logger.js";
 import { getAppVersion } from "../src/core/utils.js";
 
@@ -85,6 +86,8 @@ async function main() {
         .option("--keep-artifact", "Preserve local build artifact archive after deployment")
         .option("--no-auto-rollback", "Disable automatic rollback if health check fails")
         .option("--no-health-gate", "Do not abort deployment if health check fails")
+        .option("--maintenance", "Put site into maintenance mode during deployment")
+        .option("--backup-db", "Take automated pre-deployment database backup before release cutover")
         .action((opts, cmd) => deploy(cmd.optsWithGlobals()));
 
     program
@@ -215,6 +218,24 @@ async function main() {
         .option("--file <path>", "Specific remote log file to tail")
         .action(async (opts, cmd) => {
             await logs(cmd.optsWithGlobals());
+        });
+
+    program
+        .command("down")
+        .description("Put the remote site into maintenance mode")
+        .option("-e, --env <env>", "Target environment (default: production)")
+        .option("-m, --message <msg>", "Custom maintenance message")
+        .option("--retry <seconds>", "Suggested Retry-After header value in seconds (default: 300)")
+        .action(async (opts, cmd) => {
+            await down(cmd.optsWithGlobals());
+        });
+
+    program
+        .command("up")
+        .description("Take the remote site out of maintenance mode (restore traffic)")
+        .option("-e, --env <env>", "Target environment (default: production)")
+        .action(async (opts, cmd) => {
+            await up(cmd.optsWithGlobals());
         });
 
     await program.parseAsync(process.argv);

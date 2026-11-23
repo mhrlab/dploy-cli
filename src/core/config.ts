@@ -56,6 +56,19 @@ export interface ProvisionConfig {
     [key: string]: any;
 }
 
+export interface DatabaseBackupConfig {
+    enabled?: boolean;
+    type?: "mysql" | "postgres" | "sqlite";
+    name?: string;
+    user?: string;
+    password?: string;
+    host?: string;
+    port?: number;
+    path?: string;
+    keep?: number;
+    extraArgs?: string[];
+}
+
 export interface DeployConfig {
     name?: string;
     versionCommand?: string;
@@ -63,6 +76,8 @@ export interface DeployConfig {
     build?: BuildConfig;
     hooks?: HookConfig;
     provision?: ProvisionConfig;
+    database?: DatabaseBackupConfig;
+    maintenanceMode?: boolean;
     environments?: Record<string, EnvironmentConfig>;
     keepArtifact?: boolean;
     cleanAfterDeploy?: boolean;
@@ -92,6 +107,8 @@ export interface EnvironmentConfig {
     keepArtifact?: boolean;
     env?: Record<string, string>;
     provision?: ProvisionConfig;
+    database?: DatabaseBackupConfig;
+    maintenanceMode?: boolean;
     [key: string]: any;
 }
 

@@ -14,6 +14,8 @@ import { performHealthCheckWithRetry } from "./health.js";
 import fs from "fs-extra";
 import { mkdtemp } from "node:fs/promises";
 import { createReleaseMetadata, RELEASE_METADATA_FILE } from "../features/release-metadata.js";
+import { enableMaintenance, disableMaintenance } from "../features/maintenance.js";
+import { executeDatabaseBackup, DatabaseBackupConfig } from "../features/database-backup.js";
 
 export async function deploy(opts: {
     env?: string;
@@ -26,6 +28,8 @@ export async function deploy(opts: {
     autoRollback?: boolean;
     healthGate?: boolean;
     healthRetries?: number;
+    maintenance?: boolean;
+    backupDb?: boolean;
 }) {
     log.debug(`Deploy command started with options: ${JSON.stringify(opts)}`);
 
@@ -48,6 +52,9 @@ export async function deploy(opts: {
     const sharedDefaults: Record<string, string> | undefined = cfg.sharedDefaults ?? cfg.build?.sharedDefaults;
     const cleanAfterDeploy: boolean = cfg.cleanAfterDeploy ?? cfg.build?.cleanAfterDeploy ?? false;
     const keepLocalArtifact: boolean = opts.keepArtifact ?? cfg.keepArtifact ?? env.keepArtifact ?? false;
+    const isMaintenanceEnabled: boolean = opts.maintenance ?? cfg.maintenanceMode ?? env.maintenanceMode ?? false;
+    const isBackupDbEnabled: boolean = opts.backupDb ?? cfg.database?.enabled ?? env.database?.enabled ?? false;
+    const dbConfig: DatabaseBackupConfig | undefined = env.database ?? cfg.database;
 
     const version = detectVersion({
         override: opts.version,
@@ -230,6 +237,27 @@ export async function deploy(opts: {
         if (code !== 0) throw new Error(stderr || "remote extract failed");
         extract.succeed(`Extracted ${version}`);
 
+        // Automated Pre-Deploy Database Backup
+        if (isBackupDbEnabled && dbConfig) {
+            const spinDb = log.spinner("Creating pre-deploy database backup...");
+            try {
+                const backupPath = await executeDatabaseBackup(bundle.ssh, remoteRoot, version, dbConfig, releaseDir);
+                spinDb.succeed(`Pre-deploy database backup created (${path.posix.basename(backupPath)})`);
+            } catch (dbErr: any) {
+                spinDb.fail("Database backup failed");
+                throw new Error(`Deployment aborted: ${dbErr.message}`);
+            }
+        }
+
+        // Automatic Maintenance Mode: Enable before preDeploy hooks & release cutover
+        if (isMaintenanceEnabled) {
+            log.info("Putting site into maintenance mode during deployment...");
+            await enableMaintenance(bundle.ssh, remoteRoot, {
+                message: `Deploying release ${version}. We'll be right back!`,
+                retryAfter: 120,
+            });
+        }
+
         // Link shared items (must happen before preDeploy so .env and storage are accessible)
         if (sharedItems.length) {
             log.verbose(`Linking ${sharedItems.length} shared items`);
@@ -262,6 +290,13 @@ export async function deploy(opts: {
         // run PostDeploy hooks (after release is activated, e.g. restart service)
         log.verbose(`Running post-deploy hooks`);
         await runRemoteHooks(bundle.ssh, "postDeploy", cfg.hooks?.postDeploy, releaseDir);
+
+        // Disable Maintenance Mode if it was enabled during deploy
+        if (isMaintenanceEnabled) {
+            log.info("Disabling deployment maintenance mode...");
+            await disableMaintenance(bundle.ssh, remoteRoot);
+            log.ok("Maintenance mode disabled");
+        }
 
         // Optional post-deployment health check & auto-rollback gating
         const baseUrl = env.baseUrl || process.env.DPLOY_BASE_URL;

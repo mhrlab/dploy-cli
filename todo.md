@@ -325,12 +325,12 @@ Direct CLI shortcuts for remote server administration without manually looking u
 
 ### 10.4 Automated Database Backups Pre-Deployment (`backupBeforeDeploy`)
 Guard against destructive schema migrations by taking snapshots before switching traffic.
-- [ ] **Config Schema Extension in `DeployConfig`**
-  - [ ] Add `database?: { type: "mysql" | "postgres" | "sqlite", name?: string, keep?: number }` or `backupBeforeDeploy?: boolean`.
-- [ ] **Backup Execution in Deployment Pipeline**
-  - [ ] Execute `mysqldump` or `pg_dump` over SSH into `<deployTo>/backups/db-<version>-<timestamp>.sql.gz`.
-  - [ ] Retain latest N database backups (matching `keepVersions`).
-  - [ ] Abort deployment and alert user if backup fails before release cutover.
+- [x] **Config Schema Extension in `DeployConfig`**
+  - [x] Add `database?: { type: "mysql" | "postgres" | "sqlite", name?: string, keep?: number }` or `backupBeforeDeploy?: boolean`.
+- [x] **Backup Execution in Deployment Pipeline**
+  - [x] Execute `mysqldump` or `pg_dump` over SSH into `<deployTo>/backups/db-<version>-<timestamp>.sql.gz`.
+  - [x] Retain latest N database backups (matching `keepVersions`).
+  - [x] Abort deployment and alert user if backup fails before release cutover.
 
 ---
 
@@ -347,13 +347,13 @@ Real-time alerts on deployment status, failures, and rollbacks for engineering t
 
 ### 10.6 Maintenance Mode Controls (`dploy down` / `dploy up`)
 Gracefully take websites offline during major upgrades or database schema changes.
-- [ ] **`dploy down -e <env>`**
-  - [ ] Create maintenance flag file (`<deployTo>/shared/maintenance.flag` or `current/down`).
-  - [ ] Support custom message, retry-after header, or maintenance HTML template.
-- [ ] **`dploy up -e <env>`**
-  - [ ] Remove maintenance flag file to immediately restore normal traffic.
-- [ ] **Integration with Deployment Pipeline**
-  - [ ] Add option `maintenanceMode: true` in `deploy.config.yml` to automatically toggle `down` before hooks and `up` after healthcheck passes.
+- [x] **`dploy down -e <env>`**
+  - [x] Create maintenance flag file (`<deployTo>/shared/maintenance.flag` or `current/down`).
+  - [x] Support custom message, retry-after header, or maintenance HTML template.
+- [x] **`dploy up -e <env>`**
+  - [x] Remove maintenance flag file to immediately restore normal traffic.
+- [x] **Integration with Deployment Pipeline**
+  - [x] Add option `maintenanceMode: true` in `deploy.config.yml` to automatically toggle `down` before hooks and `up` after healthcheck passes.
 
 ---
 
