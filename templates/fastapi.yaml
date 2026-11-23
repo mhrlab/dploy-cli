@@ -12,8 +12,10 @@ build:
     - venv/**
     - __pycache__/**
     - tests/**
+    - "*.md"
   shared:
     - .env
+    - logs/
   sharedDefaults:
     .env: .env.example
   copy:
@@ -34,13 +36,29 @@ hooks:
     - echo "🚀 Restarting Uvicorn service"
     - sudo systemctl restart fastapi.service
 
+# Database snapshot
+# database:
+#   enabled: true
+#   type: postgres
+#   name: fastapi_db
+#   user: postgres
+#   keep: 5
+
 environments:
   default:
     keepVersions: 5
     deployTo: /var/www/fastapi_app
     port: ${SSH_PORT:-22}
     ssh_key_path: ${SSH_KEY_PATH:-~/.ssh/id_rsa}
-    # password: ${SSH_PASSWORD} # Uncomment if using password authentication
+    # passphrase: ${DPLOY_PASSPHRASE}
+    # password: ${SSH_PASSWORD}
+    baseUrl: https://${PROD_HOST:-example.com}
+    healthCheckPath: /health
+    healthGate: true
+    autoRollback: true
+    admin:
+      username: root
+      # ssh_key_path: ~/.ssh/id_rsa
     env:
       ENVIRONMENT: local
       DEBUG: true
@@ -50,8 +68,6 @@ environments:
     host: ${STAGING_HOST:-staging.example.com}
     username: ${STAGING_USER:-deploy}
     deployTo: /var/www/fastapi_staging
-    # ssh_key_path: ${STAGING_SSH_KEY_PATH:-~/.ssh/id_rsa}
-    # password: ${STAGING_PASSWORD}
     env:
       ENVIRONMENT: staging
       DEBUG: false
@@ -61,10 +77,7 @@ environments:
     host: ${PROD_HOST:-prod.example.com}
     username: ${PROD_USER:-deploy}
     deployTo: /var/www/fastapi_app
-    keepVersions: 10
-    # ssh_key_path: ${PROD_SSH_KEY_PATH:-~/.ssh/id_rsa}
-    # password: ${PROD_PASSWORD}
+    keepVersions: 7
     env:
       ENVIRONMENT: production
       DEBUG: false
-      PORT: 8000

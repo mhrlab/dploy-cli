@@ -1,0 +1,63 @@
+# deploy.config.yml
+name: Static / SPA (React, Vue, Svelte, Angular, HTML)
+
+build:
+  strategy: include
+  buildDir: build
+  include:
+    - dist/**
+  exclude:
+    - node_modules/**
+    - tests/**
+    - "*.md"
+  shared: []
+  cleanAfterDeploy: true
+
+hooks:
+  preBuild:
+    - echo "📦 Installing dependencies"
+    - npm ci
+    - echo "🏗️ Building single page application"
+    - npm run build
+
+# Optional notifications
+# notifications:
+#   - channel: slack
+#     url: ${SLACK_WEBHOOK_URL}
+#     on: [success, failure]
+
+environments:
+  default:
+    keepVersions: 5
+    deployTo: /var/www/spa_app
+    port: ${SSH_PORT:-22}
+    ssh_key_path: ${SSH_KEY_PATH:-~/.ssh/id_rsa}
+    # passphrase: ${DPLOY_PASSPHRASE}
+    # password: ${SSH_PASSWORD}
+    baseUrl: https://${PROD_HOST:-example.com}
+    healthCheckPath: /
+    healthGate: true
+    autoRollback: true
+    admin:
+      username: root
+      # ssh_key_path: ~/.ssh/id_rsa
+    provision:
+      checkPrerequisites: true
+      permissions:
+        mode: "755"
+        sharedMode: "775"
+        owner: ${PROV_OWNER:-deploy}
+        group: ${PROV_GROUP:-www-data}
+
+  staging:
+    extends: default
+    host: ${STAGING_HOST:-staging.example.com}
+    username: ${STAGING_USER:-deploy}
+    deployTo: /var/www/spa_staging
+
+  production:
+    extends: default
+    host: ${PROD_HOST:-prod.example.com}
+    username: ${PROD_USER:-deploy}
+    deployTo: /var/www/spa_app
+    keepVersions: 7

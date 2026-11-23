@@ -16,10 +16,11 @@ build:
     - go.sum
     - tests/**
     - .git/**
+    - "*.md"
   shared:
     - .env
-    - logs
-    - uploads
+    - logs/
+    - uploads/
   sharedDefaults:
     .env: .env.example
   cleanAfterDeploy: true
@@ -44,7 +45,15 @@ environments:
     deployTo: /var/www/go_app
     port: ${SSH_PORT:-22}
     ssh_key_path: ${SSH_KEY_PATH:-~/.ssh/id_rsa}
-    # password: ${SSH_PASSWORD} # Uncomment if using password authentication
+    # passphrase: ${DPLOY_PASSPHRASE}
+    # password: ${SSH_PASSWORD}
+    baseUrl: https://${PROD_HOST:-example.com}
+    healthCheckPath: /health
+    healthGate: true
+    autoRollback: true
+    admin:
+      username: root
+      # ssh_key_path: ~/.ssh/id_rsa
     provision:
       checkPrerequisites: true
       runtime:
@@ -60,23 +69,13 @@ environments:
       service:
         type: systemd
         name: ${APP_NAME:-go-app}
-      services:
-        - redis
-        - postgresql
-    env:
-      PORT: 8080
-      GIN_MODE: release
+        action: restart
 
   staging:
     extends: default
     host: ${STAGING_HOST:-staging.example.com}
     username: ${STAGING_USER:-deploy}
-    deployTo: /var/www/go_app_staging
-    # ssh_key_path: ${STAGING_SSH_KEY_PATH:-~/.ssh/id_rsa}
-    # password: ${STAGING_PASSWORD}
-    env:
-      APP_ENV: staging
-      GIN_MODE: debug
+    deployTo: /var/www/go_staging
 
   production:
     extends: default
@@ -84,9 +83,3 @@ environments:
     username: ${PROD_USER:-deploy}
     deployTo: /var/www/go_app
     keepVersions: 7
-    # ssh_key_path: ${PROD_SSH_KEY_PATH:-~/.ssh/id_rsa}
-    # password: ${PROD_PASSWORD}
-    env:
-      APP_ENV: production
-      GIN_MODE: release
-      PORT: 8080

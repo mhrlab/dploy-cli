@@ -21,6 +21,7 @@ build:
     - writable/debugbar/**
     - tests/**
     - .git/**
+    - "*.md"
   shared:
     - .env
     - writable/cache/
@@ -52,7 +53,16 @@ environments:
     deployTo: /var/www/ci4_app
     port: ${SSH_PORT:-22}
     ssh_key_path: ${SSH_KEY_PATH:-~/.ssh/id_rsa}
-    # password: ${SSH_PASSWORD} # Uncomment if using password authentication
+    # passphrase: ${DPLOY_PASSPHRASE}
+    # password: ${SSH_PASSWORD}
+    baseUrl: https://${PROD_HOST:-example.com}
+    healthCheckPath: /
+    healthGate: true
+    autoRollback: true
+    maintenanceMode: true
+    admin:
+      username: root
+      # ssh_key_path: ~/.ssh/id_rsa
     provision:
       checkPrerequisites: true
       runtime:
@@ -69,25 +79,12 @@ environments:
         sharedMode: "775"
         owner: ${PROV_OWNER:-deploy}
         group: ${PROV_GROUP:-www-data}
-      services:
-        - php8.2-fpm
-        - nginx
-        - mysql
-        - redis
-    env:
-      CI_ENVIRONMENT: production
-      app.baseURL: "https://${PROD_HOST:-example.com}/"
 
   staging:
     extends: default
     host: ${STAGING_HOST:-staging.example.com}
     username: ${STAGING_USER:-deploy}
     deployTo: /var/www/ci4_staging
-    # ssh_key_path: ${STAGING_SSH_KEY_PATH:-~/.ssh/id_rsa}
-    # password: ${STAGING_PASSWORD}
-    env:
-      CI_ENVIRONMENT: development
-      app.baseURL: "https://${STAGING_HOST:-staging.example.com}/"
 
   production:
     extends: default
@@ -95,8 +92,3 @@ environments:
     username: ${PROD_USER:-deploy}
     deployTo: /var/www/ci4_app
     keepVersions: 7
-    # ssh_key_path: ${PROD_SSH_KEY_PATH:-~/.ssh/id_rsa}
-    # password: ${PROD_PASSWORD}
-    env:
-      CI_ENVIRONMENT: production
-      app.baseURL: "https://${PROD_HOST:-prod.example.com}/"

@@ -11,13 +11,16 @@ build:
   exclude:
     - node_modules/**
     - tests/**
+    - "*.md"
   shared:
     - .env
+    - logs/
   sharedDefaults:
     .env: .env.example
   copy:
     - from: ecosystem.config.js
       to: build/ecosystem.config.js
+      optional: true
   cleanAfterDeploy: true
 
 hooks:
@@ -30,7 +33,21 @@ hooks:
     - echo "🚀 Preparing release on server"
   postDeploy:
     - echo "🔄 Reloading PM2 processes gracefully (Zero-Downtime)"
-    - pm2 reload ecosystem.config.js --update-env || pm2 start ecosystem.config.js
+    - pm2 reload ecosystem.config.js --update-env || pm2 start ecosystem.config.js || sudo systemctl restart node-app
+
+# Optional pre-deploy database snapshot
+# database:
+#   enabled: true
+#   type: postgres # mysql | postgres | sqlite
+#   name: myapp_prod
+#   user: postgres
+#   keep: 5
+
+# Optional deployment alerts
+# notifications:
+#   - channel: slack
+#     url: ${SLACK_WEBHOOK_URL}
+#     on: [start, success, failure, rollback]
 
 environments:
   default:
@@ -38,9 +55,16 @@ environments:
     deployTo: /var/www/node_app
     port: ${SSH_PORT:-22}
     ssh_key_path: ${SSH_KEY_PATH:-~/.ssh/id_rsa}
-    # password: ${SSH_PASSWORD} # Uncomment if using password authentication
+    # passphrase: ${DPLOY_PASSPHRASE} # Uncomment if SSH key has a passphrase
+    # password: ${SSH_PASSWORD}       # Uncomment if using password authentication
     baseUrl: https://${PROD_HOST:-localhost:3000}
     healthCheckPath: /health
+    healthGate: true
+    autoRollback: true
+    maintenanceMode: false
+    admin:
+      username: root
+      # ssh_key_path: ~/.ssh/id_rsa
     provision:
       checkPrerequisites: true
       runtime:
@@ -56,19 +80,20 @@ environments:
     host: ${STAGING_HOST:-staging.example.com}
     username: ${STAGING_USER:-deploy}
     deployTo: /var/www/node_staging
-    # ssh_key_path: ${STAGING_SSH_KEY_PATH:-~/.ssh/id_rsa}
-    # password: ${STAGING_PASSWORD}
     env:
       NODE_ENV: staging
 
   production:
     extends: default
     host: ${PROD_HOST:-prod.example.com}
+    # For multi-server clusters, replace host with hosts list:
+    # hosts:
+    #   - 10.0.0.1
+    #   - 10.0.0.2
+    # strategy: rolling # parallel | rolling
     username: ${PROD_USER:-deploy}
     deployTo: /var/www/node_app
     keepVersions: 7
-    # ssh_key_path: ${PROD_SSH_KEY_PATH:-~/.ssh/id_rsa}
-    # password: ${PROD_PASSWORD}
     env:
       NODE_ENV: production
       PORT: 3000

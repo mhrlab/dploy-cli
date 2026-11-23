@@ -1,44 +1,115 @@
 {
-  "name": "Laravel",
+  "name": "Laravel + Vite",
   "build": {
+    "strategy": "hybrid",
     "buildDir": "build",
-    "strategy": "include",
     "include": [
       "app/**",
       "bootstrap/**",
       "config/**",
+      "database/**",
       "public/**",
       "resources/**",
       "routes/**",
-      "vendor/**",
       "artisan",
       "composer.json",
-      "composer.lock"
+      "composer.lock",
+      "package.json",
+      "vite.config.js"
+    ],
+    "exclude": [
+      "node_modules/**",
+      "storage/**",
+      "tests/**",
+      "*.md"
     ],
     "shared": [
-      "storage",
-      ".env"
+      ".env",
+      "storage"
     ],
     "sharedDefaults": {
       ".env": ".env.example"
     },
+    "copy": [
+      {
+        "from": "public/build",
+        "to": "build/public/build",
+        "optional": true
+      }
+    ],
     "cleanAfterDeploy": true
   },
   "hooks": {
-    "postDeploy": [
+    "preBuild": [
+      "echo \"📦 Installing Composer dependencies\"",
       "composer install --no-dev --optimize-autoloader",
+      "echo \"🧩 Installing Node dependencies for Vite\"",
+      "npm ci",
+      "echo \"⚙️ Building front-end assets using Vite\"",
+      "npm run build"
+    ],
+    "preDeploy": [
+      "echo \"🚀 Running database migrations\"",
       "php artisan migrate --force",
       "php artisan config:cache",
-      "php artisan route:cache"
+      "php artisan route:cache",
+      "php artisan view:cache"
+    ],
+    "postDeploy": [
+      "echo \"🔄 Reloading PHP-FPM OPcache and Nginx gracefully\"",
+      "sudo systemctl reload php8.2-fpm || sudo systemctl reload php-fpm",
+      "sudo systemctl reload nginx",
+      "echo \"🔄 Gracefully restarting background queue workers\"",
+      "php artisan queue:restart || true"
     ]
   },
+  "database": {
+    "enabled": true,
+    "type": "mysql",
+    "name": "laravel",
+    "user": "root",
+    "keep": 5
+  },
   "environments": {
-    "production": {
-      "host": "myserver.com",
-      "username": "deploy",
+    "default": {
+      "keepVersions": 5,
+      "deployTo": "/var/www/laravel_app",
+      "port": 22,
       "ssh_key_path": "~/.ssh/id_rsa",
-      "deployTo": "/var/www/laravel-app",
-      "keepVersions": 3
+      "baseUrl": "https://example.com",
+      "healthCheckPath": "/up",
+      "healthGate": true,
+      "autoRollback": true,
+      "maintenanceMode": true,
+      "admin": {
+        "username": "root"
+      },
+      "env": {
+        "APP_ENV": "production",
+        "APP_DEBUG": true,
+        "PHP_VERSION": "8.2"
+      }
+    },
+    "staging": {
+      "extends": "default",
+      "host": "staging.example.com",
+      "username": "deploy",
+      "deployTo": "/var/www/staging_app",
+      "env": {
+        "APP_ENV": "staging",
+        "APP_DEBUG": false
+      }
+    },
+    "production": {
+      "extends": "default",
+      "host": "prod.example.com",
+      "username": "deploy",
+      "deployTo": "/var/www/laravel_app",
+      "keepVersions": 7,
+      "env": {
+        "APP_ENV": "production",
+        "APP_DEBUG": false
+      }
     }
   }
 }

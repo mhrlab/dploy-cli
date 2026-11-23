@@ -21,6 +21,7 @@ build:
     - node_modules/**
     - storage/**
     - tests/**
+    - "*.md"
   shared:
     - .env
     - storage
@@ -53,15 +54,37 @@ hooks:
     - echo "🔄 Gracefully restarting background queue workers"
     - php artisan queue:restart || true
 
+# Pre-deployment database backup configuration
+database:
+  enabled: true
+  type: mysql # mysql | postgres | sqlite
+  name: ${DB_DATABASE:-laravel}
+  user: ${DB_USERNAME:-root}
+  password: ${DB_PASSWORD}
+  keep: 5
+
+# Team notifications
+# notifications:
+#   - channel: slack
+#     url: ${SLACK_WEBHOOK_URL}
+#     on: [start, success, failure, rollback]
+
 environments:
   default:
     keepVersions: 5
     deployTo: /var/www/laravel_app
     port: ${SSH_PORT:-22}
     ssh_key_path: ${SSH_KEY_PATH:-~/.ssh/id_rsa}
-    # password: ${SSH_PASSWORD} # Uncomment if using password authentication
+    # passphrase: ${DPLOY_PASSPHRASE}
+    # password: ${SSH_PASSWORD}
     baseUrl: https://${PROD_HOST:-example.com}
     healthCheckPath: /up
+    healthGate: true
+    autoRollback: true
+    maintenanceMode: true # Toggles maintenance mode during migration & cutover
+    admin:
+      username: root
+      # ssh_key_path: ~/.ssh/id_rsa
     env:
       APP_ENV: production
       APP_DEBUG: true
@@ -72,8 +95,6 @@ environments:
     host: ${STAGING_HOST:-staging.example.com}
     username: ${STAGING_USER:-deploy}
     deployTo: /var/www/staging_app
-    # ssh_key_path: ${STAGING_SSH_KEY_PATH:-~/.ssh/id_rsa}
-    # password: ${STAGING_PASSWORD}
     env:
       APP_ENV: staging
       APP_DEBUG: false
@@ -81,11 +102,14 @@ environments:
   production:
     extends: default
     host: ${PROD_HOST:-prod.example.com}
+    # For multi-server clusters:
+    # hosts:
+    #   - 10.0.0.10
+    #   - 10.0.0.11
+    # strategy: rolling
     username: ${PROD_USER:-deploy}
     deployTo: /var/www/laravel_app
     keepVersions: 7
-    # ssh_key_path: ${PROD_SSH_KEY_PATH:-~/.ssh/id_rsa}
-    # password: ${PROD_PASSWORD}
     env:
       APP_ENV: production
       APP_DEBUG: false

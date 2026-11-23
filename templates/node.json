@@ -1,34 +1,85 @@
 {
   "name": "Node.js + PM2",
   "build": {
-    "buildDir": "build",
     "strategy": "include",
+    "buildDir": "build",
     "include": [
       "dist/**",
       "package.json",
       "package-lock.json"
     ],
+    "exclude": [
+      "node_modules/**",
+      "tests/**",
+      "*.md"
+    ],
     "shared": [
-      ".env"
+      ".env",
+      "logs/"
     ],
     "sharedDefaults": {
       ".env": ".env.example"
     },
+    "copy": [
+      {
+        "from": "ecosystem.config.js",
+        "to": "build/ecosystem.config.js",
+        "optional": true
+      }
+    ],
     "cleanAfterDeploy": true
   },
   "hooks": {
+    "preBuild": [
+      "echo \"📦 Installing dependencies\"",
+      "npm ci",
+      "echo \"🏗️ Building the project\"",
+      "npm run build"
+    ],
+    "preDeploy": [
+      "echo \"🚀 Preparing release on server\""
+    ],
     "postDeploy": [
-      "npm install --production",
-      "pm2 restart ecosystem.config.js"
+      "echo \"🔄 Reloading PM2 processes gracefully\"",
+      "pm2 reload ecosystem.config.js --update-env || pm2 start ecosystem.config.js || sudo systemctl restart node-app"
     ]
   },
   "environments": {
-    "production": {
-      "host": "myserver.com",
-      "username": "deploy",
+    "default": {
+      "keepVersions": 5,
+      "deployTo": "/var/www/node_app",
+      "port": 22,
       "ssh_key_path": "~/.ssh/id_rsa",
-      "deployTo": "/var/www/myapp",
-      "keepVersions": 5
+      "baseUrl": "https://localhost:3000",
+      "healthCheckPath": "/health",
+      "healthGate": true,
+      "autoRollback": true,
+      "admin": {
+        "username": "root"
+      },
+      "env": {
+        "NODE_ENV": "development"
+      }
+    },
+    "staging": {
+      "extends": "default",
+      "host": "staging.example.com",
+      "username": "deploy",
+      "deployTo": "/var/www/node_staging",
+      "env": {
+        "NODE_ENV": "staging"
+      }
+    },
+    "production": {
+      "extends": "default",
+      "host": "prod.example.com",
+      "username": "deploy",
+      "deployTo": "/var/www/node_app",
+      "keepVersions": 7,
+      "env": {
+        "NODE_ENV": "production",
+        "PORT": "3000"
+      }
     }
   }
 }
