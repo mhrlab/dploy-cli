@@ -107,7 +107,7 @@ export async function buildArtifact(options: {
     try {
         log.debug(`Creating tar archive with gzip compression`);
         await tar.create({ gzip: true, file: artifactPath, cwd: stagingDir, portable: true, noMtime: true }, ["."]);
-        const stats = fs.statSync(artifactPath);
+        const stats = await fs.stat(artifactPath);
         sizeBytes = stats.size;
         spin.succeed(`Built ${path.basename(artifactPath)} [ ${getReadableFileSize(sizeBytes)} ]`);
         log.verbose(`Artifact created successfully: ${artifactPath}`);
