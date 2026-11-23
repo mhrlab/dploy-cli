@@ -336,12 +336,12 @@ Guard against destructive schema migrations by taking snapshots before switching
 
 ### 10.5 Deployment Notifications & Webhooks (Slack, Discord, Telegram)
 Real-time alerts on deployment status, failures, and rollbacks for engineering teams.
-- [ ] **Notification Configuration in `deploy.config.yml`**
-  - [ ] Support channels: `slack`, `discord`, `telegram`, or generic HTTP `webhook`.
-  - [ ] Event triggers: `on: [start, success, failure, rollback]`.
-- [ ] **Payload Dispatcher (`src/features/notifications.ts`)**
-  - [ ] Send rich embed/payload containing version, git commit, commit message, deployer, environment, duration, and status.
-  - [ ] Non-blocking execution so notification failure never blocks or fails a deployment.
+- [x] **Notification Configuration in `deploy.config.yml`**
+  - [x] Support channels: `slack`, `discord`, `telegram`, or generic HTTP `webhook`.
+  - [x] Event triggers: `on: [start, success, failure, rollback]`.
+- [x] **Payload Dispatcher (`src/features/notifications.ts`)**
+  - [x] Send rich embed/payload containing version, git commit, commit message, deployer, environment, duration, and status.
+  - [x] Non-blocking execution so notification failure never blocks or fails a deployment.
 
 ---
 
@@ -367,10 +367,10 @@ Stream server, application, and error logs directly to the local terminal.
 
 ### 10.8 Multi-Server / Cluster Deployments
 Support deploying to multiple web/worker instances for scalable architectures.
-- [ ] **Config Schema Support for Multiple Hosts**
-  - [ ] Allow `hosts: string[]` under `environments.<name>` in addition to single `host`.
-- [ ] **Deployment Strategies**
-  - [ ] Parallel deployment across all hosts.
-  - [ ] Rolling deployment (deploy host 1 -> health check -> deploy host 2) for zero downtime on clusters without taking all nodes offline.
+- [x] **Config Schema Support for Multiple Hosts**
+  - [x] Allow `hosts: string[]` under `environments.<name>` in addition to single `host`.
+- [x] **Deployment Strategies**
+  - [x] Parallel deployment across all hosts.
+  - [x] Rolling deployment (deploy host 1 -> health check -> deploy host 2) for zero downtime on clusters without taking all nodes offline.
 
 

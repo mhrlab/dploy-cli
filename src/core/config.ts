@@ -5,6 +5,7 @@ import yaml from "js-yaml";
 import { log } from "./logger.js";
 import { expandTilde } from "./utils.js";
 import { assertValidDeployConfig } from "./config-validator.js";
+import { NotificationTarget } from "../features/notifications.js";
 
 
 type AnyObject = Record<string, any>;
@@ -79,6 +80,7 @@ export interface DeployConfig {
     provision?: ProvisionConfig;
     database?: DatabaseBackupConfig;
     maintenanceMode?: boolean;
+    notifications?: NotificationTarget[];
     environments?: Record<string, EnvironmentConfig>;
     keepArtifact?: boolean;
     cleanAfterDeploy?: boolean;
@@ -91,6 +93,8 @@ export interface EnvironmentConfig {
     extends?: string;
     username?: string;
     host?: string;
+    hosts?: string[];
+    strategy?: "parallel" | "rolling";
     port?: number;
     password?: string;
     ssh_key?: string;
@@ -110,6 +114,7 @@ export interface EnvironmentConfig {
     provision?: ProvisionConfig;
     database?: DatabaseBackupConfig;
     maintenanceMode?: boolean;
+    notifications?: NotificationTarget[];
     [key: string]: any;
 }
 

@@ -27,6 +27,22 @@ export function validateDeployConfig(cfg: any): { valid: boolean; errors: Valida
                 }
                 const env = envVal as EnvironmentConfig;
 
+                if (env.hosts !== undefined) {
+                    if (!Array.isArray(env.hosts) || env.hosts.some((h: any) => typeof h !== "string" || !h.trim())) {
+                        errors.push({ path: `environments.${envName}.hosts`, message: "'hosts' must be an array of non-empty strings" });
+                    }
+                }
+
+                if (env.strategy !== undefined) {
+                    const validClusterStrategies = ["parallel", "rolling"];
+                    if (!validClusterStrategies.includes(env.strategy)) {
+                        errors.push({
+                            path: `environments.${envName}.strategy`,
+                            message: `Invalid cluster strategy '${env.strategy}'. Must be one of: ${validClusterStrategies.join(", ")}`,
+                        });
+                    }
+                }
+
                 if (env.port !== undefined && (typeof env.port !== "number" || env.port < 1 || env.port > 65535)) {
                     errors.push({ path: `environments.${envName}.port`, message: "Port must be an integer between 1 and 65535" });
                 }
@@ -86,6 +102,41 @@ export function validateDeployConfig(cfg: any): { valid: boolean; errors: Valida
                 });
             }
         }
+    }
+
+    // Notifications configuration validation
+    const validateNotifications = (notifs: any, pathPrefix: string) => {
+        if (!Array.isArray(notifs)) {
+            errors.push({ path: pathPrefix, message: `'${pathPrefix}' must be an array of notification targets` });
+            return;
+        }
+        const validChannels = ["slack", "discord", "telegram", "webhook"];
+        const validEvents = ["start", "success", "failure", "rollback"];
+        for (let i = 0; i < notifs.length; i++) {
+            const n = notifs[i];
+            if (!n || typeof n !== "object") {
+                errors.push({ path: `${pathPrefix}[${i}]`, message: "Notification target must be an object" });
+                continue;
+            }
+            if (n.channel !== undefined && !validChannels.includes(n.channel)) {
+                errors.push({
+                    path: `${pathPrefix}[${i}].channel`,
+                    message: `Invalid notification channel '${n.channel}'. Must be one of: ${validChannels.join(", ")}`,
+                });
+            }
+            if (n.on !== undefined) {
+                if (!Array.isArray(n.on) || n.on.some((ev: any) => !validEvents.includes(ev))) {
+                    errors.push({
+                        path: `${pathPrefix}[${i}].on`,
+                        message: `Invalid notification events. Must be a subset of: ${validEvents.join(", ")}`,
+                    });
+                }
+            }
+        }
+    };
+
+    if (cfg.notifications !== undefined) {
+        validateNotifications(cfg.notifications, "notifications");
     }
 
     return {
