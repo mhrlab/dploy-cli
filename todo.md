@@ -298,28 +298,28 @@ Interactive server onboarding for fresh VPS/Ubuntu/Debian instances to configure
 
 ### 10.2 Remote Environment & Secret Synchronization (`dploy env:*`)
 Eliminate the need to manually SSH into remote servers to edit `.env` files with nano/vim.
-- [ ] **`dploy env:push`**
-  - [ ] Support flags `-e <env>`, `--file <local-path>` (defaults to `.env.<env>` or `.env`).
-  - [ ] Safely upload to `<deployTo>/shared/.env`.
-  - [ ] Prompt for confirmation before overwriting unless `--force` / `--yes` is specified.
-  - [ ] Automatic remote backup: rename old `.env` to `.env.bak.<timestamp>` before replacing.
-- [ ] **`dploy env:pull`**
-  - [ ] Download `<deployTo>/shared/.env` to local file (e.g. `.env.<env>.remote` or `.env`).
-  - [ ] Add safety check to prevent overwriting local `.env` without `--force`.
-- [ ] **`dploy env:set KEY=VALUE`**
-  - [ ] Parse remote `.env`, update or append the specific key-value pair, and save back to `<deployTo>/shared/.env`.
+- [x] **`dploy env:push`**
+  - [x] Support flags `-e <env>`, `--file <local-path>` (defaults to `.env.<env>` or `.env`).
+  - [x] Safely upload to `<deployTo>/shared/.env`.
+  - [x] Prompt for confirmation before overwriting unless `--force` / `--yes` is specified.
+  - [x] Automatic remote backup: rename old `.env` to `.env.bak.<timestamp>` before replacing.
+- [x] **`dploy env:pull`**
+  - [x] Download `<deployTo>/shared/.env` to local file (e.g. `.env.<env>.remote` or `.env`).
+  - [x] Add safety check to prevent overwriting local `.env` without `--force`.
+- [x] **`dploy env:set KEY=VALUE`**
+  - [x] Parse remote `.env`, update or append the specific key-value pair, and save back to `<deployTo>/shared/.env`.
 
 ---
 
 ### 10.3 Direct Remote Shell & Command Runner (`dploy ssh` & `dploy run`)
 Direct CLI shortcuts for remote server administration without manually looking up credentials or IP addresses.
-- [ ] **`dploy ssh -e <env>`**
-  - [ ] Read environment configuration (host, user, port, key/password).
-  - [ ] Spawn native interactive SSH session (`child_process.spawn("ssh", [...])`) or pty forward.
-  - [ ] Automatically set starting working directory to `<deployTo>/current`.
-- [ ] **`dploy run "<command>" -e <env>`**
-  - [ ] Execute arbitrary ad-hoc remote commands inside `<deployTo>/current` (e.g. `dploy run "php artisan migrate --force"` or `dploy run "npm run db:migrate"`).
-  - [ ] Stream stdout/stderr in real time to local console.
+- [x] **`dploy ssh -e <env>`**
+  - [x] Read environment configuration (host, user, port, key/password).
+  - [x] Spawn native interactive SSH session (`child_process.spawn("ssh", [...])`) or pty forward.
+  - [x] Automatically set starting working directory to `<deployTo>/current`.
+- [x] **`dploy run "<command>" -e <env>`**
+  - [x] Execute arbitrary ad-hoc remote commands inside `<deployTo>/current` (e.g. `dploy run "php artisan migrate --force"` or `dploy run "npm run db:migrate"`).
+  - [x] Stream stdout/stderr in real time to local console.
 
 ---
 
@@ -359,9 +359,9 @@ Gracefully take websites offline during major upgrades or database schema change
 
 ### 10.7 Live Remote Log Streaming (`dploy logs`)
 Stream server, application, and error logs directly to the local terminal.
-- [ ] **`dploy logs -e <env>`**
-  - [ ] Support flags: `-f, --follow` (tail live), `-n <lines>` (default 50), `--type <app|nginx|pm2|systemd>`.
-  - [ ] Execute remote `tail -n 50 -f <logPath>` over SSH stream and pipe output locally with timestamps.
+- [x] **`dploy logs -e <env>`**
+  - [x] Support flags: `-f, --follow` (tail live), `-n <lines>` (default 50), `--type <app|nginx|pm2|systemd>`.
+  - [x] Execute remote `tail -n 50 -f <logPath>` over SSH stream and pipe output locally with timestamps.
 
 ---
 

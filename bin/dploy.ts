@@ -9,6 +9,10 @@ import { status } from "../src/commands/status.js";
 import { health } from "../src/commands/health.js";
 import { init } from "../src/commands/init.js";
 import { provision } from "../src/commands/provision.js";
+import { ssh } from "../src/commands/ssh.js";
+import { run } from "../src/commands/run.js";
+import { envPush, envPull, envSet } from "../src/commands/env.js";
+import { logs } from "../src/commands/logs.js";
 import { setLogLevel } from "../src/core/logger.js";
 import { getAppVersion } from "../src/core/utils.js";
 
@@ -132,6 +136,65 @@ async function main() {
         .option("--json", "Output machine-readable JSON status")
         .action(async (opts, cmd) => {
             await provision(cmd.optsWithGlobals());
+        });
+
+    program
+        .command("ssh")
+        .description("Open an interactive SSH terminal on the remote server")
+        .option("-e, --env <env>", "Target environment (default: production)")
+        .action(async (opts, cmd) => {
+            await ssh(cmd.optsWithGlobals());
+        });
+
+    program
+        .command("run <command>")
+        .description("Execute an ad-hoc command on the remote server inside current release")
+        .option("-e, --env <env>", "Target environment (default: production)")
+        .option("--release <name>", "Execute inside a specific release directory instead of current")
+        .action(async (command, opts, cmd) => {
+            await run(command, cmd.optsWithGlobals());
+        });
+
+    program
+        .command("env:push")
+        .description("Upload local .env to remote shared/.env with automatic backup")
+        .option("-e, --env <env>", "Target environment (default: production)")
+        .option("-f, --file <path>", "Specific local .env file to upload")
+        .option("--force", "Overwrite remote .env without interactive prompt")
+        .option("-y, --yes", "Automatic yes to prompts")
+        .action(async (opts, cmd) => {
+            await envPush(cmd.optsWithGlobals());
+        });
+
+    program
+        .command("env:pull")
+        .description("Download remote shared/.env to local file")
+        .option("-e, --env <env>", "Target environment (default: production)")
+        .option("-o, --out <path>", "Destination local path (default: .env.<env>.remote)")
+        .option("--force", "Overwrite local file if it already exists")
+        .option("-y, --yes", "Automatic yes to prompts")
+        .action(async (opts, cmd) => {
+            await envPull(cmd.optsWithGlobals());
+        });
+
+    program
+        .command("env:set <pair>")
+        .description("Set or update a KEY=VALUE variable in remote shared/.env")
+        .option("-e, --env <env>", "Target environment (default: production)")
+        .action(async (pair, opts, cmd) => {
+            await envSet(pair, cmd.optsWithGlobals());
+        });
+
+    program
+        .command("logs")
+        .description("Stream or tail remote application/server logs")
+        .option("-e, --env <env>", "Target environment (default: production)")
+        .option("-f, --follow", "Follow log output (stream real-time)")
+        .option("-n, --lines <count>", "Number of lines to show (default: 50)")
+        .option("--type <type>", "Log type: app, nginx, pm2, or systemd")
+        .option("--file <path>", "Specific remote log file to tail")
+        .action(async (opts, cmd) => {
+            await logs(cmd.optsWithGlobals());
         });
 
     await program.parseAsync(process.argv);
