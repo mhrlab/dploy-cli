@@ -17,6 +17,7 @@ import { logs } from "../src/commands/logs.js";
 import { down, up } from "../src/commands/maintenance.js";
 import { setLogLevel } from "../src/core/logger.js";
 import { getAppVersion } from "../src/core/utils.js";
+import { setCachedPassphrase } from "../src/core/ssh.js";
 
 
 
@@ -69,17 +70,21 @@ async function main() {
         .option("-e, --env <env>", "Target environment (default: production)")
         .option("-v, --verbose", "Enable verbose logging")
         .option("-d, --debug", "Enable debug logging")
-        .option("-y, --yes", "Automatic yes to prompts; non-interactive mode");
+        .option("-y, --yes", "Automatic yes to prompts; non-interactive mode")
+        .option("--passphrase <passphrase>", "Passphrase for encrypted SSH private key");
 
     program
         .name("dploy")
         .description("Universal deployment tool (MVP version)")
         .version(getAppVersion(), "-a, --app-version");
 
-    // Hook to set log levels before executing any command
+    // Hook to set log levels and credentials before executing any command
     program.hook("preAction", (thisCommand) => {
         const opts = thisCommand.opts();
         setLogLevel(!!opts.debug, !!opts.verbose || !!opts.dryRun);
+        if (opts.passphrase) {
+            setCachedPassphrase(opts.passphrase);
+        }
     });
 
     // Commands

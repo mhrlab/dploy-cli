@@ -2,6 +2,7 @@ import { Client } from "ssh2";
 import SFTPClient from "ssh2-sftp-client";
 import fs from "fs-extra";
 import path from "node:path";
+import inquirer from "inquirer";
 import { EnvironmentConfig } from "./config.js";
 import { log } from "./logger.js";
 import { escapeShellArg } from "./utils.js";
@@ -12,6 +13,56 @@ export type SSHBundle = {
     ssh: Client;
     sftp: SFTPClient;
 };
+
+// In-memory cache for SSH passphrase so user isn't prompted repeatedly across multiple connections/hosts in one run
+let cachedPassphrase: string | null = null;
+
+export function setCachedPassphrase(passphrase: string | null) {
+    cachedPassphrase = passphrase;
+}
+
+export function getCachedPassphrase(): string | null {
+    return cachedPassphrase;
+}
+
+/**
+ * Check if a private key string/buffer is encrypted and requires a passphrase.
+ */
+export function isEncryptedPrivateKey(keyContent: string | Buffer): boolean {
+    const str = Buffer.isBuffer(keyContent) ? keyContent.toString("utf8") : String(keyContent);
+    return (
+        str.includes("ENCRYPTED") ||
+        str.includes("Proc-Type: 4,ENCRYPTED") ||
+        str.includes("BEGIN ENCRYPTED PRIVATE KEY")
+    );
+}
+
+/**
+ * Resolves the passphrase from config, environment, cached memory, or interactive prompt.
+ */
+export async function resolvePassphrase(env: EnvironmentConfig, keySource?: string): Promise<string | undefined> {
+    if (env.passphrase) return env.passphrase;
+    if (process.env.DPLOY_PASSPHRASE) return process.env.DPLOY_PASSPHRASE;
+    if (process.env.SSH_PASSPHRASE) return process.env.SSH_PASSPHRASE;
+    if (cachedPassphrase) return cachedPassphrase;
+
+    // If running in an interactive terminal, prompt the user securely
+    if (process.stdin.isTTY) {
+        const promptLabel = keySource ? ` (${path.basename(keySource)})` : "";
+        const { passphrase } = await inquirer.prompt([
+            {
+                type: "password",
+                name: "passphrase",
+                message: `Enter passphrase for encrypted SSH key${promptLabel}:`,
+                mask: "*",
+            },
+        ]);
+        cachedPassphrase = passphrase ?? null;
+        return passphrase;
+    }
+
+    return undefined;
+}
 
 async function createConnection(env: EnvironmentConfig): Promise<SSHBundle> {
     log.debug(`SSH connect initiated for ${env.username}@${env.host}:${env.port || 22}`);
@@ -25,15 +76,39 @@ async function createConnection(env: EnvironmentConfig): Promise<SSHBundle> {
         username: env.username,
     };
     if (env.password) connectConfig.password = env.password;
-    if (env.ssh_key) connectConfig.privateKey = env.ssh_key;
-    if (env.ssh_key_path) connectConfig.privateKey = await fs.readFile(env.ssh_key_path);
+
+    let privateKeyContent: Buffer | string | undefined;
+    if (env.ssh_key) {
+        privateKeyContent = env.ssh_key;
+    } else if (env.ssh_key_path) {
+        privateKeyContent = await fs.readFile(env.ssh_key_path);
+    }
+
+    if (privateKeyContent) {
+        connectConfig.privateKey = privateKeyContent;
+        let passphrase: string | undefined =
+            env.passphrase ||
+            process.env.DPLOY_PASSPHRASE ||
+            process.env.SSH_PASSPHRASE ||
+            (cachedPassphrase ?? undefined);
+
+        // If key is encrypted and no passphrase provided yet, prompt or resolve it
+        if (!passphrase && isEncryptedPrivateKey(privateKeyContent)) {
+            passphrase = await resolvePassphrase(env, env.ssh_key_path);
+        }
+
+        if (passphrase) {
+            connectConfig.passphrase = passphrase;
+        }
+    }
 
     log.debug(`SSH connection config: ${JSON.stringify({
         host: connectConfig.host,
         port: connectConfig.port,
         username: connectConfig.username,
         hasPassword: !!connectConfig.password,
-        hasPrivateKey: !!connectConfig.privateKey
+        hasPrivateKey: !!connectConfig.privateKey,
+        hasPassphrase: !!connectConfig.passphrase,
     })}`);
 
     await new Promise<void>((resolve, reject) => {
@@ -42,8 +117,34 @@ async function createConnection(env: EnvironmentConfig): Promise<SSHBundle> {
                 log.verbose(`SSH connection established`);
                 resolve();
             })
-            .on("error", (err) => {
+            .on("error", async (err: any) => {
                 log.debug(`SSH connection error: ${err.message}`);
+                // If error indicates missing passphrase and we haven't prompted yet
+                if (
+                    /passphrase/i.test(err.message) &&
+                    !connectConfig.passphrase &&
+                    process.stdin.isTTY
+                ) {
+                    try {
+                        const promptedPass = await resolvePassphrase(env, env.ssh_key_path);
+                        if (promptedPass) {
+                            connectConfig.passphrase = promptedPass;
+                            // Retry connection with the entered passphrase
+                            const retrySsh = new Client();
+                            retrySsh
+                                .on("ready", () => {
+                                    // replace ssh instance
+                                    (ssh as any)._sock = (retrySsh as any)._sock;
+                                    resolve();
+                                })
+                                .on("error", reject)
+                                .connect(connectConfig);
+                            return;
+                        }
+                    } catch (promptErr) {
+                        return reject(promptErr);
+                    }
+                }
                 reject(err);
             })
             .connect(connectConfig);

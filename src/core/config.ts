@@ -97,6 +97,7 @@ export interface EnvironmentConfig {
     strategy?: "parallel" | "rolling";
     port?: number;
     password?: string;
+    passphrase?: string;
     ssh_key?: string;
     ssh_key_path?: string;
     deployTo?: string;

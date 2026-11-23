@@ -123,6 +123,7 @@ environments:
 | `port` | `number` | `22` | SSH port. |
 | `username` | `string` | - | SSH user. |
 | `password` | `string` | - | SSH password (can also be read from `DPLOY_PASSWORD` or `SSH_PASSWORD`). |
+| `passphrase` | `string` | - | Passphrase for encrypted private key (or CLI `--passphrase`, or `DPLOY_PASSPHRASE`). |
 | `ssh_key` | `string` | - | Raw SSH private key string. |
 | `ssh_key_path` | `string` | `~/.ssh/id_rsa` | Path to SSH private key file. |
 | `deployTo` | `string` | - | Absolute path on remote server for deployments (must not be root `/`). |
