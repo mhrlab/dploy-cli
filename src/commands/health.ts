@@ -20,15 +20,21 @@ export async function performHealthCheckWithRetry(
     const timeoutMs = options.timeoutMs ?? 10000;
     const retries = Math.max(1, options.retries ?? 3);
     const intervalMs = options.intervalMs ?? 2000;
+    let lastResult: { ok: boolean; status: number; text: string } = { ok: false, status: 0, text: "" };
 
     try {
         return await withRetry(
-            async (attempt) => {
-                const res = await performHealthCheck(url, timeoutMs);
-                if (!res.ok) {
-                    throw new Error(`Endpoint returned HTTP ${res.status}`);
+            async (_attempt) => {
+                try {
+                    lastResult = await performHealthCheck(url, timeoutMs);
+                } catch (probeErr: any) {
+                    lastResult = { ok: false, status: 0, text: probeErr.message || String(probeErr) };
+                    throw probeErr;
                 }
-                return res;
+                if (!lastResult.ok) {
+                    throw new Error(`Endpoint returned HTTP ${lastResult.status}`);
+                }
+                return lastResult;
             },
             {
                 retries,
@@ -38,12 +44,7 @@ export async function performHealthCheckWithRetry(
             }
         );
     } catch {
-        // Fallback: query one last time to capture actual error response or status
-        try {
-            return await performHealthCheck(url, timeoutMs);
-        } catch (probeErr: any) {
-            return { ok: false, status: 0, text: probeErr.message || String(probeErr) };
-        }
+        return lastResult;
     }
 }
 

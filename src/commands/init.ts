@@ -66,20 +66,18 @@ export async function init(opts: { template?: string }) {
         log.warn(`${path.basename(dest)} already exists, skipped.`);
     }
 
-    // 🌱 Step 4. Copy environment example if present and config is json type
-    if(ext === ".json") {
-        const envSrc = path.join(templatesDir, configFiles.env_example);
-        const envDest = path.resolve(process.cwd(), configFiles.env_example);
+    // 🌱 Step 4. Copy environment example if present
+    const envSrc = path.join(templatesDir, configFiles.env_example);
+    const envDest = path.resolve(process.cwd(), configFiles.env_example);
 
-        if (await fs.pathExists(envSrc)) {
-            if (!(await fs.pathExists(envDest))) {
-                log.info(`Creating ${configFiles.env_example}`);
-                await fs.copy(envSrc, envDest);
-                log.ok(`Created ${configFiles.env_example}`);
-                setupSuccess = true;
-            } else {
-                log.warn(`${configFiles.env_example} already exists, skipped.`);
-            }
+    if (await fs.pathExists(envSrc)) {
+        if (!(await fs.pathExists(envDest))) {
+            log.info(`Creating ${configFiles.env_example}`);
+            await fs.copy(envSrc, envDest);
+            log.ok(`Created ${configFiles.env_example}`);
+            setupSuccess = true;
+        } else {
+            log.warn(`${configFiles.env_example} already exists, skipped.`);
         }
     }
 

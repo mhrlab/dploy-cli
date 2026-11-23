@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
 import { test } from "node:test";
-import { linkShared } from "../src/features/shared.js";
+import { linkShared, assertValidSharedItem } from "../src/features/shared.js";
 
 function createMockSSH(responses: Record<string, string> = {}) {
   const executedCommands: string[] = [];
@@ -208,4 +208,27 @@ test("linkShared does not create .env as directory and ensures writable subdirec
   assert.ok(executedCommands.some((c) => c.includes("touch '/var/www/app/shared/.env'")));
   // Must ensure writable subdirectories
   assert.ok(executedCommands.some((c) => c.includes("mkdir -p '/var/www/app/shared/writable'/cache")));
+});
+
+test("assertValidSharedItem rejects directory traversal and invalid paths", () => {
+  assert.throws(() => assertValidSharedItem("."), /must be a relative path strictly contained/);
+  assert.throws(() => assertValidSharedItem(".."), /must be a relative path strictly contained/);
+  assert.throws(() => assertValidSharedItem("/etc/passwd"), /must be a relative path strictly contained/);
+  assert.throws(() => assertValidSharedItem("storage/../../secret"), /must be a relative path strictly contained/);
+  assert.throws(() => assertValidSharedItem(""), /must be a relative path strictly contained/);
+
+  // Valid paths must not throw
+  assert.doesNotThrow(() => assertValidSharedItem(".env"));
+  assert.doesNotThrow(() => assertValidSharedItem("storage/"));
+  assert.doesNotThrow(() => assertValidSharedItem("writable/*"));
+  assert.doesNotThrow(() => assertValidSharedItem("storage/logs/"));
+});
+
+test("linkShared rejects items with path traversal", async () => {
+  const { ssh } = createMockSSH();
+
+  await assert.rejects(
+    linkShared(ssh, "/var/www/app", "/var/www/app/releases/v1", ["../escape"], undefined),
+    /Invalid shared item/
+  );
 });

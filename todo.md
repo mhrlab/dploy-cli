@@ -193,3 +193,184 @@ environments:
 ### Implementation 
 - [x] fix options conflict for Inconsistent `-e/--env` Add `.option("-e, --env <env>", "Target environment (default: production)")` to all environment-specific commands (`deploy`, `rollback`, `status`, `clean`, `list`, `health`).
 - [x] fix option conflict for duplicate archive flags. `deploy` has `--artifact <path>` AND `-A,` `--archive <path>`. Two different flags doing the exact same thing clutters CLI documentation and autocomplete.
+
+---
+
+## 9. Comprehensive Bug & Issue Fixes (Review & Hardening)
+
+### 9.1 Tier 1: Critical Safety & Runtime Cutover
+- [x] **[CRITICAL] [SEC-01] Validate `deployTo` in `clean.ts` to Prevent Remote Root Deletion**
+  - **Location**: `src/commands/clean.ts:17`
+  - **Issue**: Unvalidated `deployTo` defaults to `"/releases"` and deletes `/releases` on root server filesystem.
+  - **Fix**: Require `deployTo` exists, is non-empty, and is not `"/"`.
+
+- [x] **[CRITICAL] [QUAL-01] Surface Symlink Cutover Failures in `deploy.ts` and `rollback.ts`**
+  - **Location**: `src/core/ssh.ts:236-245`, `src/commands/deploy.ts:253`, `src/commands/rollback.ts:108`
+  - **Issue**: `switchCurrentSymlink` exit codes are ignored; failed cutovers report success.
+  - **Fix**: Make `switchCurrentSymlink` throw an `Error` on non-zero exit code and clean up temporary symlinks on fallback.
+
+- [x] **[HIGH] [QUAL-02] Check Return Codes on Critical Remote Commands in `shared.ts` and `ssh.ts`**
+  - **Location**: `src/features/shared.ts:19, 105`, `src/core/ssh.ts:228`
+  - **Issue**: `mkdir -p`, `ln -sfn`, and `removePath` ignore exit codes, silently proceeding on failure.
+  - **Fix**: Check `code === 0` on all critical remote executions and throw on error.
+
+- [x] **[MEDIUM] [QUAL-04] Fix Open SSH Socket Leak on SFTP Connect Failure**
+  - **Location**: `src/core/ssh.ts:39-56`
+  - **Issue**: If `sftp.connect` fails, the `ssh` client socket is never closed.
+  - **Fix**: Add try/catch around `sftp.connect` to close `ssh` if SFTP initialization fails.
+
+### 9.2 Tier 2: Security & Shared Resource Hardening
+- [x] **[HIGH] [SEC-02] Prevent Path Traversal in `shared` Configuration Items**
+  - **Location**: `src/features/shared.ts:25-28`, `src/features/provisioner.ts:240-275`
+  - **Issue**: Unvalidated shared items (e.g. `.` or `..`) can delete the release directory or arbitrary paths.
+  - **Fix**: Validate each shared item to ensure it is relative, does not escape root, and is not `.` or `..`.
+
+- [x] **[HIGH] [QUAL-03] Prevent Data Overwrite Hazard in `shared.ts` Fallback**
+  - **Location**: `src/features/shared.ts:88`
+  - **Issue**: Fallback `cp -r` overwrites existing files in `shared/` with release defaults.
+  - **Fix**: Use non-clobbering sync (`rsync -a --ignore-existing` or explicit file check).
+
+- [x] **[MEDIUM] [SEC-04] Prevent Prototype Pollution in Config Loader**
+  - **Location**: `src/core/config.ts:153-157, 165-181`
+  - **Issue**: `deepMerge` and `substituteEnv` do not guard against `__proto__`, `constructor`, `prototype`.
+  - **Fix**: Filter dangerous object keys.
+
+- [x] **[MEDIUM] [SEC-05] Tighten Version Validation Regex Against Directory Traversal**
+  - **Location**: `src/core/utils.ts:27-31`
+  - **Issue**: Regex matches `.` and `..`.
+  - **Fix**: Require version to start with alphanumeric and forbid `.` and `..`.
+
+### 9.3 Tier 3: CLI Polish, Performance & Consistency
+- [x] **[MEDIUM] [QUAL-06] Fix `init` Skipping `.env.dploy.example` for YAML Templates**
+  - **Location**: `src/commands/init.ts:70-84`
+  - **Issue**: Only copies `.env.dploy.example` when `ext === ".json"`.
+  - **Fix**: Remove `ext === ".json"` check.
+
+- [x] **[MEDIUM] [PERF-01] Replace Synchronous Blocking I/O in Async Call Paths**
+  - **Location**: `src/core/config.ts:217`, `src/core/utils.ts:93, 118`, `src/features/packager.ts:110`
+  - **Issue**: `readFileSync` and `statSync` block the event loop.
+  - **Fix**: Use non-blocking async `fs` methods.
+
+- [x] **[MEDIUM] [PERF-02] Read `package.json` Directly Without Subprocess in `detectVersion`**
+  - **Location**: `src/core/utils.ts:42`
+  - **Issue**: `safeExec("node -p ...")` spawns node process with 150ms latency and requires node in PATH.
+  - **Fix**: Read `./package.json` directly from disk.
+
+- [x] **[MEDIUM] [PERF-03] Eliminate Redundant 4th HTTP Probe in Health Check Catch Block**
+  - **Location**: `src/commands/health.ts:41-47`
+  - **Issue**: Catch block executes an extra probe adding up to 10s delay on failures.
+  - **Fix**: Retain last attempt result within `withRetry`.
+
+- [x] **[LOW] [QUAL-07] Fix Syntax Typo in Interactive Rollback UI**
+  - **Location**: `src/commands/rollback.ts:71`
+  - **Issue**: Stray `\"` in template string.
+  - **Fix**: Remove `\"`.
+
+- [x] **[LOW] [QUAL-08] Fix Typo in `tsconfig.json` Include Path**
+  - **Location**: `tsconfig.json:13`
+  - **Issue**: Lists `"dploy.config.json"`.
+  - **Fix**: Update to `"deploy.config.json"`.
+
+---
+
+## 10. Future Feature Roadmap & Architecture Ideas
+
+### 10.1 Web Server & Service Provisioning Wizard (`dploy setup`)
+Interactive server onboarding for fresh VPS/Ubuntu/Debian instances to configure web servers, process managers, and reverse proxies automatically.
+- [ ] **Interactive Onboarding Prompts (`src/commands/setup.ts`)**
+  - [ ] Web server selection: Nginx (default), Apache, None.
+  - [ ] App type selection: Static/SPA (`current/dist`), Node.js (reverse proxy to port), PHP/Laravel (PHP-FPM socket), Python/Go/Docker.
+  - [ ] Domain / hostname inputs (e.g. `app.example.com`, `example.com`).
+  - [ ] Upstream port or PHP-FPM socket path input.
+  - [ ] Automated SSL / Let's Encrypt prompt (`certbot --nginx -d <domain>`).
+- [ ] **Template Engine & Config Generation (`templates/services/`)**
+  - [ ] Nginx virtual host templates for SPA, Node.js proxy, and PHP-FPM with security headers, gzip, and static asset caching.
+  - [ ] Systemd unit file generator (`/etc/systemd/system/<app>.service`) with auto-restart, logging, and environment file loading.
+  - [ ] PM2 ecosystem generation if user selects PM2.
+- [ ] **Remote Installation & Execution Workflow**
+  - [ ] Check installed binaries via SSH (`which nginx`, `which certbot`, `which node`).
+  - [ ] Install missing dependencies via `apt-get` if prompted/permitted by user (`sudo apt update && sudo apt install -y nginx`).
+  - [ ] Upload and enable virtual hosts (`/etc/nginx/sites-available/<domain>` -> `/etc/nginx/sites-enabled/`).
+  - [ ] Validate Nginx config (`nginx -t`) before issuing reload (`systemctl reload nginx`).
+  - [ ] Add `--dry-run` flag to display generated service configurations without executing on remote host.
+
+---
+
+### 10.2 Remote Environment & Secret Synchronization (`dploy env:*`)
+Eliminate the need to manually SSH into remote servers to edit `.env` files with nano/vim.
+- [ ] **`dploy env:push`**
+  - [ ] Support flags `-e <env>`, `--file <local-path>` (defaults to `.env.<env>` or `.env`).
+  - [ ] Safely upload to `<deployTo>/shared/.env`.
+  - [ ] Prompt for confirmation before overwriting unless `--force` / `--yes` is specified.
+  - [ ] Automatic remote backup: rename old `.env` to `.env.bak.<timestamp>` before replacing.
+- [ ] **`dploy env:pull`**
+  - [ ] Download `<deployTo>/shared/.env` to local file (e.g. `.env.<env>.remote` or `.env`).
+  - [ ] Add safety check to prevent overwriting local `.env` without `--force`.
+- [ ] **`dploy env:set KEY=VALUE`**
+  - [ ] Parse remote `.env`, update or append the specific key-value pair, and save back to `<deployTo>/shared/.env`.
+
+---
+
+### 10.3 Direct Remote Shell & Command Runner (`dploy ssh` & `dploy run`)
+Direct CLI shortcuts for remote server administration without manually looking up credentials or IP addresses.
+- [ ] **`dploy ssh -e <env>`**
+  - [ ] Read environment configuration (host, user, port, key/password).
+  - [ ] Spawn native interactive SSH session (`child_process.spawn("ssh", [...])`) or pty forward.
+  - [ ] Automatically set starting working directory to `<deployTo>/current`.
+- [ ] **`dploy run "<command>" -e <env>`**
+  - [ ] Execute arbitrary ad-hoc remote commands inside `<deployTo>/current` (e.g. `dploy run "php artisan migrate --force"` or `dploy run "npm run db:migrate"`).
+  - [ ] Stream stdout/stderr in real time to local console.
+
+---
+
+### 10.4 Automated Database Backups Pre-Deployment (`backupBeforeDeploy`)
+Guard against destructive schema migrations by taking snapshots before switching traffic.
+- [ ] **Config Schema Extension in `DeployConfig`**
+  - [ ] Add `database?: { type: "mysql" | "postgres" | "sqlite", name?: string, keep?: number }` or `backupBeforeDeploy?: boolean`.
+- [ ] **Backup Execution in Deployment Pipeline**
+  - [ ] Execute `mysqldump` or `pg_dump` over SSH into `<deployTo>/backups/db-<version>-<timestamp>.sql.gz`.
+  - [ ] Retain latest N database backups (matching `keepVersions`).
+  - [ ] Abort deployment and alert user if backup fails before release cutover.
+
+---
+
+### 10.5 Deployment Notifications & Webhooks (Slack, Discord, Telegram)
+Real-time alerts on deployment status, failures, and rollbacks for engineering teams.
+- [ ] **Notification Configuration in `deploy.config.yml`**
+  - [ ] Support channels: `slack`, `discord`, `telegram`, or generic HTTP `webhook`.
+  - [ ] Event triggers: `on: [start, success, failure, rollback]`.
+- [ ] **Payload Dispatcher (`src/features/notifications.ts`)**
+  - [ ] Send rich embed/payload containing version, git commit, commit message, deployer, environment, duration, and status.
+  - [ ] Non-blocking execution so notification failure never blocks or fails a deployment.
+
+---
+
+### 10.6 Maintenance Mode Controls (`dploy down` / `dploy up`)
+Gracefully take websites offline during major upgrades or database schema changes.
+- [ ] **`dploy down -e <env>`**
+  - [ ] Create maintenance flag file (`<deployTo>/shared/maintenance.flag` or `current/down`).
+  - [ ] Support custom message, retry-after header, or maintenance HTML template.
+- [ ] **`dploy up -e <env>`**
+  - [ ] Remove maintenance flag file to immediately restore normal traffic.
+- [ ] **Integration with Deployment Pipeline**
+  - [ ] Add option `maintenanceMode: true` in `deploy.config.yml` to automatically toggle `down` before hooks and `up` after healthcheck passes.
+
+---
+
+### 10.7 Live Remote Log Streaming (`dploy logs`)
+Stream server, application, and error logs directly to the local terminal.
+- [ ] **`dploy logs -e <env>`**
+  - [ ] Support flags: `-f, --follow` (tail live), `-n <lines>` (default 50), `--type <app|nginx|pm2|systemd>`.
+  - [ ] Execute remote `tail -n 50 -f <logPath>` over SSH stream and pipe output locally with timestamps.
+
+---
+
+### 10.8 Multi-Server / Cluster Deployments
+Support deploying to multiple web/worker instances for scalable architectures.
+- [ ] **Config Schema Support for Multiple Hosts**
+  - [ ] Allow `hosts: string[]` under `environments.<name>` in addition to single `host`.
+- [ ] **Deployment Strategies**
+  - [ ] Parallel deployment across all hosts.
+  - [ ] Rolling deployment (deploy host 1 -> health check -> deploy host 2) for zero downtime on clusters without taking all nodes offline.
+
+

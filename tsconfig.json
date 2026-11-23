@@ -10,5 +10,5 @@
     "resolveJsonModule": true,
     "skipLibCheck": true
   },
-  "include": ["bin", "src", "tests", "dploy.config.json"]
+  "include": ["bin", "src", "tests", "deploy.config.json"]
 }

@@ -58,6 +58,8 @@ export interface ProvisionConfig {
 
 export interface DeployConfig {
     name?: string;
+    versionCommand?: string;
+    versionFile?: string;
     build?: BuildConfig;
     hooks?: HookConfig;
     provision?: ProvisionConfig;
@@ -137,6 +139,10 @@ export function loadDotenv(cwd: string) {
     }
 }
 
+function isDangerousKey(key: string): boolean {
+    return key === "__proto__" || key === "constructor" || key === "prototype";
+}
+
 /**
  * Recursively substitute ${VAR} and ${VAR:-fallback}
  */
@@ -152,6 +158,7 @@ function substituteEnv(value: any): any {
     } else if (value && typeof value === "object") {
         const result: AnyObject = {};
         for (const [k, v] of Object.entries(value)) {
+            if (isDangerousKey(k)) continue;
             result[k] = substituteEnv(v);
         }
         return result;
@@ -165,6 +172,7 @@ function substituteEnv(value: any): any {
 function deepMerge(base: AnyObject, override: AnyObject): AnyObject {
     const out: AnyObject = { ...base };
     for (const [key, val] of Object.entries(override)) {
+        if (isDangerousKey(key)) continue;
         if (
             base[key] &&
             typeof base[key] === "object" &&
@@ -214,7 +222,7 @@ function resolveInheritance(config: DeployConfig): DeployConfig {
  * Parse YAML or JSON config
  */
 async function parseConfig(file: string): Promise<DeployConfig> {
-    const content = fs.readFileSync(file, "utf8");
+    const content = await fs.readFile(file, "utf8");
     if (file.endsWith(".json")) {
         return JSON.parse(content) as DeployConfig;
     }

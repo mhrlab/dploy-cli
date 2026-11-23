@@ -16,17 +16,23 @@ export function expandTilde(p?: string): string | undefined {
 }
 
 
-export function safeExec(cmd: string): string | undefined {
+export function safeExec(cmd: string, cwd?: string): string | undefined {
     try {
-        return execSync(cmd, { stdio: ["ignore", "pipe", "ignore"] }).toString().trim();
+        return execSync(cmd, { cwd, stdio: ["ignore", "pipe", "ignore"] }).toString().trim();
     } catch {
         return undefined;
     }
 }
 
+export function isValidVersionString(version: string): boolean {
+    return version !== "." && version !== ".." && /^[a-zA-Z0-9][a-zA-Z0-9._-]*$/.test(version);
+}
+
 export function assertValidVersion(version: string): void {
-    if (!/^[a-zA-Z0-9._-]+$/.test(version)) {
-        throw new Error(`Invalid version format: '${version}'. Only alphanumeric, '.', '_', and '-' are allowed.`);
+    if (!isValidVersionString(version)) {
+        throw new Error(
+            `Invalid version format: '${version}'. Must start with an alphanumeric character and contain only alphanumeric, '.', '_', and '-'.`
+        );
     }
 }
 
@@ -34,16 +40,151 @@ export function escapeShellArg(arg: string): string {
     return `'${arg.replace(/'/g, "'\\''")}'`;
 }
 
-export function detectVersion(override?: string): string {
-    if (override) {
-        assertValidVersion(override);
-        return override;
+export interface DetectVersionOptions {
+    override?: string;
+    versionCommand?: string;
+    versionFile?: string;
+    cwd?: string;
+}
+
+export function detectVersion(
+    overrideOrOptions?: string | DetectVersionOptions,
+    versionCommandArg?: string,
+    cwdArg?: string
+): string {
+    const opts: DetectVersionOptions =
+        typeof overrideOrOptions === "object" && overrideOrOptions !== null
+            ? overrideOrOptions
+            : {
+                  override: overrideOrOptions,
+                  versionCommand: versionCommandArg,
+                  cwd: cwdArg,
+              };
+
+    const cwd = opts.cwd ?? process.cwd();
+
+    // 1. Explicit CLI override
+    if (opts.override) {
+        assertValidVersion(opts.override);
+        return opts.override;
     }
-    const pkgVersion = safeExec("node -p \"require('./package.json').version\"");
-    const shortSha = safeExec("git rev-parse --short HEAD");
+
+    // 2. Custom versionCommand configured in deploy.config.yml
+    if (opts.versionCommand) {
+        const cmdOutput = safeExec(opts.versionCommand, cwd);
+        if (cmdOutput) {
+            const candidate = cmdOutput.split(/\r?\n/)[0].trim();
+            if (candidate) {
+                assertValidVersion(candidate);
+                return candidate;
+            }
+        }
+    }
+
+    // 3. Git tag check: exact match first, then nearest tag
+    const gitExactTag = safeExec("git describe --tags --exact-match", cwd);
+    if (gitExactTag) {
+        const candidate = gitExactTag.trim();
+        if (candidate && isValidVersionString(candidate)) {
+            return candidate;
+        }
+    }
+
+    const gitNearestTag = safeExec("git describe --tags", cwd);
+    if (gitNearestTag) {
+        const candidate = gitNearestTag.trim();
+        if (candidate && isValidVersionString(candidate)) {
+            return candidate;
+        }
+    }
+
+    // 4. Manifest / File detection
+    // Priority order:
+    // a. Custom versionFile from deploy.config.yml
+    // b. VERSION / version.txt (explicit version tracking file)
+    // c. composer.json ("version" field)
+    // d. package.json ("version" field)
+    let manifestVersion: string | undefined;
+
+    // 4a. Custom versionFile
+    if (opts.versionFile) {
+        const customPath = path.resolve(cwd, opts.versionFile);
+        const rel = path.relative(cwd, customPath);
+        if (rel.startsWith("..") || path.isAbsolute(rel)) {
+            throw new Error(`Invalid versionFile: '${opts.versionFile}' resolves outside the workspace directory`);
+        }
+        if (fs.existsSync(customPath)) {
+            try {
+                if (customPath.endsWith(".json")) {
+                    const parsed = JSON.parse(readFileSync(customPath, "utf8"));
+                    if (typeof parsed.version === "string" && parsed.version.trim()) {
+                        manifestVersion = parsed.version.trim();
+                    }
+                } else {
+                    const raw = readFileSync(customPath, "utf8").trim().split(/\r?\n/)[0].trim();
+                    if (raw && isValidVersionString(raw)) {
+                        manifestVersion = raw;
+                    }
+                }
+            } catch {}
+        }
+    }
+
+    // 4b. VERSION or version.txt file
+    if (!manifestVersion) {
+        for (const filename of ["VERSION", "version.txt"]) {
+            const vFile = path.resolve(cwd, filename);
+            if (fs.existsSync(vFile)) {
+                try {
+                    const raw = readFileSync(vFile, "utf8").trim().split(/\r?\n/)[0].trim();
+                    if (raw && isValidVersionString(raw)) {
+                        manifestVersion = raw;
+                        break;
+                    }
+                } catch {}
+            }
+        }
+    }
+
+    // 4c. composer.json (PHP)
+    if (!manifestVersion) {
+        const localComposer = path.resolve(cwd, "composer.json");
+        if (fs.existsSync(localComposer)) {
+            try {
+                const parsed = JSON.parse(readFileSync(localComposer, "utf8"));
+                if (typeof parsed.version === "string" && parsed.version.trim()) {
+                    manifestVersion = parsed.version.trim();
+                }
+            } catch {}
+        }
+    }
+
+    // 4d. package.json (Node)
+    if (!manifestVersion) {
+        const localPkg = path.resolve(cwd, "package.json");
+        if (fs.existsSync(localPkg)) {
+            try {
+                const parsed = JSON.parse(readFileSync(localPkg, "utf8"));
+                if (typeof parsed.version === "string" && parsed.version.trim()) {
+                    manifestVersion = parsed.version.trim();
+                }
+            } catch {}
+        }
+    }
+
+    // 5. Existing fallback: manifestVersion + shortSha, or timestamp + shortSha
+    const shortSha = safeExec("git rev-parse --short HEAD", cwd);
     const now = new Date();
     const stamp = now.toISOString().replace(/[-:T.Z]/g, "").slice(0, 14); // YYYYMMDDHHMMSS
-    const version = pkgVersion ? `v${pkgVersion}-${shortSha ?? stamp}` : `v${stamp}${shortSha ? `-${shortSha}` : ""}`;
+
+    let version: string;
+    if (manifestVersion) {
+        const prefix = manifestVersion.startsWith("v") ? manifestVersion : `v${manifestVersion}`;
+        version = `${prefix}-${shortSha ?? stamp}`;
+    } else {
+        version = `v${stamp}${shortSha ? `-${shortSha}` : ""}`;
+    }
+
     assertValidVersion(version);
     return version;
 }

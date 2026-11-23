@@ -7,6 +7,7 @@ import { mkdtemp, mkdir, writeFile } from "node:fs/promises";
 import { test } from "node:test";
 import { build } from "../src/commands/build.js";
 import { health } from "../src/commands/health.js";
+import { clean } from "../src/commands/clean.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -132,4 +133,63 @@ test("deploy command displays unified -A, --artifact option without duplicate --
     false,
     "deploy --help should not list duplicate --archive in visible options"
   );
+});
+
+test("clean command throws if environment is missing deployTo path", async () => {
+  const originalCwd = process.cwd();
+  const cwd = await createTempWorkspace();
+
+  try {
+    process.chdir(cwd);
+    await writeFile(
+      path.join(cwd, "deploy.config.json"),
+      JSON.stringify({
+        name: "Test App",
+        environments: {
+          production: {
+            host: "example.com",
+            username: "deploy",
+          },
+        },
+      }),
+      "utf8"
+    );
+
+    await assert.rejects(
+      clean({ env: "production", dryRun: true }),
+      /missing required 'deployTo' path/
+    );
+  } finally {
+    process.chdir(originalCwd);
+  }
+});
+
+test("clean command throws if deployTo path is root '/'", async () => {
+  const originalCwd = process.cwd();
+  const cwd = await createTempWorkspace();
+
+  try {
+    process.chdir(cwd);
+    await writeFile(
+      path.join(cwd, "deploy.config.json"),
+      JSON.stringify({
+        name: "Test App",
+        environments: {
+          production: {
+            host: "example.com",
+            username: "deploy",
+            deployTo: "/",
+          },
+        },
+      }),
+      "utf8"
+    );
+
+    await assert.rejects(
+      clean({ env: "production", dryRun: true }),
+      /cannot clean directly from root '\/'/
+    );
+  } finally {
+    process.chdir(originalCwd);
+  }
 });

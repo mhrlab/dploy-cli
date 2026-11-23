@@ -3,6 +3,22 @@ import { posixJoin, escapeShellArg } from "../core/utils.js";
 import { exec } from "../core/ssh.js";
 import { log } from "../core/logger.js";
 
+export function assertValidSharedItem(item: string): void {
+    const clean = item.replace(/\/+$/, "").trim();
+    if (
+        !clean ||
+        clean === "." ||
+        clean === ".." ||
+        clean.startsWith("/") ||
+        clean.startsWith("\\") ||
+        clean.split(/[/\\]/).some((segment) => segment === ".." || segment === ".")
+    ) {
+        throw new Error(
+            `Invalid shared item '${item}': must be a relative path strictly contained within the release directory.`
+        );
+    }
+}
+
 export async function linkShared(
     ssh: Client,
     root: string,
@@ -16,9 +32,16 @@ export async function linkShared(
 
     const sharedDir = posixJoin(root, "shared");
     log.verbose(`Creating shared directory: ${sharedDir}`);
-    await exec(ssh, `mkdir -p ${escapeShellArg(sharedDir)}`);
+    const mkRes = await exec(ssh, `mkdir -p ${escapeShellArg(sharedDir)}`);
+    if (mkRes.code !== 0) {
+        throw new Error(
+            `Failed to create remote shared directory '${sharedDir}': ${mkRes.stderr.trim() || `exit code ${mkRes.code}`}`
+        );
+    }
 
     for (const rawItem of shared) {
+        assertValidSharedItem(rawItem);
+
         // Normalize wildcards like "writable/*" to directory "writable/"
         const item = rawItem.endsWith("/*") ? rawItem.slice(0, -1) : rawItem;
         log.verbose(`Processing shared item: ${item}`);
@@ -35,7 +58,12 @@ export async function linkShared(
             const parentRel = cleanItem.substring(0, cleanItem.lastIndexOf("/"));
             const parentDir = posixJoin(sharedDir, parentRel);
             log.debug(`Ensuring parent directory exists for: ${sharedPath}`);
-            await exec(ssh, `mkdir -p ${escapeShellArg(parentDir)}`);
+            const parentRes = await exec(ssh, `mkdir -p ${escapeShellArg(parentDir)}`);
+            if (parentRes.code !== 0) {
+                throw new Error(
+                    `Failed to create parent shared directory '${parentDir}': ${parentRes.stderr.trim() || `exit code ${parentRes.code}`}`
+                );
+            }
         }
 
         // If item is expected to be a file, heal any empty directory mistakenly created by prior runs
@@ -85,7 +113,7 @@ export async function linkShared(
             if (item.endsWith("/") || cleanItem === "writable") {
                 await exec(
                     ssh,
-                    `if [ -d ${escapeShellArg(cleanReleasePath)} ] && [ -d ${escapeShellArg(cleanSharedPath)} ]; then cp -rn ${escapeShellArg(cleanReleasePath)}/. ${escapeShellArg(cleanSharedPath)}/ 2>/dev/null || cp -r ${escapeShellArg(cleanReleasePath)}/. ${escapeShellArg(cleanSharedPath)}/ 2>/dev/null || true; fi`
+                    `if [ -d ${escapeShellArg(cleanReleasePath)} ] && [ -d ${escapeShellArg(cleanSharedPath)} ]; then cp -rn ${escapeShellArg(cleanReleasePath)}/. ${escapeShellArg(cleanSharedPath)}/ 2>/dev/null || rsync -a --ignore-existing ${escapeShellArg(cleanReleasePath)}/ ${escapeShellArg(cleanSharedPath)}/ 2>/dev/null || true; fi`
                 );
             }
         }
@@ -102,10 +130,15 @@ export async function linkShared(
         // Always remove release copy and link to shared
         log.verbose(`Removing release copy and creating symlink for: ${item}`);
         log.debug(`Removing: ${cleanReleasePath}, Linking to: ${cleanSharedPath}`);
-        await exec(
+        const linkRes = await exec(
             ssh,
             `rm -rf ${escapeShellArg(cleanReleasePath)} && ln -sfn ${escapeShellArg(cleanSharedPath)} ${escapeShellArg(cleanReleasePath)}`
         );
+        if (linkRes.code !== 0) {
+            throw new Error(
+                `Failed to link shared item '${item}' (${cleanReleasePath} -> ${cleanSharedPath}): ${linkRes.stderr.trim() || `exit code ${linkRes.code}`}`
+            );
+        }
         log.debug(`Successfully linked shared item: ${item}`);
     }
 

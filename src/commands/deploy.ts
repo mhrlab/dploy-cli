@@ -49,7 +49,11 @@ export async function deploy(opts: {
     const cleanAfterDeploy: boolean = cfg.cleanAfterDeploy ?? cfg.build?.cleanAfterDeploy ?? false;
     const keepLocalArtifact: boolean = opts.keepArtifact ?? cfg.keepArtifact ?? env.keepArtifact ?? false;
 
-    const version = detectVersion(opts.version);
+    const version = detectVersion({
+        override: opts.version,
+        versionCommand: cfg.versionCommand,
+        versionFile: cfg.versionFile,
+    });
     log.verbose(`Deployment version: ${version}`);
 
     log.info(`Starting deployment to [${envName}] environment (${env.host})`);

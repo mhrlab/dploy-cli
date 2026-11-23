@@ -50,7 +50,12 @@ async function createConnection(env: EnvironmentConfig): Promise<SSHBundle> {
     });
 
     log.verbose(`Connecting SFTP client`);
-    await sftp.connect(connectConfig);
+    try {
+        await sftp.connect(connectConfig);
+    } catch (err) {
+        ssh.end();
+        throw err;
+    }
     log.verbose(`SFTP connection established`);
 
     return { ssh, sftp };
@@ -225,7 +230,10 @@ export async function listDirs(sftp: SFTPClient, remotePath: string): Promise<Re
 
 export async function removePath(ssh: Client, remotePath: string) {
     log.debug(`Removing remote path: ${remotePath}`);
-    await exec(ssh, `rm -rf ${escapeShellArg(remotePath)}`);
+    const { code, stderr } = await exec(ssh, `rm -rf ${escapeShellArg(remotePath)}`);
+    if (code !== 0) {
+        throw new Error(`Failed to remove remote path '${remotePath}': ${stderr.trim() || `exit code ${code}`}`);
+    }
 }
 
 /**
@@ -240,6 +248,12 @@ export async function switchCurrentSymlink(
 ): Promise<{ code: number; stdout: string; stderr: string }> {
     log.debug(`Switching current symlink atomically: ${currentLink} -> ${targetPath}`);
     const tmpLink = `${currentLink}_tmp_${Date.now()}`;
-    const cmd = `(ln -sfn ${escapeShellArg(targetPath)} ${escapeShellArg(tmpLink)} && mv -Tf ${escapeShellArg(tmpLink)} ${escapeShellArg(currentLink)} 2>/dev/null) || ln -sfn ${escapeShellArg(targetPath)} ${escapeShellArg(currentLink)}`;
-    return await exec(ssh, cmd);
+    const cmd = `(ln -sfn ${escapeShellArg(targetPath)} ${escapeShellArg(tmpLink)} && mv -Tf ${escapeShellArg(tmpLink)} ${escapeShellArg(currentLink)} 2>/dev/null) || (rm -f ${escapeShellArg(tmpLink)} 2>/dev/null; ln -sfn ${escapeShellArg(targetPath)} ${escapeShellArg(currentLink)})`;
+    const res = await exec(ssh, cmd);
+    if (res.code !== 0) {
+        throw new Error(
+            `Failed to switch active symlink (${currentLink} -> ${targetPath}): ${res.stderr.trim() || `exit code ${res.code}`}`
+        );
+    }
+    return res;
 }
