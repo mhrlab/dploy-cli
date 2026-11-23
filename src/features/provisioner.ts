@@ -3,6 +3,7 @@ import { exec, type SSHBundle } from "../core/ssh.js";
 import { posixJoin, escapeShellArg } from "../core/utils.js";
 import { EnvironmentConfig, ProvisionConfig, ProvisionPermissionsConfig, ProvisionServiceConfig } from "../core/config.js";
 import { log } from "../core/logger.js";
+import { assertValidSharedItem } from "./shared.js";
 
 export type ProvisionStepName = "prereqs" | "dirs" | "shared" | "permissions" | "service";
 
@@ -210,6 +211,7 @@ export async function provisionSharedResources(
     }
 
     for (const rawItem of sharedItems) {
+        assertValidSharedItem(rawItem);
         // Normalize wildcards like "writable/*" to directory "writable/"
         const item = rawItem.endsWith("/*") ? rawItem.slice(0, -1) : rawItem;
         const sharedPath = posixJoin(sharedDir, item);
@@ -628,6 +630,7 @@ export function planProvisioningOffline(
     // 3. Shared
     if (shouldRun("shared") && (provCfg.seedShared !== false)) {
         const shared = (env.shared ?? provCfg.shared ?? []) as string[];
+        shared.forEach(assertValidSharedItem);
         const sharedDir = posixJoin(deployTo, "shared");
         const details = shared.map((item) => {
             const cleanItem = item.endsWith("/*") ? item.slice(0, -1) : item;
