@@ -68,7 +68,7 @@ export async function rollback(opts: {
                 }
             } else {
                 const choices = sortedReleases.map((release) => ({
-                    name: `${release.name} (${release.mtime.toLocaleString()})${release.name === currentRelease ? " [current]\"" : ""}`,
+                    name: `${release.name} (${release.mtime.toLocaleString()})${release.name === currentRelease ? " [current]" : ""}`,
                     value: release.name,
                     disabled: release.name === currentRelease ? "Already active" : false,
                 }));
