@@ -37,6 +37,32 @@ dploy provision --only shared
 
 The `setup` command generates, uploads, and configures system services directly on your target server.
 
+### Sudo & Admin User Support
+
+Since configuring Nginx, Systemd services, and Certbot SSL requires root privileges, `dploy setup` supports connecting as an admin/root user:
+
+1. **Via CLI flags**:
+   ```bash
+   dploy setup --admin-user root --admin-key ~/.ssh/id_rsa --create-deployer
+   ```
+2. **Via Configuration (`deploy.config.yml`)**:
+   ```yaml
+   environments:
+     production:
+       host: 198.51.100.1
+       username: deployer          # Everyday unprivileged deploy user
+       deployTo: /var/www/my-app
+       admin:
+         username: root            # Used ONLY by dploy setup
+         ssh_key_path: ~/.ssh/id_admin
+   ```
+3. **Automated Deployer User Provisioning (`--create-deployer`)**:
+   When `--create-deployer` is passed:
+   - Creates the unprivileged `deployer` user on the remote server.
+   - Copies your local public SSH key to `/home/deployer/.ssh/authorized_keys`.
+   - Sets directory ownership of `/var/www/my-app` to `deployer:www-data`.
+   - Configures a secure `/etc/sudoers.d/dploy-<app>` rule allowing passwordless service reloads (`systemctl reload nginx`, `systemctl restart <app>`).
+
 ### Interactive Mode
 Run `dploy setup` without arguments to walk through an interactive configuration prompt:
 ```bash

@@ -73,3 +73,46 @@ test("generateSystemdUnit generates queue worker service unit file for Laravel",
     assert.ok(unit.includes("ExecStart=php artisan queue:work --sleep=3 --tries=3"));
     assert.ok(unit.includes("SyslogIdentifier=laravel-app-worker"));
 });
+
+test("setup command executes with --dry-run and honors --admin-user privileged mode", async () => {
+    const { setup } = await import("../src/commands/setup.js");
+    const fs = (await import("fs-extra")).default;
+    const path = await import("node:path");
+    const os = await import("node:os");
+
+    const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "dploy-setup-test-"));
+    const prevCwd = process.cwd();
+
+    try {
+        process.chdir(tmp);
+        await fs.writeJson("package.json", { name: "test-wizard-app", version: "1.0.0" });
+
+        const configYml = `
+name: test-wizard-app
+environments:
+  production:
+    host: 192.168.1.50
+    username: deployer
+    deployTo: /var/www/test-wizard-app
+    admin:
+      username: root
+`;
+        await fs.writeFile("deploy.config.yml", configYml.trim(), "utf-8");
+
+        // Running with --dry-run should not throw and should handle admin user
+        await assert.doesNotReject(async () => {
+            await setup({
+                env: "production",
+                dryRun: true,
+                webserver: "nginx",
+                kind: "node",
+                domain: "test.local",
+                adminUser: "root",
+                createDeployer: true,
+            });
+        });
+    } finally {
+        process.chdir(prevCwd);
+        await fs.remove(tmp);
+    }
+});

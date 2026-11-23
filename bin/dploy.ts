@@ -186,6 +186,10 @@ async function main() {
         .option("--exec-start <cmd>", "ExecStart command for systemd unit")
         .option("--queue-worker", "Create and enable a background queue worker (e.g. for Laravel/PHP)")
         .option("--worker-command <cmd>", "Command for the queue worker service")
+        .option("--admin-user <user>", "Admin / sudo username for server provisioning (e.g. root)")
+        .option("--admin-key <path>", "Path to admin SSH private key")
+        .option("--admin-password <pass>", "Admin user password or sudo password")
+        .option("--create-deployer", "Provision dedicated unprivileged deploy user and grant limited sudo")
         .action(async (opts, cmd) => {
             await setup(cmd.optsWithGlobals());
         });

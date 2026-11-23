@@ -89,9 +89,21 @@ export interface DeployConfig {
     [key: string]: any;
 }
 
+export interface AdminConfig {
+    username?: string;
+    host?: string;
+    port?: number;
+    password?: string;
+    passphrase?: string;
+    ssh_key?: string;
+    ssh_key_path?: string;
+    sudo?: boolean;
+}
+
 export interface EnvironmentConfig {
     extends?: string;
     username?: string;
+    admin?: AdminConfig;
     host?: string;
     hosts?: string[];
     strategy?: "parallel" | "rolling";

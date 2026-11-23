@@ -1,8 +1,11 @@
 import inquirer from "inquirer";
-import { loadConfig, getEnvName } from "../core/config.js";
+import fs from "fs-extra";
+import path from "node:path";
+import os from "node:os";
+import { loadConfig, getEnvName, EnvironmentConfig } from "../core/config.js";
 import { connect, close, exec } from "../core/ssh.js";
 import { log } from "../core/logger.js";
-import { posixJoin, escapeShellArg } from "../core/utils.js";
+import { posixJoin, escapeShellArg, expandTilde } from "../core/utils.js";
 import {
     generateNginxConfig,
     generateSystemdUnit,
@@ -24,6 +27,10 @@ export interface SetupOptions {
     execStart?: string;
     queueWorker?: boolean;
     workerCommand?: string;
+    adminUser?: string;
+    adminKey?: string;
+    adminPassword?: string;
+    createDeployer?: boolean;
 }
 
 export async function setup(opts: SetupOptions) {
@@ -234,9 +241,31 @@ export async function setup(opts: SetupOptions) {
         });
     }
 
+    // Determine Admin / Sudo Connection Config
+    // If adminUser is specified, or env.admin is configured, use admin credentials for OS-level setup
+    const adminUser = opts.adminUser || env.admin?.username;
+    const adminKey = opts.adminKey || env.admin?.ssh_key_path;
+    const adminPassword = opts.adminPassword || env.admin?.password;
+
+    const setupConnConfig: EnvironmentConfig = {
+        ...env,
+        username: adminUser || env.username,
+        ssh_key_path: adminKey ? expandTilde(adminKey) : env.ssh_key_path,
+        password: adminPassword || env.password,
+        passphrase: env.admin?.passphrase || env.passphrase,
+    };
+
+    const isRunningAsRoot = setupConnConfig.username === "root";
+    // If running as root, no need to prepend `sudo -n`; otherwise prepend `sudo -n`
+    const sudoPrefix = isRunningAsRoot ? "" : "sudo -n ";
+
     // If dry-run, output planned files and finish
     if (opts.dryRun) {
         log.info("[dry-run] Planned server setup configurations:");
+        log.info(`[dry-run] Would connect to ${setupConnConfig.username}@${setupConnConfig.host} (Privileged Mode: ${isRunningAsRoot ? "root" : "sudo"})`);
+        if (opts.createDeployer && env.username && env.username !== "root") {
+            log.info(`[dry-run] Would create unprivileged user '${env.username}' with ownership of ${deployTo}`);
+        }
         if (nginxConf) {
             console.log(`\n--- [Nginx Config: /etc/nginx/sites-available/${primaryDomain}] ---`);
             console.log(nginxConf);
@@ -250,15 +279,53 @@ export async function setup(opts: SetupOptions) {
             console.log(workerUnit);
         }
         if (setupCertbot) {
-            log.info(`[dry-run] Would execute: sudo certbot --nginx -d ${domains.join(" -d ")} --non-interactive --agree-tos`);
+            log.info(`[dry-run] Would execute: ${sudoPrefix}certbot --nginx -d ${domains.join(" -d ")} --non-interactive --agree-tos`);
         }
         log.ok("[dry-run] Server setup preview completed");
         return;
     }
 
-    log.info(`Connecting to ${env.username}@${env.host} to execute server setup...`);
-    const bundle = await connect(env);
+    log.info(`Connecting to ${setupConnConfig.username}@${setupConnConfig.host} to execute server setup...`);
+    const bundle = await connect(setupConnConfig);
     try {
+        // If requested or if deploying as a non-root user that doesn't exist yet, provision the deployer user
+        if (opts.createDeployer && env.username && env.username !== "root") {
+            log.info(`Provisioning unprivileged deploy user '${env.username}'...`);
+            await exec(bundle.ssh, `${sudoPrefix}id -u ${escapeShellArg(env.username)} || ${sudoPrefix}useradd -m -s /bin/bash ${escapeShellArg(env.username)}`);
+            await exec(bundle.ssh, `${sudoPrefix}mkdir -p /home/${escapeShellArg(env.username)}/.ssh && ${sudoPrefix}chmod 700 /home/${escapeShellArg(env.username)}/.ssh`);
+
+            // Authorize local public key if available
+            const defaultPubPaths = [
+                env.ssh_key_path ? `${env.ssh_key_path}.pub` : null,
+                path.join(os.homedir(), ".ssh", "id_ed25519.pub"),
+                path.join(os.homedir(), ".ssh", "id_rsa.pub"),
+            ].filter(Boolean) as string[];
+
+            for (const pubPath of defaultPubPaths) {
+                if (await fs.pathExists(pubPath)) {
+                    const pubContent = (await fs.readFile(pubPath, "utf8")).trim();
+                    log.info(`Authorizing public key (${path.basename(pubPath)}) for ${env.username}...`);
+                    await exec(
+                        bundle.ssh,
+                        `echo ${escapeShellArg(pubContent)} | ${sudoPrefix}tee -a /home/${escapeShellArg(env.username)}/.ssh/authorized_keys > /dev/null && ${sudoPrefix}chmod 600 /home/${escapeShellArg(env.username)}/.ssh/authorized_keys && ${sudoPrefix}chown -R ${escapeShellArg(env.username)}:${escapeShellArg(env.username)} /home/${escapeShellArg(env.username)}/.ssh`
+                    );
+                    break;
+                }
+            }
+
+            // Set ownership of deployTo directory
+            await exec(bundle.ssh, `${sudoPrefix}mkdir -p ${escapeShellArg(deployTo)} && ${sudoPrefix}chown -R ${escapeShellArg(env.username)}:www-data ${escapeShellArg(deployTo)}`);
+
+            // Add limited passwordless sudo rules for service reloads
+            const sudoersFile = `/etc/sudoers.d/dploy-${defaultAppName}`;
+            const sudoersContent = `${env.username} ALL=(ALL) NOPASSWD: /usr/bin/systemctl reload nginx, /usr/bin/systemctl restart ${defaultAppName}, /usr/bin/systemctl restart ${workerServiceName}, /usr/bin/systemctl status ${defaultAppName}\n`;
+            await exec(
+                bundle.ssh,
+                `echo ${escapeShellArg(sudoersContent)} | ${sudoPrefix}tee ${escapeShellArg(sudoersFile)} > /dev/null && ${sudoPrefix}chmod 440 ${escapeShellArg(sudoersFile)}`
+            );
+            log.ok(`User '${env.username}' provisioned and authorized with limited sudo rules`);
+        }
+
         if (nginxConf) {
             log.info(`Configuring Nginx virtual host for ${primaryDomain}...`);
             const confPath = `/etc/nginx/sites-available/${primaryDomain}`;
@@ -268,17 +335,17 @@ export async function setup(opts: SetupOptions) {
             const tmpConf = `/tmp/nginx-${primaryDomain}.conf`;
             await bundle.sftp.put(Buffer.from(nginxConf, "utf8"), tmpConf);
 
-            await exec(bundle.ssh, `sudo -n mv -f ${escapeShellArg(tmpConf)} ${escapeShellArg(confPath)}`);
-            await exec(bundle.ssh, `sudo -n ln -sfn ${escapeShellArg(confPath)} ${escapeShellArg(enabledPath)}`);
+            await exec(bundle.ssh, `${sudoPrefix}mv -f ${escapeShellArg(tmpConf)} ${escapeShellArg(confPath)}`);
+            await exec(bundle.ssh, `${sudoPrefix}ln -sfn ${escapeShellArg(confPath)} ${escapeShellArg(enabledPath)}`);
 
             log.info("Testing Nginx configuration syntax (nginx -t)...");
-            const testRes = await exec(bundle.ssh, "sudo -n nginx -t");
+            const testRes = await exec(bundle.ssh, `${sudoPrefix}nginx -t`);
             if (testRes.code !== 0) {
                 log.err(`Nginx configuration test failed: ${testRes.stderr}`);
                 throw new Error("Nginx config test failed. Configuration was not applied.");
             }
 
-            await exec(bundle.ssh, "sudo -n systemctl reload nginx");
+            await exec(bundle.ssh, `${sudoPrefix}systemctl reload nginx`);
             log.ok(`Nginx virtual host enabled and reloaded for ${primaryDomain}`);
         }
 
@@ -288,9 +355,9 @@ export async function setup(opts: SetupOptions) {
             const tmpService = `/tmp/${defaultAppName}.service`;
 
             await bundle.sftp.put(Buffer.from(systemdUnit, "utf8"), tmpService);
-            await exec(bundle.ssh, `sudo -n mv -f ${escapeShellArg(tmpService)} ${escapeShellArg(servicePath)}`);
-            await exec(bundle.ssh, "sudo -n systemctl daemon-reload");
-            await exec(bundle.ssh, `sudo -n systemctl enable ${escapeShellArg(defaultAppName)}`);
+            await exec(bundle.ssh, `${sudoPrefix}mv -f ${escapeShellArg(tmpService)} ${escapeShellArg(servicePath)}`);
+            await exec(bundle.ssh, `${sudoPrefix}systemctl daemon-reload`);
+            await exec(bundle.ssh, `${sudoPrefix}systemctl enable ${escapeShellArg(defaultAppName)}`);
             log.ok(`Systemd unit ${defaultAppName}.service enabled`);
         }
 
@@ -300,15 +367,15 @@ export async function setup(opts: SetupOptions) {
             const tmpWorker = `/tmp/${workerServiceName}.service`;
 
             await bundle.sftp.put(Buffer.from(workerUnit, "utf8"), tmpWorker);
-            await exec(bundle.ssh, `sudo -n mv -f ${escapeShellArg(tmpWorker)} ${escapeShellArg(workerPath)}`);
-            await exec(bundle.ssh, "sudo -n systemctl daemon-reload");
-            await exec(bundle.ssh, `sudo -n systemctl enable ${escapeShellArg(workerServiceName)}`);
+            await exec(bundle.ssh, `${sudoPrefix}mv -f ${escapeShellArg(tmpWorker)} ${escapeShellArg(workerPath)}`);
+            await exec(bundle.ssh, `${sudoPrefix}systemctl daemon-reload`);
+            await exec(bundle.ssh, `${sudoPrefix}systemctl enable ${escapeShellArg(workerServiceName)}`);
             log.ok(`Systemd queue worker ${workerServiceName}.service enabled`);
         }
 
         if (setupCertbot) {
             log.info("Running Certbot to obtain SSL certificate...");
-            const certbotCmd = `sudo -n certbot --nginx -d ${domains.map((d) => escapeShellArg(d)).join(" -d ")} --non-interactive --agree-tos -m admin@${primaryDomain} --redirect || true`;
+            const certbotCmd = `${sudoPrefix}certbot --nginx -d ${domains.map((d) => escapeShellArg(d)).join(" -d ")} --non-interactive --agree-tos -m admin@${primaryDomain} --redirect || true`;
             const certRes = await exec(bundle.ssh, certbotCmd);
             if (certRes.code === 0) {
                 log.ok(`Certbot SSL successfully provisioned for ${domains.join(", ")}`);
