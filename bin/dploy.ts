@@ -15,6 +15,7 @@ import { run } from "../src/commands/run.js";
 import { envPush, envPull, envSet } from "../src/commands/env.js";
 import { logs } from "../src/commands/logs.js";
 import { down, up } from "../src/commands/maintenance.js";
+import { siteBackup, siteRemove } from "../src/commands/site.js";
 import { setLogLevel } from "../src/core/logger.js";
 import { getAppVersion } from "../src/core/utils.js";
 import { setCachedPassphrase } from "../src/core/ssh.js";
@@ -283,6 +284,59 @@ async function main() {
         .option("-e, --env <env>", "Target environment (default: production)")
         .action(async (opts, cmd) => {
             await up(cmd.optsWithGlobals());
+        });
+
+    // 🌐 Site Management Commands
+    const siteCmd = program
+        .command("site")
+        .description("Manage remote site configurations, backups, and teardown");
+
+    siteCmd
+        .command("backup")
+        .description("Snapshot and download remote site configurations (Nginx, systemd, sudoers, .env)")
+        .option("-e, --env <env>", "Target environment (default: production)")
+        .option("-d, --domain <domain>", "Domain name(s) to backup")
+        .option("-o, --output <dir>", "Local directory to store the backup archive (default: ./backups)")
+        .option("--admin-user <user>", "Admin / sudo username for remote inspection")
+        .option("--admin-key <path>", "Path to admin SSH private key")
+        .option("--admin-password <pass>", "Admin user password or sudo password")
+        .action(async (opts, cmd) => {
+            await siteBackup(cmd.optsWithGlobals());
+        });
+
+    siteCmd
+        .command("remove")
+        .description("Safely decommission and remove remote site configurations and services")
+        .option("-e, --env <env>", "Target environment (default: production)")
+        .option("-d, --domain <domain>", "Domain name(s) to remove")
+        .option("-n, --dry-run", "Preview planned teardown without making any changes")
+        .option("-f, --force", "Bypass interactive confirmation prompt")
+        .option("--no-backup", "Skip automatic pre-removal configuration backup")
+        .option("--purge-ssl", "Also delete Certbot SSL certificates for the domain(s)")
+        .option("--purge-files", "Also delete application deployment directory (/var/www/<appName>)")
+        .option("--admin-user <user>", "Admin / sudo username for remote teardown")
+        .option("--admin-key <path>", "Path to admin SSH private key")
+        .option("--admin-password <pass>", "Admin user password or sudo password")
+        .action(async (opts, cmd) => {
+            await siteRemove(cmd.optsWithGlobals());
+        });
+
+    // Convenient top-level alias `dploy remove`
+    program
+        .command("remove")
+        .description("Safely decommission and remove remote site configurations (alias for 'site remove')")
+        .option("-e, --env <env>", "Target environment (default: production)")
+        .option("-d, --domain <domain>", "Domain name(s) to remove")
+        .option("-n, --dry-run", "Preview planned teardown without making any changes")
+        .option("-f, --force", "Bypass interactive confirmation prompt")
+        .option("--no-backup", "Skip automatic pre-removal configuration backup")
+        .option("--purge-ssl", "Also delete Certbot SSL certificates for the domain(s)")
+        .option("--purge-files", "Also delete application deployment directory (/var/www/<appName>)")
+        .option("--admin-user <user>", "Admin / sudo username for remote teardown")
+        .option("--admin-key <path>", "Path to admin SSH private key")
+        .option("--admin-password <pass>", "Admin user password or sudo password")
+        .action(async (opts, cmd) => {
+            await siteRemove(cmd.optsWithGlobals());
         });
 
     await program.parseAsync(process.argv);
