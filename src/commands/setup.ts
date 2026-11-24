@@ -451,12 +451,34 @@ export async function setup(opts: SetupOptions) {
 
             // Add limited passwordless sudo rules for service reloads
             const sudoersFile = `/etc/sudoers.d/dploy-${defaultAppName}`;
-            const sudoersContent = `${env.username} ALL=(ALL) NOPASSWD: /usr/bin/systemctl reload nginx, /usr/bin/systemctl restart ${defaultAppName}, /usr/bin/systemctl restart ${workerServiceName}, /usr/bin/systemctl status ${defaultAppName}\n`;
+            const reloadCommands: string[] = [
+                "/usr/bin/systemctl reload nginx",
+                `/usr/bin/systemctl restart ${defaultAppName}`,
+                `/usr/bin/systemctl restart ${workerServiceName}`,
+                `/usr/bin/systemctl status ${defaultAppName}`,
+            ];
+
+            // If PHP is used or provisioned, allow reloading and restarting PHP-FPM for OPcache reset
+            if (kind === "php" || env.provision?.runtime?.php || phpSocket) {
+                // Extract version from socket e.g. "unix:/run/php/php8.2-fpm.sock" or provision config
+                const versionMatch = (phpSocket || "").match(/php(\d+\.\d+)-fpm/);
+                const phpVer = versionMatch ? versionMatch[1] : (env.provision?.runtime?.php || "");
+                if (phpVer) {
+                    reloadCommands.push(`/usr/bin/systemctl reload php${phpVer}-fpm`);
+                    reloadCommands.push(`/usr/bin/systemctl restart php${phpVer}-fpm`);
+                }
+                reloadCommands.push("/usr/bin/systemctl reload php*-fpm");
+                reloadCommands.push("/usr/bin/systemctl restart php*-fpm");
+                reloadCommands.push("/usr/bin/systemctl reload php-fpm");
+                reloadCommands.push("/usr/bin/systemctl restart php-fpm");
+            }
+
+            const sudoersContent = `${env.username} ALL=(ALL) NOPASSWD: ${reloadCommands.join(", ")}\n`;
             await exec(
                 bundle.ssh,
                 `echo ${escapeShellArg(sudoersContent)} | ${sudoPrefix}tee ${escapeShellArg(sudoersFile)} > /dev/null && ${sudoPrefix}chmod 440 ${escapeShellArg(sudoersFile)}`
             );
-            log.ok(`User '${env.username}' provisioned and authorized with limited sudo rules`);
+            log.ok(`User '${env.username}' provisioned and authorized with limited sudo rules (including Nginx & PHP-FPM reload)`);
         }
 
         // Ensure deploy directory structure and permissions exist
