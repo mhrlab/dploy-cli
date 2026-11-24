@@ -26,18 +26,27 @@ export interface SiteOptions {
     adminUser?: string;
     adminKey?: string;
     adminPassword?: string;
+    asAdmin?: boolean;
+    asSudo?: boolean;
 }
 
 function resolveAdminConnection(env: EnvironmentConfig, opts: SiteOptions): { setupConnConfig: EnvironmentConfig; sudoPrefix: string } {
-    const adminUser = opts.adminUser || env.admin?.username;
-    const adminKey = opts.adminKey || env.admin?.ssh_key_path;
-    const adminPassword = opts.adminPassword || env.admin?.password;
+    const isExplicitAdminRequested = Boolean(opts.asAdmin || opts.asSudo || opts.adminUser || opts.adminKey || opts.adminPassword);
+
+    const adminUser = opts.adminUser || process.env.DPLOY_ADMIN_USER || (isExplicitAdminRequested ? env.admin?.username : env.admin?.username);
+
+    if ((opts.asAdmin || opts.asSudo) && !adminUser) {
+        throw new Error(`Admin credentials not found in 'admin' block of deploy.config.yml for this environment. Please configure 'admin:' or pass --admin-user.`);
+    }
+
+    const adminKey = opts.adminKey || process.env.DPLOY_ADMIN_KEY || env.admin?.ssh_key_path;
+    const adminPassword = opts.adminPassword || process.env.DPLOY_ADMIN_PASSWORD || env.admin?.password;
 
     const setupConnConfig: EnvironmentConfig = {
         ...env,
         username: adminUser || env.username,
-        ssh_key_path: adminKey ? expandTilde(adminKey) : env.ssh_key_path,
-        password: adminPassword || env.password,
+        ssh_key_path: adminKey ? expandTilde(adminKey) : (adminUser && adminUser !== env.username && !env.admin?.ssh_key_path ? env.ssh_key_path : (env.admin?.ssh_key_path ? expandTilde(env.admin.ssh_key_path) : env.ssh_key_path)),
+        password: adminPassword || (adminUser && adminUser !== env.username ? env.admin?.password : env.password),
         passphrase: env.admin?.passphrase || env.passphrase,
     };
 
@@ -51,7 +60,7 @@ function resolveSiteContext(cfg: any, envName: string, domainOverride?: string) 
     if (!env) {
         throw new Error(`Unknown environment: ${envName}`);
     }
-    if (!env.host || !env.username) {
+    if (!env.host && !env.hosts) {
         throw new Error(`Environment '${envName}' is missing required 'host' or 'username'`);
     }
 
@@ -61,10 +70,24 @@ function resolveSiteContext(cfg: any, envName: string, domainOverride?: string) 
     const domains: string[] = [];
     if (domainOverride) {
         domains.push(...domainOverride.split(/\s+/).filter(Boolean));
-    } else if (env.host && env.host !== "localhost") {
-        domains.push(env.host);
+    } else if (env.domain) {
+        domains.push(...String(env.domain).split(/\s+/).filter(Boolean));
+    } else if (Array.isArray(env.domains) && env.domains.length > 0) {
+        domains.push(...env.domains.map((d: any) => String(d).trim()));
+    } else if (cfg.domain) {
+        domains.push(...String(cfg.domain).split(/\s+/).filter(Boolean));
+    } else if (Array.isArray(cfg.domains) && cfg.domains.length > 0) {
+        domains.push(...cfg.domains.map((d: any) => String(d).trim()));
     } else {
-        domains.push("example.com");
+        // Auto-detect domain from deployTo path (e.g. /var/www/tunenest.in -> tunenest.in)
+        const deployBasename = deployTo.replace(/\/+$/, "").split("/").pop();
+        if (deployBasename && deployBasename.includes(".") && !deployBasename.includes(" ")) {
+            domains.push(deployBasename);
+        } else if (env.host && env.host !== "localhost") {
+            domains.push(env.host);
+        } else {
+            domains.push("example.com");
+        }
     }
 
     return { env, appName, deployTo, domains };
@@ -255,21 +278,42 @@ export async function siteInfo(opts: SiteOptions) {
         console.log(`  🌍 Nginx VHost:     ${isNginxAvail ? "Configured" : "Missing"} (${isNginxEnabled ? "Enabled" : "Disabled"})`);
 
         // Check if Nginx syntax is clean
-        const nginxTestRes = await exec(bundle.ssh, `${sudoPrefix}nginx -t`);
-        console.log(`  ⚙️  Nginx Syntax:    ${nginxTestRes.code === 0 ? "Valid (nginx -t passed)" : "Failed syntax test"}`);
+        const nginxTestRes = await exec(bundle.ssh, `${sudoPrefix}nginx -t 2>&1`);
+        let nginxStatusText = "Valid (nginx -t passed)";
+        if (nginxTestRes.code !== 0) {
+            const errOutput = (nginxTestRes.stdout || nginxTestRes.stderr || "").trim();
+            if (errOutput.includes("password is required") || errOutput.includes("sudo: a password is required") || errOutput.includes("not in sudoers")) {
+                nginxStatusText = "Requires sudo (specify --admin-user or configure env.admin)";
+            } else if (errOutput.includes("command not found") || errOutput.includes("not found")) {
+                nginxStatusText = "Nginx not installed";
+            } else {
+                const firstErr = errOutput.split(/\r?\n/).find((l: string) => l.toLowerCase().includes("emerg") || l.toLowerCase().includes("error") || l.toLowerCase().includes("failed")) || errOutput.split(/\r?\n/)[0];
+                nginxStatusText = `Failed (${firstErr || "syntax error"})`;
+            }
+        }
+        console.log(`  ⚙️  Nginx Syntax:    ${nginxStatusText}`);
 
-        // 3. Systemd App Service status
+        // 3. Systemd App Service status (only if a systemd unit actually exists on the remote host)
         const serviceName = `${appName}.service`;
-        const serviceStatusRes = await exec(bundle.ssh, `systemctl is-active ${escapeShellArg(appName)} 2>/dev/null || echo "inactive"`);
-        const serviceState = serviceStatusRes.stdout.trim();
-        console.log(`  ⚡ App Service:     ${serviceName} [${serviceState}]`);
+        const serviceExistsRes = await exec(bundle.ssh, `test -f /etc/systemd/system/${escapeShellArg(serviceName)} && echo "yes" || echo "no"`);
+        if (serviceExistsRes.stdout.trim() === "yes") {
+            const serviceStatusRes = await exec(bundle.ssh, `systemctl is-active ${escapeShellArg(appName)} 2>/dev/null || true`);
+            const serviceState = serviceStatusRes.stdout.trim().split(/\r?\n/)[0] || "inactive";
+            console.log(`  ⚡ App Service:     ${serviceName} [${serviceState}]`);
+        } else {
+            const isPhp = cfg.framework?.includes("php") || cfg.framework?.includes("codeigniter") || cfg.framework?.includes("laravel") || cfg.name?.toLowerCase().includes("codeigniter") || cfg.name?.toLowerCase().includes("php");
+            if (isPhp) {
+                console.log(`  ⚡ App Engine:      PHP-FPM (served via Nginx)`);
+            }
+        }
 
         // Worker Service status
         const workerName = `${appName}-worker.service`;
         const workerCheck = await exec(bundle.ssh, `test -f /etc/systemd/system/${escapeShellArg(workerName)} && echo "yes" || echo "no"`);
         if (workerCheck.stdout.trim() === "yes") {
-            const workerStatusRes = await exec(bundle.ssh, `systemctl is-active ${escapeShellArg(`${appName}-worker`)} 2>/dev/null || echo "inactive"`);
-            console.log(`  👷 Worker Service:  ${workerName} [${workerStatusRes.stdout.trim()}]`);
+            const workerStatusRes = await exec(bundle.ssh, `systemctl is-active ${escapeShellArg(`${appName}-worker`)} 2>/dev/null || true`);
+            const workerState = workerStatusRes.stdout.trim().split(/\r?\n/)[0] || "inactive";
+            console.log(`  👷 Worker Service:  ${workerName} [${workerState}]`);
         }
 
         // 4. SSL Certificate status

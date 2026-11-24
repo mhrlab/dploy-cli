@@ -189,3 +189,98 @@ environments:
         await fs.remove(tmpDir);
     }
 });
+
+test("site commands auto-detect domain from deployTo path (e.g. /var/www/tunenest.in)", async () => {
+    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "dploy-site-detect-"));
+    const prevCwd = process.cwd();
+
+    try {
+        process.chdir(tmpDir);
+        await fs.writeJson("package.json", { name: "tunenest", version: "1.0.0" });
+        await fs.writeFile(
+            "deploy.config.yml",
+            `
+name: "CodeIgniter 4 + Nginx"
+environments:
+  staging:
+    host: 68.233.106.193
+    username: deploy
+    deployTo: /var/www/tunenest.in
+`
+        );
+
+        // Dry-run removal to verify it resolves domain tunenest.in without manual --domain flag
+        await assert.doesNotReject(async () => {
+            await siteRemove({
+                env: "staging",
+                dryRun: true,
+                force: true,
+            });
+        });
+    } finally {
+        process.chdir(prevCwd);
+        await fs.remove(tmpDir);
+    }
+});
+
+test("site commands with --as-admin use env.admin credentials and throw when missing", async () => {
+    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "dploy-site-admin-"));
+    const prevCwd = process.cwd();
+
+    try {
+        process.chdir(tmpDir);
+        await fs.writeJson("package.json", { name: "test-admin", version: "1.0.0" });
+        await fs.writeFile(
+            "deploy.config.yml",
+            `
+name: "test-admin"
+environments:
+  staging:
+    host: 192.168.1.50
+    username: deploy
+    deployTo: /var/www/test-admin
+`
+        );
+
+        // When admin: is not configured, --as-admin should throw informative error
+        await assert.rejects(
+            async () => {
+                await siteRemove({
+                    env: "staging",
+                    dryRun: true,
+                    force: true,
+                    asAdmin: true,
+                });
+            },
+            /Admin credentials not found/
+        );
+
+        // Now add admin: block to deploy.config.yml
+        await fs.writeFile(
+            "deploy.config.yml",
+            `
+name: "test-admin"
+environments:
+  staging:
+    host: 192.168.1.50
+    username: deploy
+    deployTo: /var/www/test-admin
+    admin:
+      username: root
+`
+        );
+
+        // Should resolve cleanly with root credentials
+        await assert.doesNotReject(async () => {
+            await siteRemove({
+                env: "staging",
+                dryRun: true,
+                force: true,
+                asAdmin: true,
+            });
+        });
+    } finally {
+        process.chdir(prevCwd);
+        await fs.remove(tmpDir);
+    }
+});

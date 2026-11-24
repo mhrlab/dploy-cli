@@ -135,15 +135,16 @@ Remote access without managing passwords or keys manually.
 # Interactive TTY shell directly in <deployTo>/current
 dploy ssh [-e <env>]
 
-# Execute remote command
+# Execute remote command (use --as-admin to execute via env.admin credentials)
 dploy run "php artisan migrate --force" [-e <env>]
 dploy run "npm run db:migrate" [-e <env>]
+dploy run "systemctl restart php8.2-fpm" --as-admin [-e <env>]
 ```
 
 ### `dploy logs`
-Real-time remote log streaming (`tail -f`). Supports custom configured paths in `deploy.config.yml`, framework logs (`storage/logs`, `writable/logs`), and elevated `--sudo` streaming.
+Real-time remote log streaming (`tail -f`). Supports custom configured paths in `deploy.config.yml`, framework logs (`storage/logs`, `writable/logs`), and elevated streaming via `--as-admin` (alias `--as-sudo`) using `env.admin` credentials.
 ```bash
-dploy logs [-e <env>] [-f, --follow] [-n <lines>] [--type <app|nginx|pm2|systemd>] [--file <path>] [--sudo]
+dploy logs [-e <env>] [-f, --follow] [-n <lines>] [--type <app|nginx|pm2|systemd>] [--file <path>] [--as-admin] [--sudo]
 ```
 
 ### `dploy env` (aliases: `dploy env:*`)
@@ -155,18 +156,18 @@ dploy env set KEY=VALUE [-e <env>]
 ```
 
 ### `dploy site`
-Remote server and website lifecycle management.
+Remote server and website lifecycle management. Automatically detects domain names from `env.domain`, `cfg.domain`, or `deployTo` path (e.g. `/var/www/tunenest.in`), with support for `--as-admin` (or `--as-sudo`) to connect using `env.admin` credentials.
 ```bash
 # Inspect live remote Nginx virtual host, systemd status, SSL, and current release
-dploy site info [-e <env>] [-d <domain>]
+dploy site info [-e <env>] [-d <domain>] [--as-admin]
 
 # Create a local timestamped snapshot of Nginx, systemd units, sudoers, and .env
-dploy site backup [-e <env>] [-d <domain>] [-o ./backups]
+dploy site backup [-e <env>] [-d <domain>] [-o ./backups] [--as-admin]
 
 # Switch SSL mode without re-running setup (Certbot, Cloudflare Flexible, Origin CA)
-dploy site ssl [-e <env>] [--ssl cloudflare-flexible] [--cloudflare]
+dploy site ssl [-e <env>] [--ssl cloudflare-flexible] [--cloudflare] [--as-admin]
 
 # Decommission and clean up site services and Nginx configs (alias: dploy remove)
-dploy site remove [-e <env>] [-d <domain>] [--dry-run] [--force]
-dploy remove [-e <env>]
+dploy site remove [-e <env>] [-d <domain>] [--dry-run] [--force] [--as-admin]
+dploy remove [-e <env>] [--as-admin]
 ```

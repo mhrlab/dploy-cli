@@ -1,7 +1,7 @@
-import { loadConfig, getEnvName } from "../core/config.js";
+import { loadConfig, getEnvName, EnvironmentConfig } from "../core/config.js";
 import { connect, close } from "../core/ssh.js";
 import { log } from "../core/logger.js";
-import { posixJoin, escapeShellArg } from "../core/utils.js";
+import { posixJoin, escapeShellArg, expandTilde } from "../core/utils.js";
 
 export async function logs(opts: {
     env?: string;
@@ -10,6 +10,11 @@ export async function logs(opts: {
     file?: string;
     type?: "app" | "nginx" | "pm2" | "systemd" | string;
     sudo?: boolean;
+    asAdmin?: boolean;
+    asSudo?: boolean;
+    adminUser?: string;
+    adminKey?: string;
+    adminPassword?: string;
 }) {
     const cfg = await loadConfig();
     const envName = getEnvName(opts.env);
@@ -19,9 +24,35 @@ export async function logs(opts: {
         throw new Error(`Environment '${envName}' is missing or lacks deployTo path`);
     }
 
+    // Resolve privileged/admin connection when requested
+    const isExplicitAdmin = Boolean(opts.asAdmin || opts.asSudo);
+    const adminUser = opts.adminUser || process.env.DPLOY_ADMIN_USER || (isExplicitAdmin || opts.sudo ? env.admin?.username : undefined);
+
+    if (isExplicitAdmin && !adminUser) {
+        throw new Error(`Admin credentials not found in 'admin' block of deploy.config.yml for environment '${envName}'. Please configure 'admin:' or pass --admin-user.`);
+    }
+
+    const adminKey = opts.adminKey || process.env.DPLOY_ADMIN_KEY || env.admin?.ssh_key_path;
+    const adminPassword = opts.adminPassword || process.env.DPLOY_ADMIN_PASSWORD || env.admin?.password;
+
+    let connConfig: EnvironmentConfig = env;
+    let sudoPrefix = "";
+
+    if (adminUser) {
+        connConfig = {
+            ...env,
+            username: adminUser,
+            ssh_key_path: adminKey ? expandTilde(adminKey) : (adminUser === env.username ? env.ssh_key_path : (env.admin?.ssh_key_path ? expandTilde(env.admin.ssh_key_path) : env.ssh_key_path)),
+            password: adminPassword || (adminUser === env.username ? env.password : env.admin?.password),
+            passphrase: env.admin?.passphrase || env.passphrase,
+        };
+        sudoPrefix = adminUser === "root" ? "" : "sudo -n ";
+    } else if (opts.sudo) {
+        sudoPrefix = "sudo -n ";
+    }
+
     const lineCount = Number(opts.lines) || 50;
     const isFollow = opts.follow ?? false;
-    const sudoPrefix = opts.sudo ? "sudo -n " : "";
 
     let targetCmd: string;
 
@@ -57,10 +88,10 @@ export async function logs(opts: {
             `|| echo "No application logs found in ${sharedLogDir}, ${appLogDir}, ${laravelLogDir}, or ${ci4LogDir}"`;
     }
 
-    log.info(`Streaming logs from ${env.username}@${env.host}:`);
+    log.info(`Streaming logs from ${connConfig.username}@${connConfig.host}:`);
     log.debug(`Executing: ${targetCmd}`);
 
-    const bundle = await connect(env);
+    const bundle = await connect(connConfig);
 
     return new Promise<void>((resolve, reject) => {
         bundle.ssh.exec(targetCmd, (err, stream) => {

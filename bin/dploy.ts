@@ -224,6 +224,11 @@ async function main() {
         .description("Execute an ad-hoc command on the remote server inside current release")
         .option("-e, --env <env>", "Target environment (default: production)")
         .option("--release <name>", "Execute inside a specific release directory instead of current")
+        .option("--as-admin", "Execute command as admin user defined in deploy.config.yml")
+        .option("--as-sudo", "Alias for --as-admin")
+        .option("--admin-user <user>", "Override admin username for command execution (e.g. root)")
+        .option("--admin-key <path>", "Path to admin SSH private key")
+        .option("--admin-password <pass>", "Admin user password or sudo password")
         .action(async (command, opts, cmd) => {
             await run(command, cmd.optsWithGlobals());
         });
@@ -303,6 +308,11 @@ async function main() {
         .option("--type <type>", "Log type: app, nginx, pm2, or systemd")
         .option("--file <path>", "Specific remote log file to tail")
         .option("--sudo", "Execute log reading command with sudo privileges")
+        .option("--as-admin", "Connect using admin credentials defined in deploy.config.yml")
+        .option("--as-sudo", "Alias for --as-admin")
+        .option("--admin-user <user>", "Admin / sudo username for remote privileged log streaming (e.g. root)")
+        .option("--admin-key <path>", "Path to admin SSH private key")
+        .option("--admin-password <pass>", "Admin user password or sudo password")
         .action(async (opts, cmd) => {
             await logs(cmd.optsWithGlobals());
         });
@@ -336,6 +346,8 @@ async function main() {
         .option("-e, --env <env>", "Target environment (default: production)")
         .option("-d, --domain <domain>", "Domain name(s) to backup")
         .option("-o, --output <dir>", "Local directory to store the backup archive (default: ./backups)")
+        .option("--as-admin", "Connect using admin credentials defined in deploy.config.yml")
+        .option("--as-sudo", "Alias for --as-admin")
         .option("--admin-user <user>", "Admin / sudo username for remote inspection")
         .option("--admin-key <path>", "Path to admin SSH private key")
         .option("--admin-password <pass>", "Admin user password or sudo password")
@@ -353,6 +365,8 @@ async function main() {
         .option("--no-backup", "Skip automatic pre-removal configuration backup")
         .option("--purge-ssl", "Also delete Certbot SSL certificates for the domain(s)")
         .option("--purge-files", "Also delete application deployment directory (/var/www/<appName>)")
+        .option("--as-admin", "Connect using admin credentials defined in deploy.config.yml")
+        .option("--as-sudo", "Alias for --as-admin")
         .option("--admin-user <user>", "Admin / sudo username for remote teardown")
         .option("--admin-key <path>", "Path to admin SSH private key")
         .option("--admin-password <pass>", "Admin user password or sudo password")
@@ -365,6 +379,8 @@ async function main() {
         .description("Inspect remote site status: Nginx virtual host, systemd services, SSL certificates, and releases")
         .option("-e, --env <env>", "Target environment (default: production)")
         .option("-d, --domain <domain>", "Domain name to inspect")
+        .option("--as-admin", "Connect using admin credentials defined in deploy.config.yml")
+        .option("--as-sudo", "Alias for --as-admin")
         .option("--admin-user <user>", "Admin / sudo username for remote inspection")
         .option("--admin-key <path>", "Path to admin SSH private key")
         .option("--admin-password <pass>", "Admin user password or sudo password")
@@ -381,6 +397,8 @@ async function main() {
         .option("--cloudflare", "Shortcut for Cloudflare Flexible SSL with Real-IP headers")
         .option("--certbot", "Shortcut for Certbot Let's Encrypt automated SSL")
         .option("-n, --dry-run", "Preview updated Nginx configuration without applying")
+        .option("--as-admin", "Connect using admin credentials defined in deploy.config.yml")
+        .option("--as-sudo", "Alias for --as-admin")
         .option("--admin-user <user>", "Admin / sudo username for remote configuration")
         .option("--admin-key <path>", "Path to admin SSH private key")
         .option("--admin-password <pass>", "Admin user password or sudo password")
@@ -399,6 +417,8 @@ async function main() {
         .option("--no-backup", "Skip automatic pre-removal configuration backup")
         .option("--purge-ssl", "Also delete Certbot SSL certificates for the domain(s)")
         .option("--purge-files", "Also delete application deployment directory (/var/www/<appName>)")
+        .option("--as-admin", "Connect using admin credentials defined in deploy.config.yml")
+        .option("--as-sudo", "Alias for --as-admin")
         .option("--admin-user <user>", "Admin / sudo username for remote teardown")
         .option("--admin-key <path>", "Path to admin SSH private key")
         .option("--admin-password <pass>", "Admin user password or sudo password")
