@@ -17,14 +17,16 @@
 | [`dploy clean`](#dploy-clean) | Prune old release directories on the remote server |
 | [`dploy provision`](#dploy-provision) | Idempotently prepare remote server directory layout & permissions |
 | [`dploy setup`](#dploy-setup) | Interactive server wizard for Nginx, Systemd, Certbot, & Queue workers |
-| [`dploy down`](#dploy-down) | Put application into maintenance mode |
-| [`dploy up`](#dploy-up) | Disable maintenance mode and restore traffic |
-| [`dploy ssh`](#dploy-ssh) | Open interactive native SSH session into `current/` |
-| [`dploy run`](#dploy-run) | Execute arbitrary remote command in `current/` |
+| [`dploy down`](#dploy-down--dploy-up) | Put application into HTTP 503 maintenance mode with styled template |
+| [`dploy up`](#dploy-down--dploy-up) | Disable maintenance mode and restore live web traffic |
+| [`dploy ssh`](#dploy-ssh--dploy-run) | Open interactive native SSH session into `current/` |
+| [`dploy run`](#dploy-ssh--dploy-run) | Execute arbitrary remote command in `current/` |
 | [`dploy logs`](#dploy-logs) | Stream remote logs (`tail -f`) directly to your terminal |
-| [`dploy env:push`](#dploy-envpush) | Safely upload local `.env` to `<deployTo>/shared/.env` with backup |
-| [`dploy env:pull`](#dploy-envpull) | Download remote shared `.env` file locally |
-| [`dploy env:set`](#dploy-envset) | Update or append a single `KEY=VALUE` pair in remote `.env` |
+| [`dploy env`](#dploy-env) | Manage remote shared `.env` variables (`push`, `pull`, `set`) |
+| [`dploy site info`](#dploy-site-info) | Inspect remote site status (Nginx vhost, systemd, SSL, release) |
+| [`dploy site backup`](#dploy-site-backup) | Snapshot remote Nginx, systemd, sudoers, & `.env` into local `.tar.gz` |
+| [`dploy site ssl`](#dploy-site-ssl) | Switch SSL modes on the fly (Certbot, Cloudflare Flexible, Origin CA) |
+| [`dploy site remove`](#dploy-site-remove) | Safely decommission site with confirmation and optional backup |
 
 ---
 
@@ -121,7 +123,7 @@ dploy setup [options]
   - `--yes`: Run non-interactively with defaults or provided CLI flags.
 
 ### `dploy down` & `dploy up`
-Manage application maintenance mode.
+Manage application maintenance mode. Automatically serves a responsive, dark-themed HTTP 503 maintenance page via Nginx without requiring an Nginx reload.
 ```bash
 dploy down [-e <env>] [--message "Updating database"] [--retry 120]
 dploy up [-e <env>]
@@ -139,15 +141,32 @@ dploy run "npm run db:migrate" [-e <env>]
 ```
 
 ### `dploy logs`
-Real-time remote log streaming (`tail -f`).
+Real-time remote log streaming (`tail -f`). Supports custom configured paths in `deploy.config.yml`, framework logs (`storage/logs`, `writable/logs`), and elevated `--sudo` streaming.
 ```bash
-dploy logs [-e <env>] [-f, --follow] [-n <lines>] [--type <app|nginx|pm2|systemd>]
+dploy logs [-e <env>] [-f, --follow] [-n <lines>] [--type <app|nginx|pm2|systemd>] [--file <path>] [--sudo]
 ```
 
-### `dploy env:*`
+### `dploy env` (aliases: `dploy env:*`)
 Manage remote environment variables securely.
 ```bash
-dploy env:push [-e <env>] [--file <local-path>] [--force]
-dploy env:pull [-e <env>] [--output <local-path>] [--force]
-dploy env:set KEY=VALUE [-e <env>]
+dploy env push [-e <env>] [--file <local-path>] [--force]
+dploy env pull [-e <env>] [--out <local-path>] [--force]
+dploy env set KEY=VALUE [-e <env>]
+```
+
+### `dploy site`
+Remote server and website lifecycle management.
+```bash
+# Inspect live remote Nginx virtual host, systemd status, SSL, and current release
+dploy site info [-e <env>] [-d <domain>]
+
+# Create a local timestamped snapshot of Nginx, systemd units, sudoers, and .env
+dploy site backup [-e <env>] [-d <domain>] [-o ./backups]
+
+# Switch SSL mode without re-running setup (Certbot, Cloudflare Flexible, Origin CA)
+dploy site ssl [-e <env>] [--ssl cloudflare-flexible] [--cloudflare]
+
+# Decommission and clean up site services and Nginx configs (alias: dploy remove)
+dploy site remove [-e <env>] [-d <domain>] [--dry-run] [--force]
+dploy remove [-e <env>]
 ```
