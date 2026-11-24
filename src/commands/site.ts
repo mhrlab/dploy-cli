@@ -2,7 +2,7 @@ import inquirer from "inquirer";
 import { loadConfig, getEnvName, EnvironmentConfig } from "../core/config.js";
 import { connect, close, exec } from "../core/ssh.js";
 import { log } from "../core/logger.js";
-import { expandTilde, getReadableFileSize, escapeShellArg, posixJoin } from "../core/utils.js";
+import { expandTilde, getReadableFileSize, escapeShellArg, posixJoin, toSudoersSlug } from "../core/utils.js";
 import { backupSiteConfigurations } from "../features/site-backup.js";
 import { removeSiteConfigurations } from "../features/site-remove.js";
 import { generateNginxConfig, AppKind, SslMode } from "../features/server-wizard.js";
@@ -192,7 +192,8 @@ export async function siteRemove(opts: SiteOptions) {
         log.info(`[dry-run] Host: ${setupConnConfig.host}`);
         log.info(`[dry-run] Domains to remove from Nginx: ${domains.join(", ")}`);
         log.info(`[dry-run] Services to stop and remove: ${appName}.service, ${appName}-worker.service`);
-        log.info(`[dry-run] Sudoers rule to remove: /etc/sudoers.d/dploy-${appName}`);
+        const appSlug = toSudoersSlug(appName);
+        log.info(`[dry-run] Sudoers rule to remove: /etc/sudoers.d/dploy-${appSlug}`);
         if (opts.purgeSsl) log.info(`[dry-run] Certbot certificate to delete: ${domains.join(", ")}`);
         if (opts.purgeFiles) log.info(`[dry-run] Deploy directory to remove: ${deployTo}`);
         return;

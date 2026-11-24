@@ -1,6 +1,6 @@
 import { Client } from "ssh2";
 import { exec } from "../core/ssh.js";
-import { escapeShellArg } from "../core/utils.js";
+import { escapeShellArg, toSudoersSlug } from "../core/utils.js";
 import { log } from "../core/logger.js";
 
 export interface SiteRemovePlan {
@@ -73,9 +73,11 @@ export async function removeSiteConfigurations(
 
     // 3. Remove Sudoers File
     if (plan.purgeSudoers !== false) {
-        const sudoersFile = `/etc/sudoers.d/dploy-${plan.appName}`;
+        const appSlug = toSudoersSlug(plan.appName);
+        const sudoersFile = `/etc/sudoers.d/dploy-${appSlug}`;
+        const legacyFile = `/etc/sudoers.d/dploy-${plan.appName}`;
         log.info(`Removing sudoers rule ${sudoersFile}...`);
-        await exec(ssh, `${sudo}rm -f ${escapeShellArg(sudoersFile)}`);
+        await exec(ssh, `${sudo}rm -f ${escapeShellArg(sudoersFile)} ${escapeShellArg(legacyFile)}`);
         results.push({ step: "sudoers", success: true, message: `Removed ${sudoersFile}` });
     }
 

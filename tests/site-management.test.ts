@@ -284,3 +284,11 @@ environments:
         await fs.remove(tmpDir);
     }
 });
+
+test("toSudoersSlug sanitizes names with spaces and symbols into valid sudoers filenames", async () => {
+    const { toSudoersSlug } = await import("../src/core/utils.js");
+    assert.equal(toSudoersSlug("CodeIgniter 4 + Nginx"), "codeigniter-4-nginx");
+    assert.equal(toSudoersSlug("My App (Prod)"), "my-app-prod");
+    assert.equal(toSudoersSlug("test_app.v2"), "test_app-v2");
+    assert.equal(toSudoersSlug(""), "app");
+});

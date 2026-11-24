@@ -5,7 +5,7 @@ import os from "node:os";
 import { loadConfig, getEnvName, EnvironmentConfig } from "../core/config.js";
 import { connect, close, exec } from "../core/ssh.js";
 import { log } from "../core/logger.js";
-import { posixJoin, escapeShellArg, expandTilde } from "../core/utils.js";
+import { posixJoin, escapeShellArg, expandTilde, toSudoersSlug } from "../core/utils.js";
 import { printElevatedWarning } from "../core/banner.js";
 import {
     generateNginxConfig,
@@ -536,29 +536,56 @@ export async function setup(opts: SetupOptions) {
                     break;
                 }
             }
+            log.ok(`User '${env.username}' provisioned and authorized.`);
+        }
 
-            // Add limited passwordless sudo rules for service reloads
-            const sudoersFile = `/etc/sudoers.d/dploy-${defaultAppName}`;
+        // Add limited passwordless sudo rules for service reloads (always ensure this exists for non-root deploy users)
+        if (env.username && env.username !== "root") {
+            const appSlug = toSudoersSlug(defaultAppName);
+            const sudoersFile = `/etc/sudoers.d/dploy-${appSlug}`;
+
             const reloadCommands: string[] = [
                 "/usr/bin/systemctl reload nginx",
-                `/usr/bin/systemctl restart ${defaultAppName}`,
-                `/usr/bin/systemctl restart ${workerServiceName}`,
-                `/usr/bin/systemctl status ${defaultAppName}`,
+                "/bin/systemctl reload nginx",
+                "/usr/bin/systemctl restart nginx",
+                "/bin/systemctl restart nginx",
+                "/usr/bin/systemctl status nginx",
+                "/bin/systemctl status nginx",
+                "/usr/sbin/nginx -t",
+                "/usr/bin/nginx -t",
+                "/usr/bin/systemctl reload php*-fpm",
+                "/bin/systemctl reload php*-fpm",
+                "/usr/bin/systemctl restart php*-fpm",
+                "/bin/systemctl restart php*-fpm",
+                "/usr/bin/systemctl status php*-fpm",
+                "/bin/systemctl status php*-fpm",
+                "/usr/bin/systemctl reload php-fpm",
+                "/bin/systemctl reload php-fpm",
+                "/usr/bin/systemctl restart php-fpm",
+                "/bin/systemctl restart php-fpm",
             ];
 
-            // If PHP is used or provisioned, allow reloading and restarting PHP-FPM for OPcache reset
-            if (kind === "php" || env.provision?.runtime?.php || phpSocket) {
-                // Extract version from socket e.g. "unix:/run/php/php8.2-fpm.sock" or provision config
-                const versionMatch = (phpSocket || "").match(/php(\d+\.\d+)-fpm/);
-                const phpVer = versionMatch ? versionMatch[1] : (env.provision?.runtime?.php || "");
-                if (phpVer) {
-                    reloadCommands.push(`/usr/bin/systemctl reload php${phpVer}-fpm`);
-                    reloadCommands.push(`/usr/bin/systemctl restart php${phpVer}-fpm`);
-                }
-                reloadCommands.push("/usr/bin/systemctl reload php*-fpm");
-                reloadCommands.push("/usr/bin/systemctl restart php*-fpm");
-                reloadCommands.push("/usr/bin/systemctl reload php-fpm");
-                reloadCommands.push("/usr/bin/systemctl restart php-fpm");
+            // If an app service is configured or requested
+            if (kind === "node" || systemdUnit) {
+                reloadCommands.push(
+                    `/usr/bin/systemctl restart ${appSlug}`,
+                    `/bin/systemctl restart ${appSlug}`,
+                    `/usr/bin/systemctl reload ${appSlug}`,
+                    `/bin/systemctl reload ${appSlug}`,
+                    `/usr/bin/systemctl status ${appSlug}`,
+                    `/bin/systemctl status ${appSlug}`
+                );
+            }
+
+            if (workerUnit) {
+                reloadCommands.push(
+                    `/usr/bin/systemctl restart ${appSlug}-worker`,
+                    `/bin/systemctl restart ${appSlug}-worker`,
+                    `/usr/bin/systemctl reload ${appSlug}-worker`,
+                    `/bin/systemctl reload ${appSlug}-worker`,
+                    `/usr/bin/systemctl status ${appSlug}-worker`,
+                    `/bin/systemctl status ${appSlug}-worker`
+                );
             }
 
             const sudoersContent = `${env.username} ALL=(ALL) NOPASSWD: ${reloadCommands.join(", ")}\n`;
@@ -566,7 +593,7 @@ export async function setup(opts: SetupOptions) {
                 bundle.ssh,
                 `echo ${escapeShellArg(sudoersContent)} | ${sudoPrefix}tee ${escapeShellArg(sudoersFile)} > /dev/null && ${sudoPrefix}chmod 440 ${escapeShellArg(sudoersFile)}`
             );
-            log.ok(`User '${env.username}' provisioned and authorized with limited sudo rules (including Nginx & PHP-FPM reload)`);
+            log.ok(`Configured passwordless sudo rules for '${env.username}' in ${sudoersFile} (Nginx, PHP-FPM, and systemctl)`);
         }
 
         // Ensure deploy directory structure and permissions exist

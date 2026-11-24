@@ -301,3 +301,12 @@ export async function mapConcurrent<T, R>(
     await Promise.all(workers);
     return results;
 }
+
+/**
+ * Sanitize an application name for Linux /etc/sudoers.d/ filenames and systemd units.
+ * Linux sudo strictly rejects any file in /etc/sudoers.d/ containing spaces, dots, or non-alphanumeric chars.
+ */
+export function toSudoersSlug(name: string): string {
+    const slug = name.toLowerCase().replace(/[^a-z0-9_-]/g, "-").replace(/-+/g, "-").replace(/^-|-$/g, "");
+    return slug || "app";
+}

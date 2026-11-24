@@ -178,7 +178,7 @@ export async function sendNotification(target: NotificationTarget, payload: Noti
             const controller = new AbortController();
             const timeoutId = setTimeout(() => controller.abort(), 5000);
             try {
-                await fetch(tgUrl, {
+                const res = await fetch(tgUrl, {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({
@@ -188,6 +188,12 @@ export async function sendNotification(target: NotificationTarget, payload: Noti
                     }),
                     signal: controller.signal,
                 });
+                if (!res.ok) {
+                    const errBody = await res.text().catch(() => "");
+                    log.warn(`[notifications] Telegram API returned HTTP ${res.status}: ${errBody}`);
+                } else {
+                    log.verbose(`[notifications] Successfully delivered ${payload.event} notification to Telegram`);
+                }
             } finally {
                 clearTimeout(timeoutId);
             }
@@ -212,7 +218,7 @@ export async function sendNotification(target: NotificationTarget, payload: Noti
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 5000);
         try {
-            await fetch(targetUrl, {
+            const res = await fetch(targetUrl, {
                 method: "POST",
                 headers: {
                     "Content-Type": "application/json",
@@ -221,6 +227,12 @@ export async function sendNotification(target: NotificationTarget, payload: Noti
                 body: JSON.stringify(body),
                 signal: controller.signal,
             });
+            if (!res.ok) {
+                const errBody = await res.text().catch(() => "");
+                log.warn(`[notifications] ${channel.toUpperCase()} webhook returned HTTP ${res.status}: ${errBody}`);
+            } else {
+                log.verbose(`[notifications] Successfully delivered ${payload.event} notification to ${channel}`);
+            }
         } finally {
             clearTimeout(timeoutId);
         }
