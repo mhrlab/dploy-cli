@@ -14,6 +14,24 @@ import {
     SystemdConfigParams,
 } from "../features/server-wizard.js";
 
+/**
+ * Write a string content safely to a remote file, using sudo tee if needed.
+ */
+async function writeRemotePrivilegedFile(
+    ssh: any,
+    targetPath: string,
+    content: string,
+    sudoPrefix: string
+): Promise<void> {
+    const base64 = Buffer.from(content, "utf8").toString("base64");
+    // Decode base64 remotely and write via sudo tee without needing SFTP write permission on /tmp or system directories
+    const cmd = `echo ${escapeShellArg(base64)} | base64 -d | ${sudoPrefix}tee ${escapeShellArg(targetPath)} > /dev/null`;
+    const res = await exec(ssh, cmd);
+    if (res.code !== 0) {
+        throw new Error(`Failed to write ${targetPath}: ${res.stderr || res.stdout}`);
+    }
+}
+
 export interface SetupOptions {
     env?: string;
     dryRun?: boolean;
@@ -331,11 +349,7 @@ export async function setup(opts: SetupOptions) {
             const confPath = `/etc/nginx/sites-available/${primaryDomain}`;
             const enabledPath = `/etc/nginx/sites-enabled/${primaryDomain}`;
 
-            // Upload via tmp file and sudo move
-            const tmpConf = `/tmp/nginx-${primaryDomain}.conf`;
-            await bundle.sftp.put(Buffer.from(nginxConf, "utf8"), tmpConf);
-
-            await exec(bundle.ssh, `${sudoPrefix}mv -f ${escapeShellArg(tmpConf)} ${escapeShellArg(confPath)}`);
+            await writeRemotePrivilegedFile(bundle.ssh, confPath, nginxConf, sudoPrefix);
             await exec(bundle.ssh, `${sudoPrefix}ln -sfn ${escapeShellArg(confPath)} ${escapeShellArg(enabledPath)}`);
 
             log.info("Testing Nginx configuration syntax (nginx -t)...");
@@ -352,10 +366,8 @@ export async function setup(opts: SetupOptions) {
         if (systemdUnit) {
             log.info(`Configuring systemd service ${defaultAppName}.service...`);
             const servicePath = `/etc/systemd/system/${defaultAppName}.service`;
-            const tmpService = `/tmp/${defaultAppName}.service`;
 
-            await bundle.sftp.put(Buffer.from(systemdUnit, "utf8"), tmpService);
-            await exec(bundle.ssh, `${sudoPrefix}mv -f ${escapeShellArg(tmpService)} ${escapeShellArg(servicePath)}`);
+            await writeRemotePrivilegedFile(bundle.ssh, servicePath, systemdUnit, sudoPrefix);
             await exec(bundle.ssh, `${sudoPrefix}systemctl daemon-reload`);
             await exec(bundle.ssh, `${sudoPrefix}systemctl enable ${escapeShellArg(defaultAppName)}`);
             log.ok(`Systemd unit ${defaultAppName}.service enabled`);
@@ -364,10 +376,8 @@ export async function setup(opts: SetupOptions) {
         if (workerUnit) {
             log.info(`Configuring queue worker service ${workerServiceName}.service...`);
             const workerPath = `/etc/systemd/system/${workerServiceName}.service`;
-            const tmpWorker = `/tmp/${workerServiceName}.service`;
 
-            await bundle.sftp.put(Buffer.from(workerUnit, "utf8"), tmpWorker);
-            await exec(bundle.ssh, `${sudoPrefix}mv -f ${escapeShellArg(tmpWorker)} ${escapeShellArg(workerPath)}`);
+            await writeRemotePrivilegedFile(bundle.ssh, workerPath, workerUnit, sudoPrefix);
             await exec(bundle.ssh, `${sudoPrefix}systemctl daemon-reload`);
             await exec(bundle.ssh, `${sudoPrefix}systemctl enable ${escapeShellArg(workerServiceName)}`);
             log.ok(`Systemd queue worker ${workerServiceName}.service enabled`);
