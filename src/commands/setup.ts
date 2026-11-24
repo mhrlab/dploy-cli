@@ -516,8 +516,16 @@ export async function setup(opts: SetupOptions) {
 
             // Symlink current -> releases/0.0.0
             const currentSymlink = posixJoin(deployTo, "current");
-            await exec(bundle.ssh, `ln -sfn ${escapeShellArg(initialReleaseDir)} ${escapeShellArg(currentSymlink)}`);
-            log.ok(`Live placeholder activated at ${primaryDomain} (linked to 0.0.0)`);
+            const symlinkRes = await exec(
+                bundle.ssh,
+                `${sudoPrefix}ln -sfn ${escapeShellArg(initialReleaseDir)} ${escapeShellArg(currentSymlink)} && ` +
+                `${sudoPrefix}chown -h ${escapeShellArg(deployUser)}:www-data ${escapeShellArg(currentSymlink)}`
+            );
+            if (symlinkRes.code !== 0) {
+                log.warn(`Failed to create current symlink: ${symlinkRes.stderr || symlinkRes.stdout}`);
+            } else {
+                log.ok(`Live placeholder activated at ${primaryDomain} (linked to 0.0.0)`);
+            }
         }
 
         if (nginxConf) {
