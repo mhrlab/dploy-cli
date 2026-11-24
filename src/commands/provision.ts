@@ -10,7 +10,7 @@ import {
 } from "../features/provisioner.js";
 
 export async function provision(opts: ProvisionOptions = {}): Promise<ProvisionReport> {
-    printElevatedWarning("dploy provision", "Installs runtime dependencies, creates system directories, and assigns ownership.");
+    printElevatedWarning("dploy provision", "Installs runtime packages, creates system directories, and assigns ownership.");
     log.debug(`Provision command started with options: ${JSON.stringify(opts)}`);
 
     const cfg = await loadConfig();

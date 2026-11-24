@@ -59,13 +59,21 @@ export function printElevatedWarning(commandName: string, reason?: string): void
     const bold = chalk.bold;
     const dim = chalk.dim;
 
-    const defaultReason = reason || "This command configures or modifies system-level services, Nginx virtual hosts, or user privileges.";
+    const innerWidth = 74;
+    const titleText = `[!] ELEVATED PRIVILEGES REQUIRED : ${commandName.toUpperCase()}`;
+    const defaultReason = reason || "Configures or modifies system services, Nginx virtual hosts, or privileges.";
+    const subText = "Target server must have root access or sudo-enabled admin credentials.";
+
+    const padLine = (content: string, visibleLen: number) => {
+        const padding = " ".repeat(Math.max(0, innerWidth - visibleLen));
+        return red("  │ ") + content + padding + red(" │\n");
+    };
 
     console.log(
-        red("  ┌────────────────────────────────────────────────────────────────────────┐\n") +
-        red("  │ ") + bold(yellow("⚠️  ELEVATED PRIVILEGES REQUIRED")) + red(` : ${commandName.toUpperCase()}`.padEnd(46)) + red("│\n") +
-        red("  │ ") + dim(defaultReason.padEnd(70)) + red("│\n") +
-        red("  │ ") + dim("Target server must have root access or sudo-enabled admin credentials.".padEnd(70)) + red("│\n") +
-        red("  └────────────────────────────────────────────────────────────────────────┘\n")
+        red(`  ┌${"─".repeat(innerWidth + 2)}┐\n`) +
+        padLine(bold(yellow(titleText)), titleText.length) +
+        padLine(dim(defaultReason), defaultReason.length) +
+        padLine(dim(subText), subText.length) +
+        red(`  └${"─".repeat(innerWidth + 2)}┘\n`)
     );
 }

@@ -175,7 +175,7 @@ export interface SetupOptions {
 }
 
 export async function setup(opts: SetupOptions) {
-    printElevatedWarning("dploy setup", "Configures Nginx virtual hosts, Systemd background services, and SSL.");
+    printElevatedWarning("dploy setup", "Configures Nginx virtual hosts, Systemd services, and SSL.");
     log.debug(`Setup started with options: ${JSON.stringify(opts)}`);
     const cfg = await loadConfig();
     const envName = getEnvName(opts.env);

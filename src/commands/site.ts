@@ -106,7 +106,7 @@ export async function siteBackup(opts: SiteOptions) {
  * Safely decommissions and cleans up remote site configurations and services.
  */
 export async function siteRemove(opts: SiteOptions) {
-    printElevatedWarning("dploy site remove", "Stops systemd services, removes Nginx virtual hosts, and cleans sudoers rules.");
+    printElevatedWarning("dploy site remove", "Stops services, removes Nginx virtual hosts, and cleans sudoers rules.");
     const cfg = await loadConfig();
     const envName = getEnvName(opts.env);
     const { env, appName, deployTo, domains } = resolveSiteContext(cfg, envName, opts.domain);
