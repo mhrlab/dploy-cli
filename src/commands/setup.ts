@@ -10,6 +10,7 @@ import {
     generateNginxConfig,
     generateSystemdUnit,
     AppKind,
+    SslMode,
     NginxConfigParams,
     SystemdConfigParams,
 } from "../features/server-wizard.js";
@@ -157,6 +158,8 @@ export interface SetupOptions {
     domain?: string;
     port?: number;
     phpSocket?: string;
+    ssl?: SslMode;
+    cloudflare?: boolean;
     certbot?: boolean;
     service?: boolean;
     execStart?: string;
@@ -190,11 +193,22 @@ export async function setup(opts: SetupOptions) {
     let domainInput = opts.domain;
     let port = opts.port;
     let phpSocket = opts.phpSocket;
+    let sslMode = opts.ssl;
     let setupCertbot = opts.certbot;
+    let isCloudflare = opts.cloudflare;
     let setupService = opts.service;
     let execStart = opts.execStart;
     let setupWorker = opts.queueWorker;
     let workerCommand = opts.workerCommand;
+
+    // Normalize legacy --certbot flag or --cloudflare flag to sslMode if not explicitly set
+    if (!sslMode) {
+        if (setupCertbot) {
+            sslMode = "certbot";
+        } else if (isCloudflare) {
+            sslMode = "cloudflare-flexible";
+        }
+    }
 
     if (!webserver && process.stdin.isTTY) {
         const ans = await inquirer.prompt([
@@ -267,17 +281,25 @@ export async function setup(opts: SetupOptions) {
             phpSocket = ans.phpSocket;
         }
 
-        if (setupCertbot === undefined && process.stdin.isTTY) {
+        if (sslMode === undefined && process.stdin.isTTY) {
             const ans = await inquirer.prompt([
                 {
-                    type: "confirm",
-                    name: "certbot",
-                    message: "Would you like to obtain a free SSL certificate via Certbot (Let's Encrypt)?",
-                    default: false,
+                    type: "list",
+                    name: "sslMode",
+                    message: "How would you like to configure SSL / HTTPS?",
+                    choices: [
+                        { name: "Certbot (Let's Encrypt automated SSL certificate)", value: "certbot" },
+                        { name: "Cloudflare Flexible SSL (Proxy behind Cloudflare, no origin cert needed)", value: "cloudflare-flexible" },
+                        { name: "Cloudflare Origin CA Certificate (Full / Strict SSL)", value: "cloudflare-origin" },
+                        { name: "None / Plain HTTP (Configure SSL later)", value: "none" },
+                    ],
+                    default: "certbot",
                 },
             ]);
-            setupCertbot = ans.certbot;
+            sslMode = ans.sslMode;
         }
+
+        setupCertbot = sslMode === "certbot";
     }
 
     if (kind === "node" && setupService === undefined && process.stdin.isTTY) {
@@ -349,6 +371,8 @@ export async function setup(opts: SetupOptions) {
             rootDir,
             port: port || 3000,
             phpSocket: phpSocket || "unix:/run/php/php8.2-fpm.sock",
+            ssl: sslMode || (setupCertbot ? "certbot" : "none"),
+            cloudflareRealIp: Boolean(isCloudflare || sslMode?.startsWith("cloudflare")),
         });
     }
 
@@ -576,6 +600,10 @@ export async function setup(opts: SetupOptions) {
             } else {
                 log.warn(`Certbot command exited with code ${certRes.code}: ${certRes.stderr || certRes.stdout}`);
             }
+        } else if (sslMode === "cloudflare-origin") {
+            log.info(`Cloudflare Origin CA SSL configured in Nginx (expects /etc/ssl/certs/cf-origin-${primaryDomain}.pem and /etc/ssl/private/cf-origin-${primaryDomain}.key).`);
+        } else if (sslMode === "cloudflare-flexible") {
+            log.ok("Cloudflare Flexible SSL configured (real visitor IP restoring enabled, HTTPS protocol detection active)");
         }
 
         log.ok("Server setup wizard completed successfully!");

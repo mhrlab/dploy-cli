@@ -74,6 +74,36 @@ test("generateSystemdUnit generates queue worker service unit file for Laravel",
     assert.ok(unit.includes("SyslogIdentifier=laravel-app-worker"));
 });
 
+test("generateNginxConfig generates Cloudflare Flexible SSL and Real-IP headers", async () => {
+    const config = await generateNginxConfig({
+        kind: "php",
+        domains: ["cloudflare.example.com"],
+        rootDir: "/var/www/cf/current/public",
+        phpSocket: "unix:/run/php/php8.2-fpm.sock",
+        ssl: "cloudflare-flexible",
+    });
+
+    assert.ok(config.includes("real_ip_header CF-Connecting-IP;"));
+    assert.ok(config.includes("set_real_ip_from 173.245.48.0/20;"));
+    assert.ok(config.includes("map $http_x_forwarded_proto $https_forwarded"));
+    assert.ok(config.includes("fastcgi_param HTTPS $https_forwarded;"));
+});
+
+test("generateNginxConfig generates Cloudflare Origin CA certificate configuration", async () => {
+    const config = await generateNginxConfig({
+        kind: "node",
+        domains: ["secure.example.com"],
+        port: 5000,
+        ssl: "cloudflare-origin",
+    });
+
+    assert.ok(config.includes("listen 443 ssl http2;"));
+    assert.ok(config.includes("ssl_certificate /etc/ssl/certs/cf-origin-secure.example.com.pem;"));
+    assert.ok(config.includes("ssl_certificate_key /etc/ssl/private/cf-origin-secure.example.com.key;"));
+    assert.ok(config.includes("return 301 https://$host$request_uri;"));
+    assert.ok(config.includes("real_ip_header CF-Connecting-IP;"));
+});
+
 test("setup command executes with --dry-run and honors --admin-user privileged mode", async () => {
     const { setup } = await import("../src/commands/setup.js");
     const fs = (await import("fs-extra")).default;

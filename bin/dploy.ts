@@ -193,6 +193,8 @@ async function main() {
         .option("--domain <domain>", "Domain name(s)")
         .option("--port <port>", "Upstream port for Node.js reverse proxy")
         .option("--php-socket <path>", "PHP-FPM socket path")
+        .option("--ssl <mode>", "SSL/TLS mode (certbot, cloudflare-flexible, cloudflare-origin, none)")
+        .option("--cloudflare", "Enable Cloudflare optimizations (Real-IP restoration and Flexible SSL headers)")
         .option("--certbot", "Obtain Let's Encrypt SSL via Certbot")
         .option("--service", "Create and enable a systemd background service")
         .option("--exec-start <cmd>", "ExecStart command for systemd unit")
