@@ -24,6 +24,7 @@
 
 - [Installation](#installation)
 - [Quick Start](#quick-start)
+- [Environment Variables & Secrets Setup](#environment-variables--secrets-setup)
 - [Core Workflow](#core-workflow)
 - [Configuration Summary](#configuration-summary)
 - [Documentation Index](#documentation-index)
@@ -67,6 +68,77 @@ dploy provision -e production
 Package locally, upload, verify checksums, run hooks, and activate:
 ```bash
 dploy deploy -e production
+```
+
+---
+
+## Environment Variables & Secrets Setup
+
+`dploy-cli` automatically loads environment variables into `deploy.config.yml` from two local files:
+
+```
+1. .env          (Base application variables)
+       │
+       ▼
+2. .env.dploy    (Deployment overrides & SSH secrets — takes precedence)
+```
+
+### 1. Generating `.env.dploy`
+When you run `dploy init`, a starter `.env.dploy.example` is created. Copy it to `.env.dploy`:
+
+```bash
+cp .env.dploy.example .env.dploy
+```
+
+> **Security Tip**: Always add `.env.dploy` to your `.gitignore` so deployment secrets and private keys are never committed to version control (`dploy init` automatically updates `.gitignore` for you).
+
+### 2. Common Variables in `.env.dploy`
+
+```env
+# Default deployment environment
+DPLOY_ENV=staging
+
+# Common SSH Settings
+SSH_PORT=22
+SSH_KEY_PATH=~/.ssh/id_ed25519
+# DPLOY_PASSPHRASE=your_key_passphrase # If SSH key is passphrase-encrypted
+
+# Staging Server
+STAGING_HOST=staging.example.com
+STAGING_USER=deploy
+
+# Production Server
+PROD_HOST=prod.example.com
+PROD_USER=deploy
+
+# Health check base URL
+DPLOY_BASE_URL=https://example.com
+
+# Webhook Alert URLs (Optional)
+# SLACK_WEBHOOK_URL=https://hooks.slack.com/services/...
+# DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/...
+```
+
+### 3. Referencing in `deploy.config.yml`
+
+Use `${VAR}` or fallback syntax `${VAR:-default}` in your configuration file:
+
+```yaml
+environments:
+  default:
+    port: ${SSH_PORT:-22}
+    ssh_key_path: ${SSH_KEY_PATH:-~/.ssh/id_rsa}
+    deployTo: /var/www/my-app
+
+  staging:
+    extends: default
+    host: ${STAGING_HOST}
+    username: ${STAGING_USER:-deploy}
+
+  production:
+    extends: default
+    host: ${PROD_HOST}
+    username: ${PROD_USER:-deploy}
 ```
 
 ---
