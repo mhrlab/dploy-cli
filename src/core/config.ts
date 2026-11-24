@@ -73,6 +73,8 @@ export interface DatabaseBackupConfig {
 
 export interface DeployConfig {
     name?: string;
+    domain?: string;
+    domains?: string[];
     versionCommand?: string;
     versionFile?: string;
     build?: BuildConfig;
@@ -112,6 +114,8 @@ export interface EnvironmentConfig {
     passphrase?: string;
     ssh_key?: string;
     ssh_key_path?: string;
+    domain?: string;
+    domains?: string[];
     deployTo?: string;
     keepVersions?: number;
     baseUrl?: string;

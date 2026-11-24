@@ -248,17 +248,23 @@ export async function setup(opts: SetupOptions) {
             kind = ans.kind;
         }
 
+        const configuredDomain = env.domain || (Array.isArray(env.domains) ? env.domains.join(" ") : undefined) || cfg.domain || (Array.isArray(cfg.domains) ? cfg.domains.join(" ") : undefined);
+        const deployBasename = env.deployTo ? env.deployTo.replace(/\/+$/, "").split("/").pop() : undefined;
+        const suggestedDomain = configuredDomain || (deployBasename && deployBasename.includes(".") && !deployBasename.includes(" ") ? deployBasename : (env.host !== "localhost" && !/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(env.host) ? env.host : "example.com"));
+
         if (!domainInput && process.stdin.isTTY) {
             const ans = await inquirer.prompt([
                 {
                     type: "input",
                     name: "domain",
                     message: "Domain name(s) (space-separated, e.g. example.com www.example.com):",
-                    default: env.host !== "localhost" ? env.host : "example.com",
+                    default: suggestedDomain,
                     validate: (input) => (input.trim() ? true : "At least one domain is required"),
                 },
             ]);
             domainInput = ans.domain;
+        } else if (!domainInput && configuredDomain) {
+            domainInput = configuredDomain;
         }
 
         if (kind === "node" && !port && process.stdin.isTTY) {
