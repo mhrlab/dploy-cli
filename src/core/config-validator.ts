@@ -43,8 +43,11 @@ export function validateDeployConfig(cfg: any): { valid: boolean; errors: Valida
                     }
                 }
 
-                if (env.port !== undefined && (typeof env.port !== "number" || env.port < 1 || env.port > 65535)) {
-                    errors.push({ path: `environments.${envName}.port`, message: "Port must be an integer between 1 and 65535" });
+                if (env.port !== undefined) {
+                    const portNum = typeof env.port === "string" ? Number(env.port) : env.port;
+                    if (typeof portNum !== "number" || isNaN(portNum) || !Number.isInteger(portNum) || portNum < 1 || portNum > 65535) {
+                        errors.push({ path: `environments.${envName}.port`, message: "Port must be an integer between 1 and 65535" });
+                    }
                 }
 
                 if (env.deployTo !== undefined) {
@@ -58,8 +61,11 @@ export function validateDeployConfig(cfg: any): { valid: boolean; errors: Valida
                     }
                 }
 
-                if (env.keepVersions !== undefined && (typeof env.keepVersions !== "number" || env.keepVersions < 1)) {
-                    errors.push({ path: `environments.${envName}.keepVersions`, message: "keepVersions must be a positive integer" });
+                if (env.keepVersions !== undefined) {
+                    const keepNum = typeof env.keepVersions === "string" ? Number(env.keepVersions) : env.keepVersions;
+                    if (typeof keepNum !== "number" || isNaN(keepNum) || !Number.isInteger(keepNum) || keepNum < 1) {
+                        errors.push({ path: `environments.${envName}.keepVersions`, message: "keepVersions must be a positive integer" });
+                    }
                 }
             }
         }

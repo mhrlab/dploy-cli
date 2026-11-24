@@ -60,3 +60,21 @@ test("validateDeployConfig catches invalid port, strategy, deployTo root, and db
 
     assert.throws(() => assertValidDeployConfig(invalid), /Configuration schema validation failed/);
 });
+
+test("validateDeployConfig accepts numeric string port and keepVersions from env interpolation", () => {
+    const configWithStrings = {
+        environments: {
+            staging: {
+                host: "example.com",
+                username: "deploy",
+                port: "22",
+                deployTo: "/var/www/app",
+                keepVersions: "5",
+            },
+        },
+    };
+
+    const res = validateDeployConfig(configWithStrings);
+    assert.equal(res.valid, true);
+    assert.doesNotThrow(() => assertValidDeployConfig(configWithStrings));
+});

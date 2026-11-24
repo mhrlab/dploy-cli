@@ -303,6 +303,15 @@ function normalizeSSHConfig(config: DeployConfig): DeployConfig {
     for (const env of Object.values(config.environments)) {
         if (!env) continue;
 
+        const envAny = env as any;
+        if (envAny.port !== undefined && typeof envAny.port === "string" && /^\d+$/.test(envAny.port.trim())) {
+            env.port = Number(envAny.port.trim());
+        }
+
+        if (envAny.keepVersions !== undefined && typeof envAny.keepVersions === "string" && /^\d+$/.test(envAny.keepVersions.trim())) {
+            env.keepVersions = Number(envAny.keepVersions.trim());
+        }
+
         if (env.ssh_key_path != null) {
             env.ssh_key_path = expandTilde(env.ssh_key_path);
 
