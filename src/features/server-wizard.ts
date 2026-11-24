@@ -11,6 +11,7 @@ export type SslMode = "none" | "certbot" | "cloudflare-flexible" | "cloudflare-o
 export interface NginxConfigParams {
     kind: AppKind;
     domains: string[];
+    deployTo?: string;
     rootDir?: string;
     port?: number;
     phpSocket?: string;
@@ -81,6 +82,9 @@ export async function generateNginxConfig(params: NginxConfigParams): Promise<st
 
     const domainsStr = params.domains.join(" ");
     content = content.replace(/\{\{DOMAINS\}\}/g, domainsStr);
+
+    const deployTo = params.deployTo || (params.rootDir ? params.rootDir.replace(/\/current(?:\/.*)?$/, "") : "/var/www/app");
+    content = content.replace(/\{\{DEPLOY_TO\}\}/g, deployTo);
 
     if (params.rootDir) {
         content = content.replace(/\{\{ROOT_DIR\}\}/g, params.rootDir);

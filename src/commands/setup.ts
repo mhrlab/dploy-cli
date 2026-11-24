@@ -368,6 +368,7 @@ export async function setup(opts: SetupOptions) {
         nginxConf = await generateNginxConfig({
             kind,
             domains,
+            deployTo,
             rootDir,
             port: port || 3000,
             phpSocket: phpSocket || "unix:/run/php/php8.2-fpm.sock",

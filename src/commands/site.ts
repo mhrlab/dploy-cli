@@ -375,6 +375,7 @@ export async function siteSsl(opts: SiteOptions) {
         const updatedConf = await generateNginxConfig({
             kind,
             domains,
+            deployTo,
             rootDir,
             port,
             phpSocket,
