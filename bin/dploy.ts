@@ -18,6 +18,7 @@ import { down, up } from "../src/commands/maintenance.js";
 import { setLogLevel } from "../src/core/logger.js";
 import { getAppVersion } from "../src/core/utils.js";
 import { setCachedPassphrase } from "../src/core/ssh.js";
+import { printFullBanner, printCompactBanner } from "../src/core/banner.js";
 
 
 
@@ -76,14 +77,25 @@ async function main() {
     program
         .name("dploy")
         .description("Universal deployment tool (MVP version)")
-        .version(getAppVersion(), "-a, --app-version");
+        .version(getAppVersion(), "-a, --app-version")
+        .addHelpText("beforeAll", () => {
+            printFullBanner();
+            return "";
+        });
 
-    // Hook to set log levels and credentials before executing any command
-    program.hook("preAction", (thisCommand) => {
+    // Hook to set log levels, credentials, and render banners before executing any command
+    program.hook("preAction", (thisCommand, actionCommand) => {
         const opts = thisCommand.opts();
         setLogLevel(!!opts.debug, !!opts.verbose || !!opts.dryRun);
         if (opts.passphrase) {
             setCachedPassphrase(opts.passphrase);
+        }
+
+        const cmdName = actionCommand.name();
+        if (cmdName === "init" || cmdName === "setup") {
+            printFullBanner();
+        } else {
+            printCompactBanner(cmdName);
         }
     });
 
