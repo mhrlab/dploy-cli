@@ -1,6 +1,7 @@
 import { loadConfig, getEnvName, EnvironmentConfig } from "../core/config.js";
 import { connect, close } from "../core/ssh.js";
 import { log } from "../core/logger.js";
+import { printElevatedWarning } from "../core/banner.js";
 import {
     executeProvisioning,
     planProvisioningOffline,
@@ -9,6 +10,7 @@ import {
 } from "../features/provisioner.js";
 
 export async function provision(opts: ProvisionOptions = {}): Promise<ProvisionReport> {
+    printElevatedWarning("dploy provision", "Installs runtime dependencies, creates system directories, and assigns ownership.");
     log.debug(`Provision command started with options: ${JSON.stringify(opts)}`);
 
     const cfg = await loadConfig();

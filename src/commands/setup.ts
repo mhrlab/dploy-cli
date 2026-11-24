@@ -6,6 +6,7 @@ import { loadConfig, getEnvName, EnvironmentConfig } from "../core/config.js";
 import { connect, close, exec } from "../core/ssh.js";
 import { log } from "../core/logger.js";
 import { posixJoin, escapeShellArg, expandTilde } from "../core/utils.js";
+import { printElevatedWarning } from "../core/banner.js";
 import {
     generateNginxConfig,
     generateSystemdUnit,
@@ -160,6 +161,8 @@ export interface SetupOptions {
     phpSocket?: string;
     ssl?: SslMode;
     cloudflare?: boolean;
+    cfCert?: string;
+    cfKey?: string;
     certbot?: boolean;
     service?: boolean;
     execStart?: string;
@@ -172,6 +175,7 @@ export interface SetupOptions {
 }
 
 export async function setup(opts: SetupOptions) {
+    printElevatedWarning("dploy setup", "Configures Nginx virtual hosts, Systemd background services, and SSL.");
     log.debug(`Setup started with options: ${JSON.stringify(opts)}`);
     const cfg = await loadConfig();
     const envName = getEnvName(opts.env);
@@ -300,6 +304,59 @@ export async function setup(opts: SetupOptions) {
         }
 
         setupCertbot = sslMode === "certbot";
+
+        // If Cloudflare Origin CA was selected, ask how user wants to provide the certificate
+        if (sslMode === "cloudflare-origin" && (!opts.cfCert || !opts.cfKey) && process.stdin.isTTY) {
+            const certMethodAns = await inquirer.prompt([
+                {
+                    type: "list",
+                    name: "method",
+                    message: "How would you like to provide the Cloudflare Origin Certificate?",
+                    choices: [
+                        { name: "Paste Certificate & Private Key directly into terminal", value: "paste" },
+                        { name: "Provide paths to local files on this computer", value: "local" },
+                        { name: "Use existing paths already on remote server", value: "remote" },
+                    ],
+                    default: "paste",
+                },
+            ]);
+
+            if (certMethodAns.method === "paste") {
+                const pasteAns = await inquirer.prompt([
+                    {
+                        type: "editor",
+                        name: "cert",
+                        message: "Paste your Cloudflare Origin Certificate (including BEGIN/END CERTIFICATE):",
+                    },
+                    {
+                        type: "editor",
+                        name: "key",
+                        message: "Paste your Cloudflare Private Key (including BEGIN/END PRIVATE KEY):",
+                    },
+                ]);
+                opts.cfCert = pasteAns.cert?.trim();
+                opts.cfKey = pasteAns.key?.trim();
+            } else if (certMethodAns.method === "local") {
+                const fileAns = await inquirer.prompt([
+                    {
+                        type: "input",
+                        name: "certPath",
+                        message: "Path to local certificate (.pem):",
+                    },
+                    {
+                        type: "input",
+                        name: "keyPath",
+                        message: "Path to local private key (.key):",
+                    },
+                ]);
+                if (fileAns.certPath && (await fs.pathExists(fileAns.certPath))) {
+                    opts.cfCert = await fs.readFile(fileAns.certPath, "utf8");
+                }
+                if (fileAns.keyPath && (await fs.pathExists(fileAns.keyPath))) {
+                    opts.cfKey = await fs.readFile(fileAns.keyPath, "utf8");
+                }
+            }
+        }
     }
 
     if (kind === "node" && setupService === undefined && process.stdin.isTTY) {
@@ -557,6 +614,17 @@ export async function setup(opts: SetupOptions) {
             log.info(`Configuring Nginx virtual host for ${primaryDomain}...`);
             const confPath = `/etc/nginx/sites-available/${primaryDomain}`;
             const enabledPath = `/etc/nginx/sites-enabled/${primaryDomain}`;
+
+            // If Cloudflare Origin CA certificate/key content was supplied, write them to /etc/ssl
+            if (sslMode === "cloudflare-origin" && opts.cfCert && opts.cfKey) {
+                const certDest = `/etc/ssl/certs/cf-origin-${primaryDomain}.pem`;
+                const keyDest = `/etc/ssl/private/cf-origin-${primaryDomain}.key`;
+                log.info(`Writing Cloudflare Origin CA certificate and private key to /etc/ssl...`);
+                await writeRemotePrivilegedFile(bundle.ssh, certDest, opts.cfCert, sudoPrefix);
+                await writeRemotePrivilegedFile(bundle.ssh, keyDest, opts.cfKey, sudoPrefix);
+                await exec(bundle.ssh, `${sudoPrefix}chmod 644 ${escapeShellArg(certDest)} && ${sudoPrefix}chmod 600 ${escapeShellArg(keyDest)}`);
+                log.ok(`Cloudflare certificates deployed (${certDest}, ${keyDest})`);
+            }
 
             await writeRemotePrivilegedFile(bundle.ssh, confPath, nginxConf, sudoPrefix);
             await exec(bundle.ssh, `${sudoPrefix}ln -sfn ${escapeShellArg(confPath)} ${escapeShellArg(enabledPath)}`);

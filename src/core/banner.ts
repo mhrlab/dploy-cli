@@ -47,3 +47,25 @@ export function printCompactBanner(actionName?: string): void {
     const banner = `${chalk.cyanBright("▲")} ${chalk.bold("dploy")}${actionTag} ${chalk.dim(`v${version}`)}`;
     console.log(banner);
 }
+
+/**
+ * Print a high-visibility amber/red warning banner for commands requiring elevated root/sudo privileges.
+ */
+export function printElevatedWarning(commandName: string, reason?: string): void {
+    if (!shouldDisplayBanner()) return;
+
+    const red = chalk.redBright;
+    const yellow = chalk.yellowBright;
+    const bold = chalk.bold;
+    const dim = chalk.dim;
+
+    const defaultReason = reason || "This command configures or modifies system-level services, Nginx virtual hosts, or user privileges.";
+
+    console.log(
+        red("  ┌────────────────────────────────────────────────────────────────────────┐\n") +
+        red("  │ ") + bold(yellow("⚠️  ELEVATED PRIVILEGES REQUIRED")) + red(` : ${commandName.toUpperCase()}`.padEnd(46)) + red("│\n") +
+        red("  │ ") + dim(defaultReason.padEnd(70)) + red("│\n") +
+        red("  │ ") + dim("Target server must have root access or sudo-enabled admin credentials.".padEnd(70)) + red("│\n") +
+        red("  └────────────────────────────────────────────────────────────────────────┘\n")
+    );
+}

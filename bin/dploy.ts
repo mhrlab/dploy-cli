@@ -196,6 +196,8 @@ async function main() {
         .option("--php-socket <path>", "PHP-FPM socket path")
         .option("--ssl <mode>", "SSL/TLS mode (certbot, cloudflare-flexible, cloudflare-origin, none)")
         .option("--cloudflare", "Enable Cloudflare optimizations (Real-IP restoration and Flexible SSL headers)")
+        .option("--cf-cert <pathOrContent>", "Cloudflare Origin CA certificate (.pem path or content)")
+        .option("--cf-key <pathOrContent>", "Cloudflare Origin CA private key (.key path or content)")
         .option("--certbot", "Obtain Let's Encrypt SSL via Certbot")
         .option("--service", "Create and enable a systemd background service")
         .option("--exec-start <cmd>", "ExecStart command for systemd unit")
@@ -226,9 +228,45 @@ async function main() {
             await run(command, cmd.optsWithGlobals());
         });
 
+    // 🔐 Environment Variable Management Group
+    const envCmd = program
+        .command("env")
+        .description("Manage remote shared environment variables (.env push, pull, set)");
+
+    envCmd
+        .command("push")
+        .description("Upload local .env to remote shared/.env with automatic backup")
+        .option("-e, --env <env>", "Target environment (default: production)")
+        .option("-f, --file <path>", "Specific local .env file to upload")
+        .option("--force", "Overwrite remote .env without interactive prompt")
+        .option("-y, --yes", "Automatic yes to prompts")
+        .action(async (opts, cmd) => {
+            await envPush(cmd.optsWithGlobals());
+        });
+
+    envCmd
+        .command("pull")
+        .description("Download remote shared/.env to local file")
+        .option("-e, --env <env>", "Target environment (default: production)")
+        .option("-o, --out <path>", "Destination local path (default: .env.<env>.remote)")
+        .option("--force", "Overwrite local file if it already exists")
+        .option("-y, --yes", "Automatic yes to prompts")
+        .action(async (opts, cmd) => {
+            await envPull(cmd.optsWithGlobals());
+        });
+
+    envCmd
+        .command("set <pair>")
+        .description("Set or update a KEY=VALUE variable in remote shared/.env")
+        .option("-e, --env <env>", "Target environment (default: production)")
+        .action(async (pair, opts, cmd) => {
+            await envSet(pair, cmd.optsWithGlobals());
+        });
+
+    // Backward-compatible colon aliases: env:push, env:pull, env:set
     program
         .command("env:push")
-        .description("Upload local .env to remote shared/.env with automatic backup")
+        .description("Upload local .env to remote shared/.env (alias for 'env push')")
         .option("-e, --env <env>", "Target environment (default: production)")
         .option("-f, --file <path>", "Specific local .env file to upload")
         .option("--force", "Overwrite remote .env without interactive prompt")
@@ -239,7 +277,7 @@ async function main() {
 
     program
         .command("env:pull")
-        .description("Download remote shared/.env to local file")
+        .description("Download remote shared/.env to local file (alias for 'env pull')")
         .option("-e, --env <env>", "Target environment (default: production)")
         .option("-o, --out <path>", "Destination local path (default: .env.<env>.remote)")
         .option("--force", "Overwrite local file if it already exists")
@@ -250,7 +288,7 @@ async function main() {
 
     program
         .command("env:set <pair>")
-        .description("Set or update a KEY=VALUE variable in remote shared/.env")
+        .description("Set or update a KEY=VALUE variable in remote shared/.env (alias for 'env set')")
         .option("-e, --env <env>", "Target environment (default: production)")
         .action(async (pair, opts, cmd) => {
             await envSet(pair, cmd.optsWithGlobals());
@@ -264,6 +302,7 @@ async function main() {
         .option("-n, --lines <count>", "Number of lines to show (default: 50)")
         .option("--type <type>", "Log type: app, nginx, pm2, or systemd")
         .option("--file <path>", "Specific remote log file to tail")
+        .option("--sudo", "Execute log reading command with sudo privileges")
         .action(async (opts, cmd) => {
             await logs(cmd.optsWithGlobals());
         });

@@ -6,6 +6,7 @@ import { expandTilde, getReadableFileSize, escapeShellArg, posixJoin } from "../
 import { backupSiteConfigurations } from "../features/site-backup.js";
 import { removeSiteConfigurations } from "../features/site-remove.js";
 import { generateNginxConfig, AppKind, SslMode } from "../features/server-wizard.js";
+import { printElevatedWarning } from "../core/banner.js";
 
 export interface SiteOptions {
     env?: string;
@@ -105,6 +106,7 @@ export async function siteBackup(opts: SiteOptions) {
  * Safely decommissions and cleans up remote site configurations and services.
  */
 export async function siteRemove(opts: SiteOptions) {
+    printElevatedWarning("dploy site remove", "Stops systemd services, removes Nginx virtual hosts, and cleans sudoers rules.");
     const cfg = await loadConfig();
     const envName = getEnvName(opts.env);
     const { env, appName, deployTo, domains } = resolveSiteContext(cfg, envName, opts.domain);
