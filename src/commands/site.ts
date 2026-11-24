@@ -1,10 +1,11 @@
 import inquirer from "inquirer";
 import { loadConfig, getEnvName, EnvironmentConfig } from "../core/config.js";
-import { connect, close } from "../core/ssh.js";
+import { connect, close, exec } from "../core/ssh.js";
 import { log } from "../core/logger.js";
-import { expandTilde, getReadableFileSize } from "../core/utils.js";
+import { expandTilde, getReadableFileSize, escapeShellArg, posixJoin } from "../core/utils.js";
 import { backupSiteConfigurations } from "../features/site-backup.js";
 import { removeSiteConfigurations } from "../features/site-remove.js";
+import { generateNginxConfig, AppKind, SslMode } from "../features/server-wizard.js";
 
 export interface SiteOptions {
     env?: string;
@@ -12,6 +13,9 @@ export interface SiteOptions {
     output?: string;
     dryRun?: boolean;
     force?: boolean;
+    ssl?: SslMode;
+    cloudflare?: boolean;
+    certbot?: boolean;
     noBackup?: boolean;
     purgeNginx?: boolean;
     purgeServices?: boolean;
@@ -212,6 +216,202 @@ export async function siteRemove(opts: SiteOptions) {
         }
 
         log.ok(`Site removal for '${primaryDomain}' completed successfully!`);
+    } finally {
+        await close(bundle);
+    }
+}
+
+/**
+ * Inspect remote site configuration, Nginx state, systemd services, SSL certificates, and active releases.
+ */
+export async function siteInfo(opts: SiteOptions) {
+    const cfg = await loadConfig();
+    const envName = getEnvName(opts.env);
+    const { env, appName, deployTo, domains } = resolveSiteContext(cfg, envName, opts.domain);
+    const primaryDomain = domains[0];
+    const { setupConnConfig, sudoPrefix } = resolveAdminConnection(env, opts);
+
+    log.info(`Connecting to ${setupConnConfig.username}@${setupConnConfig.host} to inspect site '${primaryDomain}'...`);
+    const bundle = await connect(setupConnConfig);
+
+    try {
+        console.log(`\n======================================================`);
+        console.log(` 🌐 Remote Site Overview: ${primaryDomain} [${envName}]`);
+        console.log(`======================================================`);
+
+        // 1. Release & Directory status
+        const releaseRes = await exec(bundle.ssh, `readlink ${escapeShellArg(posixJoin(deployTo, "current"))} || echo "not-found"`);
+        const currentTarget = releaseRes.stdout.trim();
+        console.log(`  📁 Deploy Path:     ${deployTo}`);
+        console.log(`  🔗 Current Release: ${currentTarget !== "not-found" ? currentTarget : "None (not linked)"}`);
+
+        // 2. Nginx virtual host status
+        const nginxAvailRes = await exec(bundle.ssh, `test -f /etc/nginx/sites-available/${escapeShellArg(primaryDomain)} && echo "yes" || echo "no"`);
+        const nginxEnabledRes = await exec(bundle.ssh, `test -L /etc/nginx/sites-enabled/${escapeShellArg(primaryDomain)} && echo "yes" || echo "no"`);
+        const isNginxAvail = nginxAvailRes.stdout.trim() === "yes";
+        const isNginxEnabled = nginxEnabledRes.stdout.trim() === "yes";
+        console.log(`  🌍 Nginx VHost:     ${isNginxAvail ? "Configured" : "Missing"} (${isNginxEnabled ? "Enabled" : "Disabled"})`);
+
+        // Check if Nginx syntax is clean
+        const nginxTestRes = await exec(bundle.ssh, `${sudoPrefix}nginx -t`);
+        console.log(`  ⚙️  Nginx Syntax:    ${nginxTestRes.code === 0 ? "Valid (nginx -t passed)" : "Failed syntax test"}`);
+
+        // 3. Systemd App Service status
+        const serviceName = `${appName}.service`;
+        const serviceStatusRes = await exec(bundle.ssh, `systemctl is-active ${escapeShellArg(appName)} 2>/dev/null || echo "inactive"`);
+        const serviceState = serviceStatusRes.stdout.trim();
+        console.log(`  ⚡ App Service:     ${serviceName} [${serviceState}]`);
+
+        // Worker Service status
+        const workerName = `${appName}-worker.service`;
+        const workerCheck = await exec(bundle.ssh, `test -f /etc/systemd/system/${escapeShellArg(workerName)} && echo "yes" || echo "no"`);
+        if (workerCheck.stdout.trim() === "yes") {
+            const workerStatusRes = await exec(bundle.ssh, `systemctl is-active ${escapeShellArg(`${appName}-worker`)} 2>/dev/null || echo "inactive"`);
+            console.log(`  👷 Worker Service:  ${workerName} [${workerStatusRes.stdout.trim()}]`);
+        }
+
+        // 4. SSL Certificate status
+        const certbotCheck = await exec(bundle.ssh, `${sudoPrefix}certbot certificates --cert-name ${escapeShellArg(primaryDomain)} 2>/dev/null || true`);
+        if (certbotCheck.code === 0 && certbotCheck.stdout.includes("Expiry Date:")) {
+            const expiryMatch = certbotCheck.stdout.match(/Expiry Date:\s*([^\n]+)/);
+            console.log(`  🔒 SSL Certificate: Certbot (Expires: ${expiryMatch ? expiryMatch[1].trim() : "Active"})`);
+        } else {
+            // Check if Cloudflare origin cert exists
+            const cfOriginCheck = await exec(bundle.ssh, `test -f /etc/ssl/certs/cf-origin-${escapeShellArg(primaryDomain)}.pem && echo "yes" || echo "no"`);
+            if (cfOriginCheck.stdout.trim() === "yes") {
+                console.log(`  🔒 SSL Certificate: Cloudflare Origin CA (/etc/ssl/certs/cf-origin-${primaryDomain}.pem)`);
+            } else {
+                console.log(`  🔒 SSL Certificate: Standard HTTP or Cloudflare Flexible`);
+            }
+        }
+        console.log(`======================================================\n`);
+    } finally {
+        await close(bundle);
+    }
+}
+
+/**
+ * Switch or update SSL mode for an existing site without re-running full server setup.
+ */
+export async function siteSsl(opts: SiteOptions) {
+    const cfg = await loadConfig();
+    const envName = getEnvName(opts.env);
+    const { env, appName, deployTo, domains } = resolveSiteContext(cfg, envName, opts.domain);
+    const primaryDomain = domains[0];
+    const { setupConnConfig, sudoPrefix } = resolveAdminConnection(env, opts);
+
+    let sslMode = opts.ssl;
+    if (!sslMode) {
+        if (opts.certbot) {
+            sslMode = "certbot";
+        } else if (opts.cloudflare) {
+            sslMode = "cloudflare-flexible";
+        }
+    }
+
+    if (!sslMode && process.stdin.isTTY) {
+        const ans = await inquirer.prompt([
+            {
+                type: "list",
+                name: "sslMode",
+                message: `Select new SSL mode for '${primaryDomain}':`,
+                choices: [
+                    { name: "Certbot (Let's Encrypt automated SSL certificate)", value: "certbot" },
+                    { name: "Cloudflare Flexible SSL (Real-IP restoration, HTTP 80 upstream)", value: "cloudflare-flexible" },
+                    { name: "Cloudflare Origin CA Certificate (Full / Strict 443 SSL)", value: "cloudflare-origin" },
+                    { name: "Plain HTTP / Disable SSL", value: "none" },
+                ],
+                default: "certbot",
+            },
+        ]);
+        sslMode = ans.sslMode;
+    }
+
+    if (!sslMode) {
+        throw new Error("SSL mode must be specified (certbot, cloudflare-flexible, cloudflare-origin, none)");
+    }
+
+    if (opts.dryRun) {
+        log.info("[dry-run] Planned SSL reconfiguration:");
+        log.info(`[dry-run] Host: ${setupConnConfig.host}`);
+        log.info(`[dry-run] Domain: ${primaryDomain}`);
+        log.info(`[dry-run] New SSL Mode: ${sslMode}`);
+        return;
+    }
+
+    // Inspect existing remote Nginx configuration to determine app kind
+    log.info(`Connecting to ${setupConnConfig.username}@${setupConnConfig.host}...`);
+    const bundle = await connect(setupConnConfig);
+
+    try {
+        const confPath = `/etc/nginx/sites-available/${primaryDomain}`;
+        const catRes = await exec(bundle.ssh, `${sudoPrefix}cat ${escapeShellArg(confPath)}`);
+        if (catRes.code !== 0) {
+            throw new Error(`Remote Nginx configuration for '${primaryDomain}' not found at ${confPath}. Run 'dploy setup' first.`);
+        }
+
+        const existingConf = catRes.stdout;
+        // Detect app kind from existing config
+        let kind: AppKind = "node";
+        let rootDir: string | undefined;
+        let phpSocket: string | undefined;
+        let port: number = 3000;
+
+        if (existingConf.includes("fastcgi_pass")) {
+            kind = "php";
+            const socketMatch = existingConf.match(/fastcgi_pass\s+([^;]+);/);
+            if (socketMatch) phpSocket = socketMatch[1].trim();
+            rootDir = posixJoin(deployTo, "current", "public");
+        } else if (existingConf.includes("try_files $uri $uri/ /index.html;")) {
+            kind = "spa";
+            rootDir = posixJoin(deployTo, "current", "dist");
+        } else {
+            kind = "node";
+            const portMatch = existingConf.match(/proxy_pass http:\/\/127\.0\.0\.1:(\d+);/);
+            if (portMatch) port = parseInt(portMatch[1], 10);
+        }
+
+        log.info(`Detected application kind '${kind}'. Generating updated Nginx config for SSL: ${sslMode}...`);
+        const updatedConf = await generateNginxConfig({
+            kind,
+            domains,
+            rootDir,
+            port,
+            phpSocket,
+            ssl: sslMode,
+            cloudflareRealIp: Boolean(opts.cloudflare || sslMode.startsWith("cloudflare")),
+        });
+
+        if (opts.dryRun) {
+            log.info("[dry-run] Preview of updated Nginx configuration:");
+            console.log(updatedConf);
+            return;
+        }
+
+        // Write remotely using sudo tee
+        const base64 = Buffer.from(updatedConf, "utf8").toString("base64");
+        const writeCmd = `echo ${escapeShellArg(base64)} | base64 -d | ${sudoPrefix}tee ${escapeShellArg(confPath)} > /dev/null`;
+        await exec(bundle.ssh, writeCmd);
+
+        // Ensure sites-enabled symlink
+        const enabledPath = `/etc/nginx/sites-enabled/${primaryDomain}`;
+        await exec(bundle.ssh, `${sudoPrefix}ln -sfn ${escapeShellArg(confPath)} ${escapeShellArg(enabledPath)}`);
+
+        // Test syntax
+        const testRes = await exec(bundle.ssh, `${sudoPrefix}nginx -t`);
+        if (testRes.code !== 0) {
+            throw new Error(`Nginx syntax check failed: ${testRes.stderr || testRes.stdout}`);
+        }
+
+        // Request certbot if selected
+        if (sslMode === "certbot") {
+            log.info(`Requesting / renewing Certbot certificate for ${domains.join(", ")}...`);
+            const certbotCmd = `${sudoPrefix}certbot --nginx -d ${domains.map((d) => escapeShellArg(d)).join(" -d ")} --non-interactive --agree-tos -m admin@${primaryDomain} --redirect || true`;
+            await exec(bundle.ssh, certbotCmd);
+        }
+
+        await exec(bundle.ssh, `${sudoPrefix}systemctl reload nginx`);
+        log.ok(`SSL mode updated to '${sslMode}' and Nginx reloaded for ${primaryDomain}!`);
     } finally {
         await close(bundle);
     }

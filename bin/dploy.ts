@@ -15,7 +15,7 @@ import { run } from "../src/commands/run.js";
 import { envPush, envPull, envSet } from "../src/commands/env.js";
 import { logs } from "../src/commands/logs.js";
 import { down, up } from "../src/commands/maintenance.js";
-import { siteBackup, siteRemove } from "../src/commands/site.js";
+import { siteBackup, siteRemove, siteInfo, siteSsl } from "../src/commands/site.js";
 import { setLogLevel } from "../src/core/logger.js";
 import { getAppVersion } from "../src/core/utils.js";
 import { setCachedPassphrase } from "../src/core/ssh.js";
@@ -319,6 +319,34 @@ async function main() {
         .option("--admin-password <pass>", "Admin user password or sudo password")
         .action(async (opts, cmd) => {
             await siteRemove(cmd.optsWithGlobals());
+        });
+
+    siteCmd
+        .command("info")
+        .description("Inspect remote site status: Nginx virtual host, systemd services, SSL certificates, and releases")
+        .option("-e, --env <env>", "Target environment (default: production)")
+        .option("-d, --domain <domain>", "Domain name to inspect")
+        .option("--admin-user <user>", "Admin / sudo username for remote inspection")
+        .option("--admin-key <path>", "Path to admin SSH private key")
+        .option("--admin-password <pass>", "Admin user password or sudo password")
+        .action(async (opts, cmd) => {
+            await siteInfo(cmd.optsWithGlobals());
+        });
+
+    siteCmd
+        .command("ssl")
+        .description("Switch or update SSL mode (Certbot, Cloudflare Flexible, Cloudflare Origin, or None)")
+        .option("-e, --env <env>", "Target environment (default: production)")
+        .option("-d, --domain <domain>", "Domain name to configure")
+        .option("--ssl <mode>", "SSL mode: certbot, cloudflare-flexible, cloudflare-origin, none")
+        .option("--cloudflare", "Shortcut for Cloudflare Flexible SSL with Real-IP headers")
+        .option("--certbot", "Shortcut for Certbot Let's Encrypt automated SSL")
+        .option("-n, --dry-run", "Preview updated Nginx configuration without applying")
+        .option("--admin-user <user>", "Admin / sudo username for remote configuration")
+        .option("--admin-key <path>", "Path to admin SSH private key")
+        .option("--admin-password <pass>", "Admin user password or sudo password")
+        .action(async (opts, cmd) => {
+            await siteSsl(cmd.optsWithGlobals());
         });
 
     // Convenient top-level alias `dploy remove`

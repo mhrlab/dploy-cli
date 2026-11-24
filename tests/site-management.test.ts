@@ -154,3 +154,38 @@ environments:
         await fs.remove(tmpDir);
     }
 });
+
+test("siteSsl dry-run previews updated Nginx SSL configuration without modifying server", async () => {
+    const { siteSsl } = await import("../src/commands/site.js");
+    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "dploy-site-ssl-"));
+    const prevCwd = process.cwd();
+
+    try {
+        process.chdir(tmpDir);
+        await fs.writeJson("package.json", { name: "ssl-site", version: "1.0.0" });
+        await fs.writeFile(
+            "deploy.config.yml",
+            `
+name: ssl-site
+environments:
+  production:
+    host: 192.168.1.120
+    username: deploy
+    deployTo: /var/www/ssl-site
+`
+        );
+
+        // Dry run with mock connection should not throw
+        await assert.doesNotReject(async () => {
+            await siteSsl({
+                env: "production",
+                dryRun: true,
+                ssl: "cloudflare-flexible",
+                domain: "ssl.example.com",
+            });
+        });
+    } finally {
+        process.chdir(prevCwd);
+        await fs.remove(tmpDir);
+    }
+});
