@@ -303,6 +303,14 @@ function normalizeSSHConfig(config: DeployConfig): DeployConfig {
     for (const env of Object.values(config.environments)) {
         if (!env) continue;
 
+        // Auto-fallback host and username to DPLOY_HOST / DPLOY_USER if not set
+        if (!env.host && (!env.hosts || env.hosts.length === 0) && process.env.DPLOY_HOST) {
+            env.host = process.env.DPLOY_HOST;
+        }
+        if (!env.username && process.env.DPLOY_USER) {
+            env.username = process.env.DPLOY_USER;
+        }
+
         const envAny = env as any;
         if (envAny.port !== undefined && typeof envAny.port === "string" && /^\d+$/.test(envAny.port.trim())) {
             env.port = Number(envAny.port.trim());

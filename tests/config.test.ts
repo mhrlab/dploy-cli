@@ -92,6 +92,30 @@ test("loadConfig prioritizes .env.dploy over .env", async () => {
   assert.equal(process.env.TEST_VAR_A, "from_env");
 });
 
+test("loadConfig automatically falls back to DPLOY_HOST and DPLOY_USER when host is omitted", async () => {
+  const cwd = await createTempProject();
+
+  await writeFile(
+    path.join(cwd, ".env.dploy"),
+    "DPLOY_HOST=104.103.92.102\nDPLOY_USER=deploy\n",
+    "utf8"
+  );
+
+  await writeFile(
+    path.join(cwd, "deploy.config.yml"),
+    `
+environments:
+  production:
+    deployTo: "/var/www/my-app"
+`,
+    "utf8"
+  );
+
+  const config = await loadConfig(cwd);
+  assert.equal(config.environments?.production.host, "104.103.92.102");
+  assert.equal(config.environments?.production.username, "deploy");
+});
+
 test("resolveFiles resolves files with root-level config options (legacy/JSON compatibility)", async () => {
   const cwd = await createTempProject();
   await writeFile(path.join(cwd, "test.txt"), "hello", "utf8");
