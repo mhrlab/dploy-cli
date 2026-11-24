@@ -282,8 +282,9 @@ export async function setup(opts: SetupOptions) {
         log.info("[dry-run] Planned server setup configurations:");
         log.info(`[dry-run] Would connect to ${setupConnConfig.username}@${setupConnConfig.host} (Privileged Mode: ${isRunningAsRoot ? "root" : "sudo"})`);
         if (opts.createDeployer && env.username && env.username !== "root") {
-            log.info(`[dry-run] Would create unprivileged user '${env.username}' with ownership of ${deployTo}`);
+            log.info(`[dry-run] Would create unprivileged user '${env.username}'`);
         }
+        log.info(`[dry-run] Would create directory ${deployTo} and set ownership to ${env.username || "deploy"}:www-data (mode 775)`);
         if (nginxConf) {
             console.log(`\n--- [Nginx Config: /etc/nginx/sites-available/${primaryDomain}] ---`);
             console.log(nginxConf);
@@ -331,9 +332,6 @@ export async function setup(opts: SetupOptions) {
                 }
             }
 
-            // Set ownership of deployTo directory
-            await exec(bundle.ssh, `${sudoPrefix}mkdir -p ${escapeShellArg(deployTo)} && ${sudoPrefix}chown -R ${escapeShellArg(env.username)}:www-data ${escapeShellArg(deployTo)}`);
-
             // Add limited passwordless sudo rules for service reloads
             const sudoersFile = `/etc/sudoers.d/dploy-${defaultAppName}`;
             const sudoersContent = `${env.username} ALL=(ALL) NOPASSWD: /usr/bin/systemctl reload nginx, /usr/bin/systemctl restart ${defaultAppName}, /usr/bin/systemctl restart ${workerServiceName}, /usr/bin/systemctl status ${defaultAppName}\n`;
@@ -343,6 +341,18 @@ export async function setup(opts: SetupOptions) {
             );
             log.ok(`User '${env.username}' provisioned and authorized with limited sudo rules`);
         }
+
+        // Ensure deploy directory structure and permissions exist
+        const deployUser = env.username || "deploy";
+        log.info(`Configuring deploy directory ${deployTo} for ${deployUser}:www-data...`);
+        await exec(
+            bundle.ssh,
+            `${sudoPrefix}mkdir -p ${escapeShellArg(deployTo)}/releases ${escapeShellArg(deployTo)}/shared && ` +
+            `${sudoPrefix}chown -R ${escapeShellArg(deployUser)}:www-data ${escapeShellArg(deployTo)} && ` +
+            `${sudoPrefix}chmod -R 775 ${escapeShellArg(deployTo)} && ` +
+            `${sudoPrefix}chmod g+s ${escapeShellArg(deployTo)} ${escapeShellArg(deployTo)}/releases ${escapeShellArg(deployTo)}/shared`
+        );
+        log.ok(`Deploy directory ${deployTo} created with ownership ${deployUser}:www-data (mode 775, setgid)`);
 
         if (nginxConf) {
             log.info(`Configuring Nginx virtual host for ${primaryDomain}...`);
