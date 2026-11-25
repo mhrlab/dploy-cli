@@ -232,3 +232,38 @@ test("linkShared rejects items with path traversal", async () => {
     /Invalid shared item/
   );
 });
+
+test("linkShared ensures Laravel storage subdirectories and 2775/664 permissions", async () => {
+  const { ssh, executedCommands } = createMockSSH({
+    "[ -e": "1\n",
+  });
+
+  await linkShared(
+    ssh,
+    "/var/www/app",
+    "/var/www/app/releases/v1",
+    ["storage"],
+    undefined
+  );
+
+  // Syncs missing subdirectories even without trailing slash
+  assert.ok(
+    executedCommands.some((c) =>
+      c.includes("cp -rn '/var/www/app/releases/v1/storage'/. '/var/www/app/shared/storage'/")
+    )
+  );
+  // Creates Laravel storage subdirectories
+  assert.ok(
+    executedCommands.some((c) =>
+      c.includes("mkdir -p '/var/www/app/shared/storage'/app/public '/var/www/app/shared/storage'/framework/cache/data")
+    )
+  );
+  // Applies 2775 to dirs and 664 to files
+  assert.ok(
+    executedCommands.some(
+      (c) =>
+        c.includes("find '/var/www/app/shared/storage' -type d -exec chmod 2775") &&
+        c.includes("find '/var/www/app/shared/storage' -type f -exec chmod 664")
+    )
+  );
+});

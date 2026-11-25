@@ -140,6 +140,14 @@ async function deployToHost(params: {
         if (code !== 0) throw new Error(stderr || "remote extract failed");
         extract.succeed(`[${targetHost}] Extracted ${version}`);
 
+        // Ensure framework runtime cache directories (e.g. Laravel bootstrap/cache) are group-writable
+        // so both the deploy CLI user and the web server user (e.g. www-data) can write compiled manifests.
+        const bootstrapCacheDir = posixJoin(releaseDir, "bootstrap/cache");
+        await exec(
+            bundle.ssh,
+            `if [ -d ${escapeShellArg(bootstrapCacheDir)} ]; then find ${escapeShellArg(bootstrapCacheDir)} -type d -exec chmod 2775 {} + 2>/dev/null || true; find ${escapeShellArg(bootstrapCacheDir)} -type f -exec chmod 664 {} + 2>/dev/null || true; fi`
+        );
+
         // Automated Pre-Deploy Database Backup
         if (isBackupDbEnabled && dbConfig) {
             const spinDb = log.spinner(`[${targetHost}] Creating pre-deploy database backup...`);
