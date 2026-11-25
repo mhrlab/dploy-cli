@@ -1,26 +1,17 @@
 #!/usr/bin/env node
 import { Command, Option } from "commander";
-import { build } from "../src/commands/build.js";
-import { deploy } from "../src/commands/deploy.js";
-import { rollback } from "../src/commands/rollback.js";
-import { list } from "../src/commands/list.js";
-import { clean } from "../src/commands/clean.js";
-import { status } from "../src/commands/status.js";
-import { health } from "../src/commands/health.js";
-import { init } from "../src/commands/init.js";
-import { provision } from "../src/commands/provision.js";
-import { setup } from "../src/commands/setup.js";
-import { ssh } from "../src/commands/ssh.js";
-import { run } from "../src/commands/run.js";
-import { envPush, envPull, envSet, envEdit } from "../src/commands/env.js";
-import { logs } from "../src/commands/logs.js";
-import { down, up } from "../src/commands/maintenance.js";
-import { siteBackup, siteRemove, siteInfo, siteSsl, siteAdd } from "../src/commands/site.js";
-import { dbCreate, dbDrop, dbBackup, dbRestore, dbOptimize, dbConsole } from "../src/commands/database.js";
 import { setLogLevel } from "../src/core/logger.js";
 import { getAppVersion } from "../src/core/utils.js";
 import { setCachedPassphrase } from "../src/core/ssh.js";
 import { printFullBanner, printCompactBanner } from "../src/core/banner.js";
+
+const lazyAction = (
+    loader: () => Promise<Record<string, any>>,
+    exportName: string
+) => async (_opts: any, cmd: Command) => {
+    const mod = await loader();
+    await mod[exportName](cmd.optsWithGlobals());
+};
 
 
 
@@ -73,6 +64,7 @@ async function main() {
         .option("-e, --env <env>", "Target environment (default: production)")
         .option("-v, --verbose", "Enable verbose logging")
         .option("-d, --debug", "Enable debug logging")
+        .option("-q, --quiet", "Suppress non-essential banner output")
         .option("-y, --yes", "Automatic yes to prompts; non-interactive mode")
         .option("--passphrase <passphrase>", "Passphrase for encrypted SSH private key");
 
@@ -81,16 +73,22 @@ async function main() {
         .description("Universal deployment tool (MVP version)")
         .version(getAppVersion(), "-a, --app-version")
         .addHelpText("beforeAll", () => {
-            printFullBanner();
+            if (!process.argv.includes("--json") && !process.argv.includes("-q") && !process.argv.includes("--quiet")) {
+                printFullBanner();
+            }
             return "";
         });
 
     // Hook to set log levels, credentials, and render banners before executing any command
-    program.hook("preAction", (thisCommand, actionCommand) => {
-        const opts = thisCommand.opts();
+    program.hook("preAction", (_thisCommand, actionCommand) => {
+        const opts = actionCommand.optsWithGlobals();
         setLogLevel(!!opts.debug, !!opts.verbose || !!opts.dryRun);
         if (opts.passphrase) {
             setCachedPassphrase(opts.passphrase);
+        }
+
+        if (opts.json || opts.quiet) {
+            return;
         }
 
         const cmdName = actionCommand.name();
@@ -105,16 +103,17 @@ async function main() {
     program
         .command("init [template]")
         .description("Initialize a new deploy.config.yml from templates")
-        .action((template) => init({ template }));
+        .action(async (template?: string) => {
+            const { init } = await import("../src/commands/init.js");
+            await init({ template });
+        });
 
     program
         .command("build")
         .description("Build and package the project (copy strategy)")
         .option("-V, --version <ver>", "Override version string")
         .option("-n, --dry-run", "Show planned build actions without writing files")
-        .action(async (opts, cmd) => {
-            await build(cmd.optsWithGlobals());
-        });
+        .action(lazyAction(() => import("../src/commands/build.js"), "build"));
 
     program
         .command("deploy")
@@ -131,7 +130,7 @@ async function main() {
         .option("--no-health-gate", "Do not abort deployment if health check fails")
         .option("--maintenance", "Put site into maintenance mode during deployment")
         .option("--backup-db", "Take automated pre-deployment database backup before release cutover")
-        .action((opts, cmd) => deploy(cmd.optsWithGlobals()));
+        .action(lazyAction(() => import("../src/commands/deploy.js"), "deploy"));
 
     program
         .command("rollback")
@@ -142,34 +141,34 @@ async function main() {
         .option("-n, --dry-run", "Show what would be changed without switching the symlink")
         .option("-y, --yes", "Automatic yes to prompts; roll back to previous release without prompt")
         .option("--non-interactive", "Run in non-interactive mode without terminal prompts")
-        .action((opts, cmd) => rollback(cmd.optsWithGlobals()));
+        .action(lazyAction(() => import("../src/commands/rollback.js"), "rollback"));
 
     program
         .command("list")
         .description("List releases on remote")
         .option("-e, --env <env>", "Target environment (default: production)")
         .option("--json", "Output machine-readable JSON status")
-        .action((opts, cmd) => list(cmd.optsWithGlobals()));
+        .action(lazyAction(() => import("../src/commands/list.js"), "list"));
 
     program
         .command("clean")
         .description("Remove old releases beyond keepVersions")
         .option("-e, --env <env>", "Target environment (default: production)")
         .option("-n, --dry-run", "Show which releases would be removed without deleting them")
-        .action((opts, cmd) => clean(cmd.optsWithGlobals()));
+        .action(lazyAction(() => import("../src/commands/clean.js"), "clean"));
 
     program
         .command("status")
         .description("Show current release and remote deployment status")
         .option("-e, --env <env>", "Target environment (default: production)")
         .option("--json", "Output machine-readable JSON status")
-        .action((opts, cmd) => status(cmd.optsWithGlobals()));
+        .action(lazyAction(() => import("../src/commands/status.js"), "status"));
 
     program
         .command("health")
         .description("Call the health endpoint")
         .option("-e, --env <env>", "Target environment (default: production)")
-        .action((opts, cmd) => health(cmd.optsWithGlobals()));
+        .action(lazyAction(() => import("../src/commands/health.js"), "health"));
 
     program
         .command("provision")
@@ -181,9 +180,7 @@ async function main() {
         .option("--skip-checks", "Skip prerequisite verification (tar, curl, runtime)")
         .option("--only <step>", "Run a specific provisioning step (prereqs, dirs, shared, permissions, service)")
         .option("--json", "Output machine-readable JSON status")
-        .action(async (opts, cmd) => {
-            await provision(cmd.optsWithGlobals());
-        });
+        .action(lazyAction(() => import("../src/commands/provision.js"), "provision"));
 
     program
         .command("setup")
@@ -208,17 +205,13 @@ async function main() {
         .option("--admin-key <path>", "Path to admin SSH private key")
         .option("--admin-password <pass>", "Admin user password or sudo password")
         .option("--create-deployer", "Provision dedicated unprivileged deploy user and grant limited sudo")
-        .action(async (opts, cmd) => {
-            await setup(cmd.optsWithGlobals());
-        });
+        .action(lazyAction(() => import("../src/commands/setup.js"), "setup"));
 
     program
         .command("ssh")
         .description("Open an interactive SSH terminal on the remote server")
         .option("-e, --env <env>", "Target environment (default: production)")
-        .action(async (opts, cmd) => {
-            await ssh(cmd.optsWithGlobals());
-        });
+        .action(lazyAction(() => import("../src/commands/ssh.js"), "ssh"));
 
     program
         .command("run <command>")
@@ -230,7 +223,8 @@ async function main() {
         .option("--admin-user <user>", "Override admin username for command execution (e.g. root)")
         .option("--admin-key <path>", "Path to admin SSH private key")
         .option("--admin-password <pass>", "Admin user password or sudo password")
-        .action(async (command, opts, cmd) => {
+        .action(async (command: string, _opts: any, cmd: Command) => {
+            const { run } = await import("../src/commands/run.js");
             await run(command, cmd.optsWithGlobals());
         });
 
@@ -246,9 +240,7 @@ async function main() {
         .option("-f, --file <path>", "Specific local .env file to upload")
         .option("--force", "Overwrite remote .env without interactive prompt")
         .option("-y, --yes", "Automatic yes to prompts")
-        .action(async (opts, cmd) => {
-            await envPush(cmd.optsWithGlobals());
-        });
+        .action(lazyAction(() => import("../src/commands/env.js"), "envPush"));
 
     envCmd
         .command("pull")
@@ -257,15 +249,14 @@ async function main() {
         .option("-o, --out <path>", "Destination local path (default: .env.<env>.remote)")
         .option("--force", "Overwrite local file if it already exists")
         .option("-y, --yes", "Automatic yes to prompts")
-        .action(async (opts, cmd) => {
-            await envPull(cmd.optsWithGlobals());
-        });
+        .action(lazyAction(() => import("../src/commands/env.js"), "envPull"));
 
     envCmd
         .command("set <pair>")
         .description("Set or update a KEY=VALUE variable in remote shared/.env")
         .option("-e, --env <env>", "Target environment (default: production)")
-        .action(async (pair, opts, cmd) => {
+        .action(async (pair: string, _opts: any, cmd: Command) => {
+            const { envSet } = await import("../src/commands/env.js");
             await envSet(pair, cmd.optsWithGlobals());
         });
 
@@ -276,9 +267,7 @@ async function main() {
         .option("--editor <cmd>", "Custom editor command (default: $VISUAL, $EDITOR, or notepad/nano)")
         .option("--force", "Upload changes without interactive confirmation prompt")
         .option("-y, --yes", "Automatic yes to prompts")
-        .action(async (opts, cmd) => {
-            await envEdit(cmd.optsWithGlobals());
-        });
+        .action(lazyAction(() => import("../src/commands/env.js"), "envEdit"));
 
     // Backward-compatible colon aliases: env:push, env:pull, env:set, env:edit
     program
@@ -288,9 +277,7 @@ async function main() {
         .option("-f, --file <path>", "Specific local .env file to upload")
         .option("--force", "Overwrite remote .env without interactive prompt")
         .option("-y, --yes", "Automatic yes to prompts")
-        .action(async (opts, cmd) => {
-            await envPush(cmd.optsWithGlobals());
-        });
+        .action(lazyAction(() => import("../src/commands/env.js"), "envPush"));
 
     program
         .command("env:pull")
@@ -299,15 +286,14 @@ async function main() {
         .option("-o, --out <path>", "Destination local path (default: .env.<env>.remote)")
         .option("--force", "Overwrite local file if it already exists")
         .option("-y, --yes", "Automatic yes to prompts")
-        .action(async (opts, cmd) => {
-            await envPull(cmd.optsWithGlobals());
-        });
+        .action(lazyAction(() => import("../src/commands/env.js"), "envPull"));
 
     program
         .command("env:set <pair>")
         .description("Set or update a KEY=VALUE variable in remote shared/.env (alias for 'env set')")
         .option("-e, --env <env>", "Target environment (default: production)")
-        .action(async (pair, opts, cmd) => {
+        .action(async (pair: string, _opts: any, cmd: Command) => {
+            const { envSet } = await import("../src/commands/env.js");
             await envSet(pair, cmd.optsWithGlobals());
         });
 
@@ -318,9 +304,7 @@ async function main() {
         .option("--editor <cmd>", "Custom editor command (default: $VISUAL, $EDITOR, or notepad/nano)")
         .option("--force", "Upload changes without interactive confirmation prompt")
         .option("-y, --yes", "Automatic yes to prompts")
-        .action(async (opts, cmd) => {
-            await envEdit(cmd.optsWithGlobals());
-        });
+        .action(lazyAction(() => import("../src/commands/env.js"), "envEdit"));
 
     program
         .command("logs")
@@ -337,9 +321,7 @@ async function main() {
         .option("--admin-user <user>", "Admin / sudo username for remote privileged log streaming (e.g. root)")
         .option("--admin-key <path>", "Path to admin SSH private key")
         .option("--admin-password <pass>", "Admin user password or sudo password")
-        .action(async (opts, cmd) => {
-            await logs(cmd.optsWithGlobals());
-        });
+        .action(lazyAction(() => import("../src/commands/logs.js"), "logs"));
 
     program
         .command("down")
@@ -347,17 +329,13 @@ async function main() {
         .option("-e, --env <env>", "Target environment (default: production)")
         .option("-m, --message <msg>", "Custom maintenance message")
         .option("--retry <seconds>", "Suggested Retry-After header value in seconds (default: 300)")
-        .action(async (opts, cmd) => {
-            await down(cmd.optsWithGlobals());
-        });
+        .action(lazyAction(() => import("../src/commands/maintenance.js"), "down"));
 
     program
         .command("up")
         .description("Take the remote site out of maintenance mode (restore traffic)")
         .option("-e, --env <env>", "Target environment (default: production)")
-        .action(async (opts, cmd) => {
-            await up(cmd.optsWithGlobals());
-        });
+        .action(lazyAction(() => import("../src/commands/maintenance.js"), "up"));
 
     // 🌐 Site Management Commands
     const siteCmd = program
@@ -388,9 +366,7 @@ async function main() {
         .option("--admin-user <user>", "Admin / sudo username for server provisioning (e.g. root)")
         .option("--admin-key <path>", "Path to admin SSH private key")
         .option("--admin-password <pass>", "Admin user password or sudo password")
-        .action(async (opts, cmd) => {
-            await siteAdd(cmd.optsWithGlobals());
-        });
+        .action(lazyAction(() => import("../src/commands/site.js"), "siteAdd"));
 
     siteCmd
         .command("backup")
@@ -403,9 +379,7 @@ async function main() {
         .option("--admin-user <user>", "Admin / sudo username for remote inspection")
         .option("--admin-key <path>", "Path to admin SSH private key")
         .option("--admin-password <pass>", "Admin user password or sudo password")
-        .action(async (opts, cmd) => {
-            await siteBackup(cmd.optsWithGlobals());
-        });
+        .action(lazyAction(() => import("../src/commands/site.js"), "siteBackup"));
 
     siteCmd
         .command("remove")
@@ -422,9 +396,7 @@ async function main() {
         .option("--admin-user <user>", "Admin / sudo username for remote teardown")
         .option("--admin-key <path>", "Path to admin SSH private key")
         .option("--admin-password <pass>", "Admin user password or sudo password")
-        .action(async (opts, cmd) => {
-            await siteRemove(cmd.optsWithGlobals());
-        });
+        .action(lazyAction(() => import("../src/commands/site.js"), "siteRemove"));
 
     siteCmd
         .command("info")
@@ -436,9 +408,7 @@ async function main() {
         .option("--admin-user <user>", "Admin / sudo username for remote inspection")
         .option("--admin-key <path>", "Path to admin SSH private key")
         .option("--admin-password <pass>", "Admin user password or sudo password")
-        .action(async (opts, cmd) => {
-            await siteInfo(cmd.optsWithGlobals());
-        });
+        .action(lazyAction(() => import("../src/commands/site.js"), "siteInfo"));
 
     siteCmd
         .command("ssl")
@@ -454,9 +424,7 @@ async function main() {
         .option("--admin-user <user>", "Admin / sudo username for remote configuration")
         .option("--admin-key <path>", "Path to admin SSH private key")
         .option("--admin-password <pass>", "Admin user password or sudo password")
-        .action(async (opts, cmd) => {
-            await siteSsl(cmd.optsWithGlobals());
-        });
+        .action(lazyAction(() => import("../src/commands/site.js"), "siteSsl"));
 
     // Convenient top-level alias `dploy remove`
     program
@@ -474,9 +442,7 @@ async function main() {
         .option("--admin-user <user>", "Admin / sudo username for remote teardown")
         .option("--admin-key <path>", "Path to admin SSH private key")
         .option("--admin-password <pass>", "Admin user password or sudo password")
-        .action(async (opts, cmd) => {
-            await siteRemove(cmd.optsWithGlobals());
-        });
+        .action(lazyAction(() => import("../src/commands/site.js"), "siteRemove"));
 
     // 🗄️ Database Management Group
     const dbCmd = program
@@ -503,7 +469,8 @@ async function main() {
         .option("--admin-user <user>", "Admin / sudo username for SSH connection")
         .option("--admin-key <path>", "Path to admin SSH private key")
         .option("--admin-password <pass>", "Admin user password or sudo password")
-        .action(async (name, opts, cmd) => {
+        .action(async (name: string | undefined, _opts: any, cmd: Command) => {
+            const { dbCreate } = await import("../src/commands/database.js");
             const merged = { ...cmd.optsWithGlobals(), name: name || cmd.optsWithGlobals().name };
             await dbCreate(merged);
         });
@@ -522,7 +489,8 @@ async function main() {
         .option("--admin-user <user>", "Admin / sudo username for SSH connection")
         .option("--admin-key <path>", "Path to admin SSH private key")
         .option("--admin-password <pass>", "Admin user password or sudo password")
-        .action(async (name, opts, cmd) => {
+        .action(async (name: string | undefined, _opts: any, cmd: Command) => {
+            const { dbDrop } = await import("../src/commands/database.js");
             const merged = { ...cmd.optsWithGlobals(), name: name || cmd.optsWithGlobals().name };
             await dbDrop(merged);
         });
@@ -540,9 +508,7 @@ async function main() {
         .option("--admin-user <user>", "Admin / sudo username for SSH connection")
         .option("--admin-key <path>", "Path to admin SSH private key")
         .option("--admin-password <pass>", "Admin user password or sudo password")
-        .action(async (opts, cmd) => {
-            await dbBackup(cmd.optsWithGlobals());
-        });
+        .action(lazyAction(() => import("../src/commands/database.js"), "dbBackup"));
 
     dbCmd
         .command("restore <file>")
@@ -557,7 +523,8 @@ async function main() {
         .option("--admin-user <user>", "Admin / sudo username for SSH connection")
         .option("--admin-key <path>", "Path to admin SSH private key")
         .option("--admin-password <pass>", "Admin user password or sudo password")
-        .action(async (file, opts, cmd) => {
+        .action(async (file: string, _opts: any, cmd: Command) => {
+            const { dbRestore } = await import("../src/commands/database.js");
             await dbRestore(file, cmd.optsWithGlobals());
         });
 
@@ -572,9 +539,7 @@ async function main() {
         .option("--admin-user <user>", "Admin / sudo username for SSH connection")
         .option("--admin-key <path>", "Path to admin SSH private key")
         .option("--admin-password <pass>", "Admin user password or sudo password")
-        .action(async (opts, cmd) => {
-            await dbOptimize(cmd.optsWithGlobals());
-        });
+        .action(lazyAction(() => import("../src/commands/database.js"), "dbOptimize"));
 
     dbCmd
         .command("console")
@@ -588,9 +553,7 @@ async function main() {
         .option("--admin-user <user>", "Admin / sudo username for SSH connection")
         .option("--admin-key <path>", "Path to admin SSH private key")
         .option("--admin-password <pass>", "Admin user password or sudo password")
-        .action(async (opts, cmd) => {
-            await dbConsole(cmd.optsWithGlobals());
-        });
+        .action(lazyAction(() => import("../src/commands/database.js"), "dbConsole"));
 
     // Backward-compatible colon aliases: db:create, db:drop, db:backup, db:restore, db:optimize, db:console
     program
@@ -612,7 +575,8 @@ async function main() {
         .option("--admin-user <user>", "Admin / sudo username for SSH connection")
         .option("--admin-key <path>", "Path to admin SSH private key")
         .option("--admin-password <pass>", "Admin user password or sudo password")
-        .action(async (name, opts, cmd) => {
+        .action(async (name: string | undefined, _opts: any, cmd: Command) => {
+            const { dbCreate } = await import("../src/commands/database.js");
             const merged = { ...cmd.optsWithGlobals(), name: name || cmd.optsWithGlobals().name };
             await dbCreate(merged);
         });
@@ -631,7 +595,8 @@ async function main() {
         .option("--admin-user <user>", "Admin / sudo username for SSH connection")
         .option("--admin-key <path>", "Path to admin SSH private key")
         .option("--admin-password <pass>", "Admin user password or sudo password")
-        .action(async (name, opts, cmd) => {
+        .action(async (name: string | undefined, _opts: any, cmd: Command) => {
+            const { dbDrop } = await import("../src/commands/database.js");
             const merged = { ...cmd.optsWithGlobals(), name: name || cmd.optsWithGlobals().name };
             await dbDrop(merged);
         });
@@ -649,9 +614,7 @@ async function main() {
         .option("--admin-user <user>", "Admin / sudo username for SSH connection")
         .option("--admin-key <path>", "Path to admin SSH private key")
         .option("--admin-password <pass>", "Admin user password or sudo password")
-        .action(async (opts, cmd) => {
-            await dbBackup(cmd.optsWithGlobals());
-        });
+        .action(lazyAction(() => import("../src/commands/database.js"), "dbBackup"));
 
     program
         .command("db:restore <file>")
@@ -666,7 +629,8 @@ async function main() {
         .option("--admin-user <user>", "Admin / sudo username for SSH connection")
         .option("--admin-key <path>", "Path to admin SSH private key")
         .option("--admin-password <pass>", "Admin user password or sudo password")
-        .action(async (file, opts, cmd) => {
+        .action(async (file: string, _opts: any, cmd: Command) => {
+            const { dbRestore } = await import("../src/commands/database.js");
             await dbRestore(file, cmd.optsWithGlobals());
         });
 
@@ -681,9 +645,7 @@ async function main() {
         .option("--admin-user <user>", "Admin / sudo username for SSH connection")
         .option("--admin-key <path>", "Path to admin SSH private key")
         .option("--admin-password <pass>", "Admin user password or sudo password")
-        .action(async (opts, cmd) => {
-            await dbOptimize(cmd.optsWithGlobals());
-        });
+        .action(lazyAction(() => import("../src/commands/database.js"), "dbOptimize"));
 
     program
         .command("db:console")
@@ -697,9 +659,7 @@ async function main() {
         .option("--admin-user <user>", "Admin / sudo username for SSH connection")
         .option("--admin-key <path>", "Path to admin SSH private key")
         .option("--admin-password <pass>", "Admin user password or sudo password")
-        .action(async (opts, cmd) => {
-            await dbConsole(cmd.optsWithGlobals());
-        });
+        .action(lazyAction(() => import("../src/commands/database.js"), "dbConsole"));
 
     await program.parseAsync(process.argv);
 }
