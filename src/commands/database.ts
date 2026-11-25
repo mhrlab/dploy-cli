@@ -68,12 +68,11 @@ export function buildMysqlCliAuthArgs(ctx: {
     isExplicitAdmin?: boolean;
 }): { envPrefix: string; cliArgs: string; sudoPrefix: string } {
     const isLocal = ctx.host === "127.0.0.1" || ctx.host === "localhost";
-    const sudoPrefix = ctx.sudoPrefix || "";
     const targetUser = ctx.user || "root";
 
     if (ctx.isExplicitAdmin && !ctx.password && isLocal) {
         // Modern Linux auth_socket enables passwordless sudo mysql
-        return { envPrefix: "", cliArgs: `-u ${escapeShellArg(targetUser)}`, sudoPrefix };
+        return { envPrefix: "", cliArgs: `-u ${escapeShellArg(targetUser)}`, sudoPrefix: ctx.sudoPrefix || "" };
     }
 
     const parts: string[] = [];
@@ -82,7 +81,8 @@ export function buildMysqlCliAuthArgs(ctx: {
     parts.push(`-u ${escapeShellArg(targetUser)}`);
     if (ctx.password) parts.push(`-p${escapeShellArg(ctx.password)}`);
 
-    return { envPrefix: "", cliArgs: parts.join(" "), sudoPrefix };
+    // When DB password is provided, client connects directly using DB user credentials
+    return { envPrefix: "", cliArgs: parts.join(" "), sudoPrefix: "" };
 }
 
 export function buildMysqlCreateQuery(
