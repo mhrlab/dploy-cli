@@ -5,7 +5,7 @@ import { log } from "../core/logger.js";
 import { expandTilde, getReadableFileSize, escapeShellArg, posixJoin, toSudoersSlug } from "../core/utils.js";
 import { backupSiteConfigurations } from "../features/site-backup.js";
 import { removeSiteConfigurations } from "../features/site-remove.js";
-import { generateNginxConfig, AppKind, SslMode } from "../features/server-wizard.js";
+import { generateNginxConfig, getSslModeGuidance, AppKind, SslMode } from "../features/server-wizard.js";
 import { printElevatedWarning } from "../core/banner.js";
 
 export interface SiteOptions {
@@ -460,6 +460,10 @@ export async function siteSsl(opts: SiteOptions) {
 
         await exec(bundle.ssh, `${sudoPrefix}systemctl reload nginx`);
         log.ok(`SSL mode updated to '${sslMode}' and Nginx reloaded for ${primaryDomain}!`);
+
+        for (const line of getSslModeGuidance(sslMode, primaryDomain)) {
+            log.info(line);
+        }
     } finally {
         await close(bundle);
     }

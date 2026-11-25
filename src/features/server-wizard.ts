@@ -8,6 +8,38 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 export type AppKind = "spa" | "node" | "php";
 export type SslMode = "none" | "certbot" | "cloudflare-flexible" | "cloudflare-origin";
 
+export function getSslModeGuidance(sslMode: SslMode, primaryDomain = "yourdomain.com"): string[] {
+    if (sslMode === "cloudflare-origin") {
+        return [
+            "How to get your Cloudflare Origin Certificate:",
+            "  1. Open Cloudflare Dashboard -> select your domain -> SSL/TLS -> Origin Server.",
+            "  2. Click 'Create Certificate' (keep 'Generate private key and CSR with Cloudflare', RSA 2048).",
+            `  3. Ensure hostnames include '${primaryDomain}' and '*.${primaryDomain}', then click 'Create'.`,
+            "  4. Copy both the Origin Certificate (PEM) and Private Key (shown only once).",
+            "  5. Set Cloudflare Dashboard -> SSL/TLS -> Overview to 'Full (Strict)'.",
+        ];
+    }
+
+    if (sslMode === "cloudflare-flexible") {
+        return [
+            "Cloudflare Flexible SSL Note:",
+            "  - Nginx listens on port 80 (HTTP) only.",
+            "  - In Cloudflare Dashboard -> SSL/TLS -> Overview, set mode to 'Flexible' (and disable Automatic SSL/TLS if it upgrades to Full).",
+            "  - Leaving Cloudflare on 'Full' or 'Full (Strict)' will cause Error 521 because port 443 is closed.",
+        ];
+    }
+
+    if (sslMode === "none") {
+        return [
+            "Plain HTTP Note:",
+            "  - Nginx listens on port 80 (HTTP) only.",
+            "  - If this domain is proxied through Cloudflare (orange cloud), set Cloudflare SSL/TLS mode to 'Flexible' or switch to 'cloudflare-origin' / 'certbot' to avoid Error 521.",
+        ];
+    }
+
+    return [];
+}
+
 export interface NginxConfigParams {
     kind: AppKind;
     domains: string[];

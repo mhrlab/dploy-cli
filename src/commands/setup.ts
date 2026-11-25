@@ -10,6 +10,7 @@ import { printElevatedWarning } from "../core/banner.js";
 import {
     generateNginxConfig,
     generateSystemdUnit,
+    getSslModeGuidance,
     AppKind,
     SslMode,
     NginxConfigParams,
@@ -311,8 +312,12 @@ export async function setup(opts: SetupOptions) {
 
         setupCertbot = sslMode === "certbot";
 
-        // If Cloudflare Origin CA was selected, ask how user wants to provide the certificate
+        // If Cloudflare Origin CA was selected, show instructions and ask how user wants to provide the certificate
         if (sslMode === "cloudflare-origin" && (!opts.cfCert || !opts.cfKey) && process.stdin.isTTY) {
+            const previewDomain = (domainInput || "yourdomain.com").split(/\s+/)[0];
+            for (const line of getSslModeGuidance("cloudflare-origin", previewDomain)) {
+                log.info(line);
+            }
             const certMethodAns = await inquirer.prompt([
                 {
                     type: "list",
@@ -704,8 +709,18 @@ export async function setup(opts: SetupOptions) {
             }
         } else if (sslMode === "cloudflare-origin") {
             log.info(`Cloudflare Origin CA SSL configured in Nginx (expects /etc/ssl/certs/cf-origin-${primaryDomain}.pem and /etc/ssl/private/cf-origin-${primaryDomain}.key).`);
+            for (const line of getSslModeGuidance("cloudflare-origin", primaryDomain)) {
+                log.info(line);
+            }
         } else if (sslMode === "cloudflare-flexible") {
             log.ok("Cloudflare Flexible SSL configured (real visitor IP restoring enabled, HTTPS protocol detection active)");
+            for (const line of getSslModeGuidance("cloudflare-flexible", primaryDomain)) {
+                log.info(line);
+            }
+        } else if (sslMode === "none") {
+            for (const line of getSslModeGuidance("none", primaryDomain)) {
+                log.info(line);
+            }
         }
 
         log.ok("Server setup wizard completed successfully!");
