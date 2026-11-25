@@ -12,7 +12,7 @@ import { provision } from "../src/commands/provision.js";
 import { setup } from "../src/commands/setup.js";
 import { ssh } from "../src/commands/ssh.js";
 import { run } from "../src/commands/run.js";
-import { envPush, envPull, envSet } from "../src/commands/env.js";
+import { envPush, envPull, envSet, envEdit } from "../src/commands/env.js";
 import { logs } from "../src/commands/logs.js";
 import { down, up } from "../src/commands/maintenance.js";
 import { siteBackup, siteRemove, siteInfo, siteSsl } from "../src/commands/site.js";
@@ -268,7 +268,18 @@ async function main() {
             await envSet(pair, cmd.optsWithGlobals());
         });
 
-    // Backward-compatible colon aliases: env:push, env:pull, env:set
+    envCmd
+        .command("edit")
+        .description("Interactively edit remote shared/.env in your local text editor")
+        .option("-e, --env <env>", "Target environment (default: production)")
+        .option("--editor <cmd>", "Custom editor command (default: $VISUAL, $EDITOR, or notepad/nano)")
+        .option("--force", "Upload changes without interactive confirmation prompt")
+        .option("-y, --yes", "Automatic yes to prompts")
+        .action(async (opts, cmd) => {
+            await envEdit(cmd.optsWithGlobals());
+        });
+
+    // Backward-compatible colon aliases: env:push, env:pull, env:set, env:edit
     program
         .command("env:push")
         .description("Upload local .env to remote shared/.env (alias for 'env push')")
@@ -300,6 +311,17 @@ async function main() {
         });
 
     program
+        .command("env:edit")
+        .description("Interactively edit remote shared/.env in your local text editor (alias for 'env edit')")
+        .option("-e, --env <env>", "Target environment (default: production)")
+        .option("--editor <cmd>", "Custom editor command (default: $VISUAL, $EDITOR, or notepad/nano)")
+        .option("--force", "Upload changes without interactive confirmation prompt")
+        .option("-y, --yes", "Automatic yes to prompts")
+        .action(async (opts, cmd) => {
+            await envEdit(cmd.optsWithGlobals());
+        });
+
+    program
         .command("logs")
         .description("Stream or tail remote application/server logs")
         .option("-e, --env <env>", "Target environment (default: production)")
@@ -307,6 +329,7 @@ async function main() {
         .option("-n, --lines <count>", "Number of lines to show (default: 50)")
         .option("--type <type>", "Log type: app, nginx, pm2, or systemd")
         .option("--file <path>", "Specific remote log file to tail")
+        .option("--latest", "Automatically pick the newest daily log file without prompting")
         .option("--sudo", "Execute log reading command with sudo privileges")
         .option("-A, --as-admin", "Connect using admin credentials defined in deploy.config.yml")
         .option("--as-sudo", "Alias for --as-admin")

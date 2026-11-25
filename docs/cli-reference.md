@@ -142,9 +142,9 @@ dploy run "systemctl restart php8.2-fpm" -A [-e <env>]
 ```
 
 ### `dploy logs`
-Real-time remote log streaming (`tail -f`). Supports custom configured paths in `deploy.config.yml`, framework logs (`storage/logs`, `writable/logs`), and elevated streaming via `-A, --as-admin` (alias `--as-sudo`) using `env.admin` credentials.
+Real-time remote log streaming (`tail -f`). Supports custom configured paths in `deploy.config.yml`, interactive selection across framework daily log files (`storage/logs`, `writable/logs`), `--latest` to auto-pick the newest log, and elevated streaming via `-A, --as-admin` (alias `--as-sudo`) using `env.admin` credentials.
 ```bash
-dploy logs [-e <env>] [-f, --follow] [-n <lines>] [--type <app|nginx|pm2|systemd>] [--file <path>] [-A, --as-admin] [--sudo]
+dploy logs [-e <env>] [-f, --follow] [-n <lines>] [--type <app|nginx|pm2|systemd>] [--file <path>] [--latest] [-A, --as-admin] [--sudo]
 ```
 
 ### `dploy env` (aliases: `dploy env:*`)
@@ -153,6 +153,7 @@ Manage remote environment variables securely.
 dploy env push [-e <env>] [--file <local-path>] [--force]
 dploy env pull [-e <env>] [--out <local-path>] [--force]
 dploy env set KEY=VALUE [-e <env>]
+dploy env edit [-e <env>] [--editor <cmd>] [--force] [-y]
 ```
 
 ### `dploy site`

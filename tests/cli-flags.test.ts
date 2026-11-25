@@ -27,3 +27,17 @@ test("CLI handles unknown commands cleanly with error message rather than crash"
         assert.match(err.stderr || err.stdout, /unknown command/i);
     }
 });
+
+test("CLI logs command exposes --latest option for daily log file selection", async () => {
+    const { stdout: logsHelp } = await execFileAsync("node", [CLI_PATH, "logs", "--help"]);
+    assert.match(logsHelp, /--latest/);
+});
+
+test("CLI env group and aliases expose env edit and env:edit commands", async () => {
+    const { stdout: envHelp } = await execFileAsync("node", [CLI_PATH, "env", "--help"]);
+    assert.match(envHelp, /edit/);
+
+    const { stdout: envEditHelp } = await execFileAsync("node", [CLI_PATH, "env:edit", "--help"]);
+    assert.match(envEditHelp, /--editor/);
+});
+
