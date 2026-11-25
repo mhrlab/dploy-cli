@@ -7,6 +7,7 @@ import { backupSiteConfigurations } from "../features/site-backup.js";
 import { removeSiteConfigurations } from "../features/site-remove.js";
 import { generateNginxConfig, getSslModeGuidance, AppKind, SslMode } from "../features/server-wizard.js";
 import { printElevatedWarning } from "../core/banner.js";
+import { setup, SetupOptions } from "./setup.js";
 
 export interface SiteOptions {
     env?: string;
@@ -467,4 +468,12 @@ export async function siteSsl(opts: SiteOptions) {
     } finally {
         await close(bundle);
     }
+}
+
+export async function siteAdd(opts: SetupOptions) {
+    return setup({
+        ...opts,
+        createDeployer: false,
+        skipUserSetup: true,
+    });
 }

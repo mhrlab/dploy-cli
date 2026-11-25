@@ -15,7 +15,7 @@ import { run } from "../src/commands/run.js";
 import { envPush, envPull, envSet, envEdit } from "../src/commands/env.js";
 import { logs } from "../src/commands/logs.js";
 import { down, up } from "../src/commands/maintenance.js";
-import { siteBackup, siteRemove, siteInfo, siteSsl } from "../src/commands/site.js";
+import { siteBackup, siteRemove, siteInfo, siteSsl, siteAdd } from "../src/commands/site.js";
 import { dbCreate, dbDrop, dbBackup, dbRestore, dbOptimize, dbConsole } from "../src/commands/database.js";
 import { setLogLevel } from "../src/core/logger.js";
 import { getAppVersion } from "../src/core/utils.js";
@@ -363,6 +363,34 @@ async function main() {
     const siteCmd = program
         .command("site")
         .description("Manage remote site configurations, backups, and teardown");
+
+    siteCmd
+        .command("add")
+        .description("Add a new site/domain to an existing server (skips deploy user and sudoers creation)")
+        .option("-e, --env <env>", "Target environment (default: production)")
+        .option("-n, --dry-run", "Preview planned Nginx and systemd configs without touching the server")
+        .option("--webserver <type>", "Web server type (nginx, none)")
+        .option("--kind <type>", "App type (node, php, spa)")
+        .option("-d, --domain <domain>", "Domain name(s)")
+        .option("--port <port>", "Upstream port for Node.js reverse proxy")
+        .option("--php-socket <path>", "PHP-FPM socket path")
+        .option("--ssl <mode>", "SSL/TLS mode (certbot, cloudflare-flexible, cloudflare-origin, none)")
+        .option("--cloudflare", "Enable Cloudflare optimizations (Real-IP restoration and Flexible SSL headers)")
+        .option("--cf-cert <pathOrContent>", "Cloudflare Origin CA certificate (.pem path or content)")
+        .option("--cf-key <pathOrContent>", "Cloudflare Origin CA private key (.key path or content)")
+        .option("--certbot", "Obtain Let's Encrypt SSL via Certbot")
+        .option("--service", "Create and enable a systemd background service")
+        .option("--exec-start <cmd>", "ExecStart command for systemd unit")
+        .option("--queue-worker", "Create and enable a background queue worker (e.g. for Laravel/PHP)")
+        .option("--worker-command <cmd>", "Command for the queue worker service")
+        .option("-A, --as-admin", "Connect using admin credentials defined in deploy.config.yml")
+        .option("--as-sudo", "Alias for --as-admin")
+        .option("--admin-user <user>", "Admin / sudo username for server provisioning (e.g. root)")
+        .option("--admin-key <path>", "Path to admin SSH private key")
+        .option("--admin-password <pass>", "Admin user password or sudo password")
+        .action(async (opts, cmd) => {
+            await siteAdd(cmd.optsWithGlobals());
+        });
 
     siteCmd
         .command("backup")

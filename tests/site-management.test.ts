@@ -190,6 +190,42 @@ environments:
     }
 });
 
+test("siteAdd dry-run configures site without user/sudoers provisioning", async () => {
+    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "dploy-site-add-"));
+    const prevCwd = process.cwd();
+
+    try {
+        process.chdir(tmpDir);
+        await fs.writeJson("package.json", { name: "second-site", version: "1.0.0" });
+        await fs.writeFile(
+            "deploy.config.yml",
+            `
+name: second-site
+environments:
+  production:
+    host: 192.168.1.120
+    username: deploy
+    deployTo: /var/www/second-site.in
+`
+        );
+
+        const { siteAdd } = await import("../src/commands/site.js");
+        await assert.doesNotReject(async () => {
+            await siteAdd({
+                env: "production",
+                dryRun: true,
+                webserver: "nginx",
+                kind: "php",
+                domain: "second-site.in",
+                ssl: "cloudflare-flexible",
+            });
+        });
+    } finally {
+        process.chdir(prevCwd);
+        await fs.remove(tmpDir);
+    }
+});
+
 test("site commands auto-detect domain from deployTo path (e.g. /var/www/tunenest.in)", async () => {
     const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "dploy-site-detect-"));
     const prevCwd = process.cwd();

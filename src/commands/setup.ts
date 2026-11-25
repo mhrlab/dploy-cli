@@ -173,6 +173,7 @@ export interface SetupOptions {
     adminKey?: string;
     adminPassword?: string;
     createDeployer?: boolean;
+    skipUserSetup?: boolean;
 }
 
 export async function setup(opts: SetupOptions) {
@@ -491,7 +492,9 @@ export async function setup(opts: SetupOptions) {
     if (opts.dryRun) {
         log.info("[dry-run] Planned server setup configurations:");
         log.info(`[dry-run] Would connect to ${setupConnConfig.username}@${setupConnConfig.host} (Privileged Mode: ${isRunningAsRoot ? "root" : "sudo"})`);
-        if (opts.createDeployer && env.username && env.username !== "root") {
+        if (opts.skipUserSetup) {
+            log.info(`[dry-run] Skipping user and sudoers creation (site add mode)`);
+        } else if (opts.createDeployer && env.username && env.username !== "root") {
             log.info(`[dry-run] Would create unprivileged user '${env.username}'`);
         }
         log.info(`[dry-run] Would create directory ${deployTo} and set ownership to ${env.username || "deploy"}:www-data (mode 775)`);
@@ -518,7 +521,7 @@ export async function setup(opts: SetupOptions) {
     const bundle = await connect(setupConnConfig);
     try {
         // If requested or if deploying as a non-root user that doesn't exist yet, provision the deployer user
-        if (opts.createDeployer && env.username && env.username !== "root") {
+        if (!opts.skipUserSetup && opts.createDeployer && env.username && env.username !== "root") {
             log.info(`Provisioning unprivileged deploy user '${env.username}'...`);
             await exec(bundle.ssh, `${sudoPrefix}id -u ${escapeShellArg(env.username)} || ${sudoPrefix}useradd -m -s /bin/bash ${escapeShellArg(env.username)}`);
             await exec(bundle.ssh, `${sudoPrefix}mkdir -p /home/${escapeShellArg(env.username)}/.ssh && ${sudoPrefix}chmod 700 /home/${escapeShellArg(env.username)}/.ssh`);
@@ -545,7 +548,7 @@ export async function setup(opts: SetupOptions) {
         }
 
         // Add limited passwordless sudo rules for service reloads (always ensure this exists for non-root deploy users)
-        if (env.username && env.username !== "root") {
+        if (!opts.skipUserSetup && env.username && env.username !== "root") {
             const appSlug = toSudoersSlug(defaultAppName);
             const sudoersFile = `/etc/sudoers.d/dploy-${appSlug}`;
 
