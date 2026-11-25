@@ -13,6 +13,20 @@ const lazyAction = (
     await mod[exportName](cmd.optsWithGlobals());
 };
 
+const withDryRun = (cmd: Command, description = "Preview planned actions without making changes") =>
+    cmd.option("-n, --dry-run", description);
+
+const withJson = (cmd: Command) =>
+    cmd.option("--json", "Output machine-readable JSON status");
+
+const withAdminAuth = (cmd: Command, target = "remote execution") =>
+    cmd
+        .option("-A, --as-admin", `Connect using admin credentials defined in deploy.config.yml for ${target}`)
+        .addOption(new Option("--as-sudo", "Alias for --as-admin").hideHelp())
+        .option("--admin-user <user>", `Admin / sudo username for ${target} (e.g. root)`)
+        .option("--admin-key <path>", "Path to admin SSH private key")
+        .option("--admin-password <pass>", "Admin user password or sudo password");
+
 
 
 // 🧩 Helper to detect user abort / cancellation errors
@@ -72,6 +86,7 @@ async function main() {
         .name("dploy")
         .description("Universal deployment tool (MVP version)")
         .version(getAppVersion(), "-a, --app-version")
+        .configureHelp({ showGlobalOptions: true })
         .addHelpText("beforeAll", () => {
             if (!process.argv.includes("--json") && !process.argv.includes("-q") && !process.argv.includes("--quiet")) {
                 printFullBanner();
@@ -108,125 +123,118 @@ async function main() {
             await init({ template });
         });
 
-    program
-        .command("build")
-        .description("Build and package the project (copy strategy)")
-        .option("-V, --version <ver>", "Override version string")
-        .option("-n, --dry-run", "Show planned build actions without writing files")
-        .action(lazyAction(() => import("../src/commands/build.js"), "build"));
+    withDryRun(
+        program
+            .command("build")
+            .description("Build and package the project (copy strategy)")
+            .option("-V, --version <ver>", "Override version string"),
+        "Show planned build actions without writing files"
+    ).action(lazyAction(() => import("../src/commands/build.js"), "build"));
 
-    program
-        .command("deploy")
-        .description("Deploy to remote server")
-        .option("-e, --env <env>", "Target environment (default: production)")
-        .option("-A, --artifact <path>", "Path to a custom archive to upload (skips build)")
-        .addOption(new Option("--archive <path>", "Alias for --artifact").hideHelp())
-        .option("-s, --skip-build", "Skip local build and use an existing artifact")
-        .option("--version-override <ver>", "Override version string")
-        .addOption(new Option("-V, --version <ver>", "Override version string (alias)").hideHelp())
-        .option("-n, --dry-run", "Show planned deploy actions without changing anything")
-        .option("--keep-artifact", "Preserve local build artifact archive after deployment")
-        .option("--no-auto-rollback", "Disable automatic rollback if health check fails")
-        .option("--no-health-gate", "Do not abort deployment if health check fails")
-        .option("--maintenance", "Put site into maintenance mode during deployment")
-        .option("--backup-db", "Take automated pre-deployment database backup before release cutover")
-        .action(lazyAction(() => import("../src/commands/deploy.js"), "deploy"));
+    withDryRun(
+        program
+            .command("deploy")
+            .description("Deploy to remote server")
+            .option("-A, --artifact <path>", "Path to a custom archive to upload (skips build)")
+            .addOption(new Option("--archive <path>", "Alias for --artifact").hideHelp())
+            .option("-s, --skip-build", "Skip local build and use an existing artifact")
+            .option("--version-override <ver>", "Override version string")
+            .addOption(new Option("-V, --version <ver>", "Override version string (alias)").hideHelp())
+            .option("--keep-artifact", "Preserve local build artifact archive after deployment")
+            .option("--no-auto-rollback", "Disable automatic rollback if health check fails")
+            .option("--no-health-gate", "Do not abort deployment if health check fails")
+            .option("--maintenance", "Put site into maintenance mode during deployment")
+            .option("--backup-db", "Take automated pre-deployment database backup before release cutover"),
+        "Show planned deploy actions without changing anything"
+    ).action(lazyAction(() => import("../src/commands/deploy.js"), "deploy"));
 
-    program
-        .command("rollback")
-        .description("Rollback to previous release")
-        .option("-e, --env <env>", "Target environment (default: production)")
-        .option("--latest", "Rollback to the previous release without prompting")
-        .option("--to <version>", "Rollback to a specific release by name")
-        .option("-n, --dry-run", "Show what would be changed without switching the symlink")
-        .option("-y, --yes", "Automatic yes to prompts; roll back to previous release without prompt")
-        .option("--non-interactive", "Run in non-interactive mode without terminal prompts")
-        .action(lazyAction(() => import("../src/commands/rollback.js"), "rollback"));
+    withDryRun(
+        program
+            .command("rollback")
+            .description("Rollback to previous release")
+            .option("--latest", "Rollback to the previous release without prompting")
+            .option("--to <version>", "Rollback to a specific release by name")
+            .option("--non-interactive", "Run in non-interactive mode without terminal prompts"),
+        "Show what would be changed without switching the symlink"
+    ).action(lazyAction(() => import("../src/commands/rollback.js"), "rollback"));
 
-    program
-        .command("list")
-        .description("List releases on remote")
-        .option("-e, --env <env>", "Target environment (default: production)")
-        .option("--json", "Output machine-readable JSON status")
-        .action(lazyAction(() => import("../src/commands/list.js"), "list"));
+    withJson(
+        program
+            .command("list")
+            .description("List releases on remote")
+    ).action(lazyAction(() => import("../src/commands/list.js"), "list"));
 
-    program
-        .command("clean")
-        .description("Remove old releases beyond keepVersions")
-        .option("-e, --env <env>", "Target environment (default: production)")
-        .option("-n, --dry-run", "Show which releases would be removed without deleting them")
-        .action(lazyAction(() => import("../src/commands/clean.js"), "clean"));
+    withDryRun(
+        program
+            .command("clean")
+            .description("Remove old releases beyond keepVersions"),
+        "Show which releases would be removed without deleting them"
+    ).action(lazyAction(() => import("../src/commands/clean.js"), "clean"));
 
-    program
-        .command("status")
-        .description("Show current release and remote deployment status")
-        .option("-e, --env <env>", "Target environment (default: production)")
-        .option("--json", "Output machine-readable JSON status")
-        .action(lazyAction(() => import("../src/commands/status.js"), "status"));
+    withJson(
+        program
+            .command("status")
+            .description("Show current release and remote deployment status")
+    ).action(lazyAction(() => import("../src/commands/status.js"), "status"));
 
     program
         .command("health")
         .description("Call the health endpoint")
-        .option("-e, --env <env>", "Target environment (default: production)")
         .action(lazyAction(() => import("../src/commands/health.js"), "health"));
 
-    program
-        .command("provision")
-        .alias("setup-server")
-        .description("Prepare a fresh remote server for deployments")
-        .option("-e, --env <env>", "Target environment (default: production)")
-        .option("-n, --dry-run", "Preview planned server changes without executing")
-        .option("--force", "Re-run all steps even if directories/files exist")
-        .option("--skip-checks", "Skip prerequisite verification (tar, curl, runtime)")
-        .option("--only <step>", "Run a specific provisioning step (prereqs, dirs, shared, permissions, service)")
-        .option("--json", "Output machine-readable JSON status")
-        .action(lazyAction(() => import("../src/commands/provision.js"), "provision"));
+    withJson(
+        withDryRun(
+            program
+                .command("provision")
+                .alias("setup-server")
+                .description("Prepare a fresh remote server for deployments")
+                .option("--force", "Re-run all steps even if directories/files exist")
+                .option("--skip-checks", "Skip prerequisite verification (tar, curl, runtime)")
+                .option("--only <step>", "Run a specific provisioning step (prereqs, dirs, shared, permissions, service)"),
+            "Preview planned server changes without executing"
+        )
+    ).action(lazyAction(() => import("../src/commands/provision.js"), "provision"));
 
-    program
-        .command("setup")
-        .description("Interactive server setup wizard: configure Nginx, background services, and SSL")
-        .option("-e, --env <env>", "Target environment (default: production)")
-        .option("-n, --dry-run", "Preview planned Nginx and systemd configs without touching the server")
-        .option("--webserver <type>", "Web server type (nginx, none)")
-        .option("--kind <type>", "App type (node, php, spa)")
-        .option("--domain <domain>", "Domain name(s)")
-        .option("--port <port>", "Upstream port for Node.js reverse proxy")
-        .option("--php-socket <path>", "PHP-FPM socket path")
-        .option("--ssl <mode>", "SSL/TLS mode (certbot, cloudflare-flexible, cloudflare-origin, none)")
-        .option("--cloudflare", "Enable Cloudflare optimizations (Real-IP restoration and Flexible SSL headers)")
-        .option("--cf-cert <pathOrContent>", "Cloudflare Origin CA certificate (.pem path or content)")
-        .option("--cf-key <pathOrContent>", "Cloudflare Origin CA private key (.key path or content)")
-        .option("--certbot", "Obtain Let's Encrypt SSL via Certbot")
-        .option("--service", "Create and enable a systemd background service")
-        .option("--exec-start <cmd>", "ExecStart command for systemd unit")
-        .option("--queue-worker", "Create and enable a background queue worker (e.g. for Laravel/PHP)")
-        .option("--worker-command <cmd>", "Command for the queue worker service")
-        .option("--admin-user <user>", "Admin / sudo username for server provisioning (e.g. root)")
-        .option("--admin-key <path>", "Path to admin SSH private key")
-        .option("--admin-password <pass>", "Admin user password or sudo password")
-        .option("--create-deployer", "Provision dedicated unprivileged deploy user and grant limited sudo")
-        .action(lazyAction(() => import("../src/commands/setup.js"), "setup"));
+    withDryRun(
+        program
+            .command("setup")
+            .description("Interactive server setup wizard: configure Nginx, background services, and SSL")
+            .option("--webserver <type>", "Web server type (nginx, none)")
+            .option("--kind <type>", "App type (node, php, spa)")
+            .option("--domain <domain>", "Domain name(s)")
+            .option("--port <port>", "Upstream port for Node.js reverse proxy")
+            .option("--php-socket <path>", "PHP-FPM socket path")
+            .option("--ssl <mode>", "SSL/TLS mode (certbot, cloudflare-flexible, cloudflare-origin, none)")
+            .option("--cloudflare", "Enable Cloudflare optimizations (Real-IP restoration and Flexible SSL headers)")
+            .option("--cf-cert <pathOrContent>", "Cloudflare Origin CA certificate (.pem path or content)")
+            .option("--cf-key <pathOrContent>", "Cloudflare Origin CA private key (.key path or content)")
+            .option("--certbot", "Obtain Let's Encrypt SSL via Certbot")
+            .option("--service", "Create and enable a systemd background service")
+            .option("--exec-start <cmd>", "ExecStart command for systemd unit")
+            .option("--queue-worker", "Create and enable a background queue worker (e.g. for Laravel/PHP)")
+            .option("--worker-command <cmd>", "Command for the queue worker service")
+            .option("--admin-user <user>", "Admin / sudo username for server provisioning (e.g. root)")
+            .option("--admin-key <path>", "Path to admin SSH private key")
+            .option("--admin-password <pass>", "Admin user password or sudo password")
+            .option("--create-deployer", "Provision dedicated unprivileged deploy user and grant limited sudo"),
+        "Preview planned Nginx and systemd configs without touching the server"
+    ).action(lazyAction(() => import("../src/commands/setup.js"), "setup"));
 
     program
         .command("ssh")
         .description("Open an interactive SSH terminal on the remote server")
-        .option("-e, --env <env>", "Target environment (default: production)")
         .action(lazyAction(() => import("../src/commands/ssh.js"), "ssh"));
 
-    program
-        .command("run <command>")
-        .description("Execute an ad-hoc command on the remote server inside current release")
-        .option("-e, --env <env>", "Target environment (default: production)")
-        .option("--release <name>", "Execute inside a specific release directory instead of current")
-        .option("-A, --as-admin", "Execute command as admin user defined in deploy.config.yml")
-        .option("--as-sudo", "Alias for --as-admin")
-        .option("--admin-user <user>", "Override admin username for command execution (e.g. root)")
-        .option("--admin-key <path>", "Path to admin SSH private key")
-        .option("--admin-password <pass>", "Admin user password or sudo password")
-        .action(async (command: string, _opts: any, cmd: Command) => {
-            const { run } = await import("../src/commands/run.js");
-            await run(command, cmd.optsWithGlobals());
-        });
+    withAdminAuth(
+        program
+            .command("run <command>")
+            .description("Execute an ad-hoc command on the remote server inside current release")
+            .option("--release <name>", "Execute inside a specific release directory instead of current"),
+        "command execution"
+    ).action(async (command: string, _opts: any, cmd: Command) => {
+        const { run } = await import("../src/commands/run.js");
+        await run(command, cmd.optsWithGlobals());
+    });
 
     // 🔐 Environment Variable Management Group
     const envCmd = program
@@ -236,25 +244,20 @@ async function main() {
     envCmd
         .command("push")
         .description("Upload local .env to remote shared/.env with automatic backup")
-        .option("-e, --env <env>", "Target environment (default: production)")
         .option("-f, --file <path>", "Specific local .env file to upload")
         .option("--force", "Overwrite remote .env without interactive prompt")
-        .option("-y, --yes", "Automatic yes to prompts")
         .action(lazyAction(() => import("../src/commands/env.js"), "envPush"));
 
     envCmd
         .command("pull")
         .description("Download remote shared/.env to local file")
-        .option("-e, --env <env>", "Target environment (default: production)")
         .option("-o, --out <path>", "Destination local path (default: .env.<env>.remote)")
         .option("--force", "Overwrite local file if it already exists")
-        .option("-y, --yes", "Automatic yes to prompts")
         .action(lazyAction(() => import("../src/commands/env.js"), "envPull"));
 
     envCmd
         .command("set <pair>")
         .description("Set or update a KEY=VALUE variable in remote shared/.env")
-        .option("-e, --env <env>", "Target environment (default: production)")
         .action(async (pair: string, _opts: any, cmd: Command) => {
             const { envSet } = await import("../src/commands/env.js");
             await envSet(pair, cmd.optsWithGlobals());
@@ -263,35 +266,28 @@ async function main() {
     envCmd
         .command("edit")
         .description("Interactively edit remote shared/.env in your local text editor")
-        .option("-e, --env <env>", "Target environment (default: production)")
         .option("--editor <cmd>", "Custom editor command (default: $VISUAL, $EDITOR, or notepad/nano)")
         .option("--force", "Upload changes without interactive confirmation prompt")
-        .option("-y, --yes", "Automatic yes to prompts")
         .action(lazyAction(() => import("../src/commands/env.js"), "envEdit"));
 
     // Backward-compatible colon aliases: env:push, env:pull, env:set, env:edit
     program
         .command("env:push")
         .description("Upload local .env to remote shared/.env (alias for 'env push')")
-        .option("-e, --env <env>", "Target environment (default: production)")
         .option("-f, --file <path>", "Specific local .env file to upload")
         .option("--force", "Overwrite remote .env without interactive prompt")
-        .option("-y, --yes", "Automatic yes to prompts")
         .action(lazyAction(() => import("../src/commands/env.js"), "envPush"));
 
     program
         .command("env:pull")
         .description("Download remote shared/.env to local file (alias for 'env pull')")
-        .option("-e, --env <env>", "Target environment (default: production)")
         .option("-o, --out <path>", "Destination local path (default: .env.<env>.remote)")
         .option("--force", "Overwrite local file if it already exists")
-        .option("-y, --yes", "Automatic yes to prompts")
         .action(lazyAction(() => import("../src/commands/env.js"), "envPull"));
 
     program
         .command("env:set <pair>")
         .description("Set or update a KEY=VALUE variable in remote shared/.env (alias for 'env set')")
-        .option("-e, --env <env>", "Target environment (default: production)")
         .action(async (pair: string, _opts: any, cmd: Command) => {
             const { envSet } = await import("../src/commands/env.js");
             await envSet(pair, cmd.optsWithGlobals());
@@ -300,33 +296,26 @@ async function main() {
     program
         .command("env:edit")
         .description("Interactively edit remote shared/.env in your local text editor (alias for 'env edit')")
-        .option("-e, --env <env>", "Target environment (default: production)")
         .option("--editor <cmd>", "Custom editor command (default: $VISUAL, $EDITOR, or notepad/nano)")
         .option("--force", "Upload changes without interactive confirmation prompt")
-        .option("-y, --yes", "Automatic yes to prompts")
         .action(lazyAction(() => import("../src/commands/env.js"), "envEdit"));
 
-    program
-        .command("logs")
-        .description("Stream or tail remote application/server logs")
-        .option("-e, --env <env>", "Target environment (default: production)")
-        .option("-f, --follow", "Follow log output (stream real-time)")
-        .option("-n, --lines <count>", "Number of lines to show (default: 50)")
-        .option("--type <type>", "Log type: app, nginx, pm2, or systemd")
-        .option("--file <path>", "Specific remote log file to tail")
-        .option("--latest", "Automatically pick the newest daily log file without prompting")
-        .option("--sudo", "Execute log reading command with sudo privileges")
-        .option("-A, --as-admin", "Connect using admin credentials defined in deploy.config.yml")
-        .option("--as-sudo", "Alias for --as-admin")
-        .option("--admin-user <user>", "Admin / sudo username for remote privileged log streaming (e.g. root)")
-        .option("--admin-key <path>", "Path to admin SSH private key")
-        .option("--admin-password <pass>", "Admin user password or sudo password")
-        .action(lazyAction(() => import("../src/commands/logs.js"), "logs"));
+    withAdminAuth(
+        program
+            .command("logs")
+            .description("Stream or tail remote application/server logs")
+            .option("-f, --follow", "Follow log output (stream real-time)")
+            .option("-n, --lines <count>", "Number of lines to show (default: 50)")
+            .option("--type <type>", "Log type: app, nginx, pm2, or systemd")
+            .option("--file <path>", "Specific remote log file to tail")
+            .option("--latest", "Automatically pick the newest daily log file without prompting")
+            .option("--sudo", "Execute log reading command with sudo privileges"),
+        "remote privileged log streaming"
+    ).action(lazyAction(() => import("../src/commands/logs.js"), "logs"));
 
     program
         .command("down")
         .description("Put the remote site into maintenance mode")
-        .option("-e, --env <env>", "Target environment (default: production)")
         .option("-m, --message <msg>", "Custom maintenance message")
         .option("--retry <seconds>", "Suggested Retry-After header value in seconds (default: 300)")
         .action(lazyAction(() => import("../src/commands/maintenance.js"), "down"));
@@ -334,7 +323,6 @@ async function main() {
     program
         .command("up")
         .description("Take the remote site out of maintenance mode (restore traffic)")
-        .option("-e, --env <env>", "Target environment (default: production)")
         .action(lazyAction(() => import("../src/commands/maintenance.js"), "up"));
 
     // 🌐 Site Management Commands
@@ -342,107 +330,91 @@ async function main() {
         .command("site")
         .description("Manage remote site configurations, backups, and teardown");
 
-    siteCmd
-        .command("add")
-        .description("Add a new site/domain to an existing server (skips deploy user and sudoers creation)")
-        .option("-e, --env <env>", "Target environment (default: production)")
-        .option("-n, --dry-run", "Preview planned Nginx and systemd configs without touching the server")
-        .option("--webserver <type>", "Web server type (nginx, none)")
-        .option("--kind <type>", "App type (node, php, spa)")
-        .option("-d, --domain <domain>", "Domain name(s)")
-        .option("--port <port>", "Upstream port for Node.js reverse proxy")
-        .option("--php-socket <path>", "PHP-FPM socket path")
-        .option("--ssl <mode>", "SSL/TLS mode (certbot, cloudflare-flexible, cloudflare-origin, none)")
-        .option("--cloudflare", "Enable Cloudflare optimizations (Real-IP restoration and Flexible SSL headers)")
-        .option("--cf-cert <pathOrContent>", "Cloudflare Origin CA certificate (.pem path or content)")
-        .option("--cf-key <pathOrContent>", "Cloudflare Origin CA private key (.key path or content)")
-        .option("--certbot", "Obtain Let's Encrypt SSL via Certbot")
-        .option("--service", "Create and enable a systemd background service")
-        .option("--exec-start <cmd>", "ExecStart command for systemd unit")
-        .option("--queue-worker", "Create and enable a background queue worker (e.g. for Laravel/PHP)")
-        .option("--worker-command <cmd>", "Command for the queue worker service")
-        .option("-A, --as-admin", "Connect using admin credentials defined in deploy.config.yml")
-        .option("--as-sudo", "Alias for --as-admin")
-        .option("--admin-user <user>", "Admin / sudo username for server provisioning (e.g. root)")
-        .option("--admin-key <path>", "Path to admin SSH private key")
-        .option("--admin-password <pass>", "Admin user password or sudo password")
-        .action(lazyAction(() => import("../src/commands/site.js"), "siteAdd"));
+    withAdminAuth(
+        withDryRun(
+            siteCmd
+                .command("add")
+                .description("Add a new site/domain to an existing server (skips deploy user and sudoers creation)")
+                .option("--webserver <type>", "Web server type (nginx, none)")
+                .option("--kind <type>", "App type (node, php, spa)")
+                .option("-D, --domain <domain>", "Domain name(s)")
+                .option("--port <port>", "Upstream port for Node.js reverse proxy")
+                .option("--php-socket <path>", "PHP-FPM socket path")
+                .option("--ssl <mode>", "SSL/TLS mode (certbot, cloudflare-flexible, cloudflare-origin, none)")
+                .option("--cloudflare", "Enable Cloudflare optimizations (Real-IP restoration and Flexible SSL headers)")
+                .option("--cf-cert <pathOrContent>", "Cloudflare Origin CA certificate (.pem path or content)")
+                .option("--cf-key <pathOrContent>", "Cloudflare Origin CA private key (.key path or content)")
+                .option("--certbot", "Obtain Let's Encrypt SSL via Certbot")
+                .option("--service", "Create and enable a systemd background service")
+                .option("--exec-start <cmd>", "ExecStart command for systemd unit")
+                .option("--queue-worker", "Create and enable a background queue worker (e.g. for Laravel/PHP)")
+                .option("--worker-command <cmd>", "Command for the queue worker service"),
+            "Preview planned Nginx and systemd configs without touching the server"
+        ),
+        "server provisioning"
+    ).action(lazyAction(() => import("../src/commands/site.js"), "siteAdd"));
 
-    siteCmd
-        .command("backup")
-        .description("Snapshot and download remote site configurations (Nginx, systemd, sudoers, .env)")
-        .option("-e, --env <env>", "Target environment (default: production)")
-        .option("-d, --domain <domain>", "Domain name(s) to backup")
-        .option("-o, --output <dir>", "Local directory to store the backup archive (default: ./backups)")
-        .option("-A, --as-admin", "Connect using admin credentials defined in deploy.config.yml")
-        .option("--as-sudo", "Alias for --as-admin")
-        .option("--admin-user <user>", "Admin / sudo username for remote inspection")
-        .option("--admin-key <path>", "Path to admin SSH private key")
-        .option("--admin-password <pass>", "Admin user password or sudo password")
-        .action(lazyAction(() => import("../src/commands/site.js"), "siteBackup"));
+    withAdminAuth(
+        siteCmd
+            .command("backup")
+            .description("Snapshot and download remote site configurations (Nginx, systemd, sudoers, .env)")
+            .option("-D, --domain <domain>", "Domain name(s) to backup")
+            .option("-o, --output <dir>", "Local directory to store the backup archive (default: ./backups)"),
+        "remote inspection"
+    ).action(lazyAction(() => import("../src/commands/site.js"), "siteBackup"));
 
-    siteCmd
-        .command("remove")
-        .description("Safely decommission and remove remote site configurations and services")
-        .option("-e, --env <env>", "Target environment (default: production)")
-        .option("-d, --domain <domain>", "Domain name(s) to remove")
-        .option("-n, --dry-run", "Preview planned teardown without making any changes")
-        .option("-f, --force", "Bypass interactive confirmation prompt")
-        .option("--no-backup", "Skip automatic pre-removal configuration backup")
-        .option("--purge-ssl", "Also delete Certbot SSL certificates for the domain(s)")
-        .option("--purge-files", "Also delete application deployment directory (/var/www/<appName>)")
-        .option("-A, --as-admin", "Connect using admin credentials defined in deploy.config.yml")
-        .option("--as-sudo", "Alias for --as-admin")
-        .option("--admin-user <user>", "Admin / sudo username for remote teardown")
-        .option("--admin-key <path>", "Path to admin SSH private key")
-        .option("--admin-password <pass>", "Admin user password or sudo password")
-        .action(lazyAction(() => import("../src/commands/site.js"), "siteRemove"));
+    withAdminAuth(
+        withDryRun(
+            siteCmd
+                .command("remove")
+                .description("Safely decommission and remove remote site configurations and services")
+                .option("-D, --domain <domain>", "Domain name(s) to remove")
+                .option("-f, --force", "Bypass interactive confirmation prompt")
+                .option("--no-backup", "Skip automatic pre-removal configuration backup")
+                .option("--purge-ssl", "Also delete Certbot SSL certificates for the domain(s)")
+                .option("--purge-files", "Also delete application deployment directory (/var/www/<appName>)"),
+            "Preview planned teardown without making any changes"
+        ),
+        "remote teardown"
+    ).action(lazyAction(() => import("../src/commands/site.js"), "siteRemove"));
 
-    siteCmd
-        .command("info")
-        .description("Inspect remote site status: Nginx virtual host, systemd services, SSL certificates, and releases")
-        .option("-e, --env <env>", "Target environment (default: production)")
-        .option("-d, --domain <domain>", "Domain name to inspect")
-        .option("-A, --as-admin", "Connect using admin credentials defined in deploy.config.yml")
-        .option("--as-sudo", "Alias for --as-admin")
-        .option("--admin-user <user>", "Admin / sudo username for remote inspection")
-        .option("--admin-key <path>", "Path to admin SSH private key")
-        .option("--admin-password <pass>", "Admin user password or sudo password")
-        .action(lazyAction(() => import("../src/commands/site.js"), "siteInfo"));
+    withAdminAuth(
+        siteCmd
+            .command("info")
+            .description("Inspect remote site status: Nginx virtual host, systemd services, SSL certificates, and releases")
+            .option("-D, --domain <domain>", "Domain name to inspect"),
+        "remote inspection"
+    ).action(lazyAction(() => import("../src/commands/site.js"), "siteInfo"));
 
-    siteCmd
-        .command("ssl")
-        .description("Switch or update SSL mode (Certbot, Cloudflare Flexible, Cloudflare Origin, or None)")
-        .option("-e, --env <env>", "Target environment (default: production)")
-        .option("-d, --domain <domain>", "Domain name to configure")
-        .option("--ssl <mode>", "SSL mode: certbot, cloudflare-flexible, cloudflare-origin, none")
-        .option("--cloudflare", "Shortcut for Cloudflare Flexible SSL with Real-IP headers")
-        .option("--certbot", "Shortcut for Certbot Let's Encrypt automated SSL")
-        .option("-n, --dry-run", "Preview updated Nginx configuration without applying")
-        .option("-A, --as-admin", "Connect using admin credentials defined in deploy.config.yml")
-        .option("--as-sudo", "Alias for --as-admin")
-        .option("--admin-user <user>", "Admin / sudo username for remote configuration")
-        .option("--admin-key <path>", "Path to admin SSH private key")
-        .option("--admin-password <pass>", "Admin user password or sudo password")
-        .action(lazyAction(() => import("../src/commands/site.js"), "siteSsl"));
+    withAdminAuth(
+        withDryRun(
+            siteCmd
+                .command("ssl")
+                .description("Switch or update SSL mode (Certbot, Cloudflare Flexible, Cloudflare Origin, or None)")
+                .option("-D, --domain <domain>", "Domain name to configure")
+                .option("--ssl <mode>", "SSL mode: certbot, cloudflare-flexible, cloudflare-origin, none")
+                .option("--cloudflare", "Shortcut for Cloudflare Flexible SSL with Real-IP headers")
+                .option("--certbot", "Shortcut for Certbot Let's Encrypt automated SSL"),
+            "Preview updated Nginx configuration without applying"
+        ),
+        "remote configuration"
+    ).action(lazyAction(() => import("../src/commands/site.js"), "siteSsl"));
 
     // Convenient top-level alias `dploy remove`
-    program
-        .command("remove")
-        .description("Safely decommission and remove remote site configurations (alias for 'site remove')")
-        .option("-e, --env <env>", "Target environment (default: production)")
-        .option("-d, --domain <domain>", "Domain name(s) to remove")
-        .option("-n, --dry-run", "Preview planned teardown without making any changes")
-        .option("-f, --force", "Bypass interactive confirmation prompt")
-        .option("--no-backup", "Skip automatic pre-removal configuration backup")
-        .option("--purge-ssl", "Also delete Certbot SSL certificates for the domain(s)")
-        .option("--purge-files", "Also delete application deployment directory (/var/www/<appName>)")
-        .option("-A, --as-admin", "Connect using admin credentials defined in deploy.config.yml")
-        .option("--as-sudo", "Alias for --as-admin")
-        .option("--admin-user <user>", "Admin / sudo username for remote teardown")
-        .option("--admin-key <path>", "Path to admin SSH private key")
-        .option("--admin-password <pass>", "Admin user password or sudo password")
-        .action(lazyAction(() => import("../src/commands/site.js"), "siteRemove"));
+    withAdminAuth(
+        withDryRun(
+            program
+                .command("remove")
+                .description("Safely decommission and remove remote site configurations (alias for 'site remove')")
+                .option("-D, --domain <domain>", "Domain name(s) to remove")
+                .option("-f, --force", "Bypass interactive confirmation prompt")
+                .option("--no-backup", "Skip automatic pre-removal configuration backup")
+                .option("--purge-ssl", "Also delete Certbot SSL certificates for the domain(s)")
+                .option("--purge-files", "Also delete application deployment directory (/var/www/<appName>)"),
+            "Preview planned teardown without making any changes"
+        ),
+        "remote teardown"
+    ).action(lazyAction(() => import("../src/commands/site.js"), "siteRemove"));
 
     // 🗄️ Database Management Group
     const dbCmd = program
@@ -450,216 +422,172 @@ async function main() {
         .alias("database")
         .description("Manage remote databases (MySQL, PostgreSQL, SQLite)");
 
-    dbCmd
-        .command("create [name]")
-        .description("Create a remote database, user, and grant full privileges")
-        .option("-e, --env <env>", "Target environment (default: production)")
-        .option("--type <type>", "Database type (mysql, postgres, sqlite)")
-        .option("-u, --user <user>", "Database user to create/grant")
-        .option("-p, --password <password>", "Database user password")
-        .option("--host <host>", "Database host (default: 127.0.0.1)")
-        .option("--port <port>", "Database port")
-        .option("--db-root-user <user>", "Database root/admin user (default: root)")
-        .option("--db-root-password <pass>", "Database root/admin password")
-        .option("--charset <charset>", "Database character set (default: utf8mb4)")
-        .option("--collation <collation>", "Database collation (default: utf8mb4_unicode_ci)")
-        .option("-n, --dry-run", "Preview database creation queries without executing")
-        .option("-A, --as-admin", "Connect via admin SSH credentials defined in deploy.config.yml")
-        .option("--as-sudo", "Alias for --as-admin")
-        .option("--admin-user <user>", "Admin / sudo username for SSH connection")
-        .option("--admin-key <path>", "Path to admin SSH private key")
-        .option("--admin-password <pass>", "Admin user password or sudo password")
-        .action(async (name: string | undefined, _opts: any, cmd: Command) => {
-            const { dbCreate } = await import("../src/commands/database.js");
-            const merged = { ...cmd.optsWithGlobals(), name: name || cmd.optsWithGlobals().name };
-            await dbCreate(merged);
-        });
+    withAdminAuth(
+        withDryRun(
+            dbCmd
+                .command("create [name]")
+                .description("Create a remote database, user, and grant full privileges")
+                .option("--type <type>", "Database type (mysql, postgres, sqlite)")
+                .option("-u, --user <user>", "Database user to create/grant")
+                .option("-p, --password <password>", "Database user password")
+                .option("--host <host>", "Database host (default: 127.0.0.1)")
+                .option("--port <port>", "Database port")
+                .option("--db-root-user <user>", "Database root/admin user (default: root)")
+                .option("--db-root-password <pass>", "Database root/admin password")
+                .option("--charset <charset>", "Database character set (default: utf8mb4)")
+                .option("--collation <collation>", "Database collation (default: utf8mb4_unicode_ci)"),
+            "Preview database creation queries without executing"
+        ),
+        "SSH connection"
+    ).action(async (name: string | undefined, _opts: any, cmd: Command) => {
+        const { dbCreate } = await import("../src/commands/database.js");
+        const merged = { ...cmd.optsWithGlobals(), name: name || cmd.optsWithGlobals().name };
+        await dbCreate(merged);
+    });
 
-    dbCmd
-        .command("drop [name]")
-        .description("Permanently drop a remote database and optionally its user")
-        .option("-e, --env <env>", "Target environment (default: production)")
-        .option("--type <type>", "Database type (mysql, postgres, sqlite)")
-        .option("--drop-user", "Also drop the associated database user")
-        .option("-f, --force", "Bypass interactive confirmation prompt")
-        .option("-y, --yes", "Automatic yes to prompts")
-        .option("-n, --dry-run", "Preview drop query without executing")
-        .option("-A, --as-admin", "Connect via admin SSH credentials defined in deploy.config.yml")
-        .option("--as-sudo", "Alias for --as-admin")
-        .option("--admin-user <user>", "Admin / sudo username for SSH connection")
-        .option("--admin-key <path>", "Path to admin SSH private key")
-        .option("--admin-password <pass>", "Admin user password or sudo password")
-        .action(async (name: string | undefined, _opts: any, cmd: Command) => {
-            const { dbDrop } = await import("../src/commands/database.js");
-            const merged = { ...cmd.optsWithGlobals(), name: name || cmd.optsWithGlobals().name };
-            await dbDrop(merged);
-        });
+    withAdminAuth(
+        withDryRun(
+            dbCmd
+                .command("drop [name]")
+                .description("Permanently drop a remote database and optionally its user")
+                .option("--type <type>", "Database type (mysql, postgres, sqlite)")
+                .option("--drop-user", "Also drop the associated database user")
+                .option("-f, --force", "Bypass interactive confirmation prompt"),
+            "Preview drop query without executing"
+        ),
+        "SSH connection"
+    ).action(async (name: string | undefined, _opts: any, cmd: Command) => {
+        const { dbDrop } = await import("../src/commands/database.js");
+        const merged = { ...cmd.optsWithGlobals(), name: name || cmd.optsWithGlobals().name };
+        await dbDrop(merged);
+    });
 
-    dbCmd
-        .command("backup")
-        .description("Trigger a manual database dump and optionally download locally")
-        .option("-e, --env <env>", "Target environment (default: production)")
-        .option("--type <type>", "Database type (mysql, postgres, sqlite)")
-        .option("--name <name>", "Database name to backup")
-        .option("-o, --output <path>", "Local destination path for downloaded backup")
-        .option("--download [path]", "Download backup to local machine after creation")
-        .option("-A, --as-admin", "Connect via admin SSH credentials defined in deploy.config.yml")
-        .option("--as-sudo", "Alias for --as-admin")
-        .option("--admin-user <user>", "Admin / sudo username for SSH connection")
-        .option("--admin-key <path>", "Path to admin SSH private key")
-        .option("--admin-password <pass>", "Admin user password or sudo password")
-        .action(lazyAction(() => import("../src/commands/database.js"), "dbBackup"));
+    withAdminAuth(
+        dbCmd
+            .command("backup")
+            .description("Trigger a manual database dump and optionally download locally")
+            .option("--type <type>", "Database type (mysql, postgres, sqlite)")
+            .option("--name <name>", "Database name to backup")
+            .option("-o, --output <path>", "Local destination path for downloaded backup")
+            .option("--download [path]", "Download backup to local machine after creation"),
+        "SSH connection"
+    ).action(lazyAction(() => import("../src/commands/database.js"), "dbBackup"));
 
-    dbCmd
-        .command("restore <file>")
-        .description("Restore a remote database from a local or remote SQL dump file")
-        .option("-e, --env <env>", "Target environment (default: production)")
-        .option("--type <type>", "Database type (mysql, postgres, sqlite)")
-        .option("--name <name>", "Database name to restore into")
-        .option("-f, --force", "Bypass interactive confirmation prompt")
-        .option("-y, --yes", "Automatic yes to prompts")
-        .option("-A, --as-admin", "Connect via admin SSH credentials defined in deploy.config.yml")
-        .option("--as-sudo", "Alias for --as-admin")
-        .option("--admin-user <user>", "Admin / sudo username for SSH connection")
-        .option("--admin-key <path>", "Path to admin SSH private key")
-        .option("--admin-password <pass>", "Admin user password or sudo password")
-        .action(async (file: string, _opts: any, cmd: Command) => {
-            const { dbRestore } = await import("../src/commands/database.js");
-            await dbRestore(file, cmd.optsWithGlobals());
-        });
+    withAdminAuth(
+        dbCmd
+            .command("restore <file>")
+            .description("Restore a remote database from a local or remote SQL dump file")
+            .option("--type <type>", "Database type (mysql, postgres, sqlite)")
+            .option("--name <name>", "Database name to restore into")
+            .option("-f, --force", "Bypass interactive confirmation prompt"),
+        "SSH connection"
+    ).action(async (file: string, _opts: any, cmd: Command) => {
+        const { dbRestore } = await import("../src/commands/database.js");
+        await dbRestore(file, cmd.optsWithGlobals());
+    });
 
-    dbCmd
-        .command("optimize")
-        .description("Optimize database tables and defragment storage")
-        .option("-e, --env <env>", "Target environment (default: production)")
-        .option("--type <type>", "Database type (mysql, postgres, sqlite)")
-        .option("--name <name>", "Database name to optimize")
-        .option("-A, --as-admin", "Connect via admin SSH credentials defined in deploy.config.yml")
-        .option("--as-sudo", "Alias for --as-admin")
-        .option("--admin-user <user>", "Admin / sudo username for SSH connection")
-        .option("--admin-key <path>", "Path to admin SSH private key")
-        .option("--admin-password <pass>", "Admin user password or sudo password")
-        .action(lazyAction(() => import("../src/commands/database.js"), "dbOptimize"));
+    withAdminAuth(
+        dbCmd
+            .command("optimize")
+            .description("Optimize database tables and defragment storage")
+            .option("--type <type>", "Database type (mysql, postgres, sqlite)")
+            .option("--name <name>", "Database name to optimize"),
+        "SSH connection"
+    ).action(lazyAction(() => import("../src/commands/database.js"), "dbOptimize"));
 
-    dbCmd
-        .command("console")
-        .alias("cli")
-        .description("Open an interactive database terminal (mysql/psql/sqlite3) on the remote server")
-        .option("-e, --env <env>", "Target environment (default: production)")
-        .option("--type <type>", "Database type (mysql, postgres, sqlite)")
-        .option("--name <name>", "Database name to connect to")
-        .option("-A, --as-admin", "Connect via admin SSH credentials defined in deploy.config.yml")
-        .option("--as-sudo", "Alias for --as-admin")
-        .option("--admin-user <user>", "Admin / sudo username for SSH connection")
-        .option("--admin-key <path>", "Path to admin SSH private key")
-        .option("--admin-password <pass>", "Admin user password or sudo password")
-        .action(lazyAction(() => import("../src/commands/database.js"), "dbConsole"));
+    withAdminAuth(
+        dbCmd
+            .command("console")
+            .alias("cli")
+            .description("Open an interactive database terminal (mysql/psql/sqlite3) on the remote server")
+            .option("--type <type>", "Database type (mysql, postgres, sqlite)")
+            .option("--name <name>", "Database name to connect to"),
+        "SSH connection"
+    ).action(lazyAction(() => import("../src/commands/database.js"), "dbConsole"));
 
     // Backward-compatible colon aliases: db:create, db:drop, db:backup, db:restore, db:optimize, db:console
-    program
-        .command("db:create [name]")
-        .description("Create a remote database, user, and grant privileges (alias for 'db create')")
-        .option("-e, --env <env>", "Target environment (default: production)")
-        .option("--type <type>", "Database type (mysql, postgres, sqlite)")
-        .option("-u, --user <user>", "Database user to create/grant")
-        .option("-p, --password <password>", "Database user password")
-        .option("--host <host>", "Database host (default: 127.0.0.1)")
-        .option("--port <port>", "Database port")
-        .option("--db-root-user <user>", "Database root/admin user (default: root)")
-        .option("--db-root-password <pass>", "Database root/admin password")
-        .option("--charset <charset>", "Database character set (default: utf8mb4)")
-        .option("--collation <collation>", "Database collation (default: utf8mb4_unicode_ci)")
-        .option("-n, --dry-run", "Preview database creation queries without executing")
-        .option("-A, --as-admin", "Connect via admin SSH credentials defined in deploy.config.yml")
-        .option("--as-sudo", "Alias for --as-admin")
-        .option("--admin-user <user>", "Admin / sudo username for SSH connection")
-        .option("--admin-key <path>", "Path to admin SSH private key")
-        .option("--admin-password <pass>", "Admin user password or sudo password")
-        .action(async (name: string | undefined, _opts: any, cmd: Command) => {
-            const { dbCreate } = await import("../src/commands/database.js");
-            const merged = { ...cmd.optsWithGlobals(), name: name || cmd.optsWithGlobals().name };
-            await dbCreate(merged);
-        });
+    withAdminAuth(
+        withDryRun(
+            program
+                .command("db:create [name]")
+                .description("Create a remote database, user, and grant privileges (alias for 'db create')")
+                .option("--type <type>", "Database type (mysql, postgres, sqlite)")
+                .option("-u, --user <user>", "Database user to create/grant")
+                .option("-p, --password <password>", "Database user password")
+                .option("--host <host>", "Database host (default: 127.0.0.1)")
+                .option("--port <port>", "Database port")
+                .option("--db-root-user <user>", "Database root/admin user (default: root)")
+                .option("--db-root-password <pass>", "Database root/admin password")
+                .option("--charset <charset>", "Database character set (default: utf8mb4)")
+                .option("--collation <collation>", "Database collation (default: utf8mb4_unicode_ci)"),
+            "Preview database creation queries without executing"
+        ),
+        "SSH connection"
+    ).action(async (name: string | undefined, _opts: any, cmd: Command) => {
+        const { dbCreate } = await import("../src/commands/database.js");
+        const merged = { ...cmd.optsWithGlobals(), name: name || cmd.optsWithGlobals().name };
+        await dbCreate(merged);
+    });
 
-    program
-        .command("db:drop [name]")
-        .description("Permanently drop a remote database (alias for 'db drop')")
-        .option("-e, --env <env>", "Target environment (default: production)")
-        .option("--type <type>", "Database type (mysql, postgres, sqlite)")
-        .option("--drop-user", "Also drop the associated database user")
-        .option("-f, --force", "Bypass interactive confirmation prompt")
-        .option("-y, --yes", "Automatic yes to prompts")
-        .option("-n, --dry-run", "Preview drop query without executing")
-        .option("-A, --as-admin", "Connect via admin SSH credentials defined in deploy.config.yml")
-        .option("--as-sudo", "Alias for --as-admin")
-        .option("--admin-user <user>", "Admin / sudo username for SSH connection")
-        .option("--admin-key <path>", "Path to admin SSH private key")
-        .option("--admin-password <pass>", "Admin user password or sudo password")
-        .action(async (name: string | undefined, _opts: any, cmd: Command) => {
-            const { dbDrop } = await import("../src/commands/database.js");
-            const merged = { ...cmd.optsWithGlobals(), name: name || cmd.optsWithGlobals().name };
-            await dbDrop(merged);
-        });
+    withAdminAuth(
+        withDryRun(
+            program
+                .command("db:drop [name]")
+                .description("Permanently drop a remote database (alias for 'db drop')")
+                .option("--type <type>", "Database type (mysql, postgres, sqlite)")
+                .option("--drop-user", "Also drop the associated database user")
+                .option("-f, --force", "Bypass interactive confirmation prompt"),
+            "Preview drop query without executing"
+        ),
+        "SSH connection"
+    ).action(async (name: string | undefined, _opts: any, cmd: Command) => {
+        const { dbDrop } = await import("../src/commands/database.js");
+        const merged = { ...cmd.optsWithGlobals(), name: name || cmd.optsWithGlobals().name };
+        await dbDrop(merged);
+    });
 
-    program
-        .command("db:backup")
-        .description("Trigger a manual database dump (alias for 'db backup')")
-        .option("-e, --env <env>", "Target environment (default: production)")
-        .option("--type <type>", "Database type (mysql, postgres, sqlite)")
-        .option("--name <name>", "Database name to backup")
-        .option("-o, --output <path>", "Local destination path for downloaded backup")
-        .option("--download [path]", "Download backup to local machine after creation")
-        .option("-A, --as-admin", "Connect via admin SSH credentials defined in deploy.config.yml")
-        .option("--as-sudo", "Alias for --as-admin")
-        .option("--admin-user <user>", "Admin / sudo username for SSH connection")
-        .option("--admin-key <path>", "Path to admin SSH private key")
-        .option("--admin-password <pass>", "Admin user password or sudo password")
-        .action(lazyAction(() => import("../src/commands/database.js"), "dbBackup"));
+    withAdminAuth(
+        program
+            .command("db:backup")
+            .description("Trigger a manual database dump (alias for 'db backup')")
+            .option("--type <type>", "Database type (mysql, postgres, sqlite)")
+            .option("--name <name>", "Database name to backup")
+            .option("-o, --output <path>", "Local destination path for downloaded backup")
+            .option("--download [path]", "Download backup to local machine after creation"),
+        "SSH connection"
+    ).action(lazyAction(() => import("../src/commands/database.js"), "dbBackup"));
 
-    program
-        .command("db:restore <file>")
-        .description("Restore a remote database from a dump file (alias for 'db restore')")
-        .option("-e, --env <env>", "Target environment (default: production)")
-        .option("--type <type>", "Database type (mysql, postgres, sqlite)")
-        .option("--name <name>", "Database name to restore into")
-        .option("-f, --force", "Bypass interactive confirmation prompt")
-        .option("-y, --yes", "Automatic yes to prompts")
-        .option("-A, --as-admin", "Connect via admin SSH credentials defined in deploy.config.yml")
-        .option("--as-sudo", "Alias for --as-admin")
-        .option("--admin-user <user>", "Admin / sudo username for SSH connection")
-        .option("--admin-key <path>", "Path to admin SSH private key")
-        .option("--admin-password <pass>", "Admin user password or sudo password")
-        .action(async (file: string, _opts: any, cmd: Command) => {
-            const { dbRestore } = await import("../src/commands/database.js");
-            await dbRestore(file, cmd.optsWithGlobals());
-        });
+    withAdminAuth(
+        program
+            .command("db:restore <file>")
+            .description("Restore a remote database from a dump file (alias for 'db restore')")
+            .option("--type <type>", "Database type (mysql, postgres, sqlite)")
+            .option("--name <name>", "Database name to restore into")
+            .option("-f, --force", "Bypass interactive confirmation prompt"),
+        "SSH connection"
+    ).action(async (file: string, _opts: any, cmd: Command) => {
+        const { dbRestore } = await import("../src/commands/database.js");
+        await dbRestore(file, cmd.optsWithGlobals());
+    });
 
-    program
-        .command("db:optimize")
-        .description("Optimize database tables and defragment storage (alias for 'db optimize')")
-        .option("-e, --env <env>", "Target environment (default: production)")
-        .option("--type <type>", "Database type (mysql, postgres, sqlite)")
-        .option("--name <name>", "Database name to optimize")
-        .option("-A, --as-admin", "Connect via admin SSH credentials defined in deploy.config.yml")
-        .option("--as-sudo", "Alias for --as-admin")
-        .option("--admin-user <user>", "Admin / sudo username for SSH connection")
-        .option("--admin-key <path>", "Path to admin SSH private key")
-        .option("--admin-password <pass>", "Admin user password or sudo password")
-        .action(lazyAction(() => import("../src/commands/database.js"), "dbOptimize"));
+    withAdminAuth(
+        program
+            .command("db:optimize")
+            .description("Optimize database tables and defragment storage (alias for 'db optimize')")
+            .option("--type <type>", "Database type (mysql, postgres, sqlite)")
+            .option("--name <name>", "Database name to optimize"),
+        "SSH connection"
+    ).action(lazyAction(() => import("../src/commands/database.js"), "dbOptimize"));
 
-    program
-        .command("db:console")
-        .alias("db:cli")
-        .description("Open an interactive database terminal on remote server (alias for 'db console')")
-        .option("-e, --env <env>", "Target environment (default: production)")
-        .option("--type <type>", "Database type (mysql, postgres, sqlite)")
-        .option("--name <name>", "Database name to connect to")
-        .option("-A, --as-admin", "Connect via admin SSH credentials defined in deploy.config.yml")
-        .option("--as-sudo", "Alias for --as-admin")
-        .option("--admin-user <user>", "Admin / sudo username for SSH connection")
-        .option("--admin-key <path>", "Path to admin SSH private key")
-        .option("--admin-password <pass>", "Admin user password or sudo password")
-        .action(lazyAction(() => import("../src/commands/database.js"), "dbConsole"));
+    withAdminAuth(
+        program
+            .command("db:console")
+            .alias("db:cli")
+            .description("Open an interactive database terminal on remote server (alias for 'db console')")
+            .option("--type <type>", "Database type (mysql, postgres, sqlite)")
+            .option("--name <name>", "Database name to connect to"),
+        "SSH connection"
+    ).action(lazyAction(() => import("../src/commands/database.js"), "dbConsole"));
 
     await program.parseAsync(process.argv);
 }
