@@ -41,3 +41,18 @@ test("CLI env group and aliases expose env edit and env:edit commands", async ()
     assert.match(envEditHelp, /--editor/);
 });
 
+test("CLI --help groups commands, shows short aliases, and hides legacy colon aliases", async () => {
+    const { stdout: rootHelp } = await execFileAsync("node", [CLI_PATH, "--help", "--quiet"]);
+    assert.match(rootHelp, /Setup & Infrastructure:/);
+    assert.match(rootHelp, /Deployment Lifecycle:/);
+    assert.match(rootHelp, /Monitoring & Operations:/);
+    assert.match(rootHelp, /Resource Management:/);
+    assert.match(rootHelp, /deploy\|d/);
+    assert.match(rootHelp, /status\|st/);
+    assert.match(rootHelp, /list\|ls/);
+    assert.match(rootHelp, /rollback\|rb/);
+    assert.match(rootHelp, /provision\|prov/);
+    assert.ok(!rootHelp.includes("env:push"), "root --help should hide env:push");
+    assert.ok(!rootHelp.includes("db:backup"), "root --help should hide db:backup");
+});
+

@@ -197,9 +197,11 @@ export function exec(ssh: Client, command: string): Promise<{ code: number; stdo
             let stderr = "";
             stream
                 .on("close", (code: number) => {
+                    const truncate = (s: string) =>
+                        s.length > 500 ? `${s.slice(0, 500)}... (${s.length - 500} chars truncated)` : s;
                     log.debug(`SSH command completed with code: ${code}`);
-                    if (stdout) log.debug(`SSH stdout: ${stdout}`);
-                    if (stderr) log.debug(`SSH stderr: ${stderr}`);
+                    if (stdout) log.debug(`SSH stdout: ${truncate(stdout.trimEnd())}`);
+                    if (stderr) log.debug(`SSH stderr: ${truncate(stderr.trimEnd())}`);
                     resolve({ code: code ?? 0, stdout, stderr });
                 })
                 .on("data", (d: Buffer) => (stdout += d.toString()))
