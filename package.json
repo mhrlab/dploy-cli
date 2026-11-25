@@ -1,6 +1,6 @@
 {
   "name": "dploy-cli",
-  "version": "2.2.1",
+  "version": "2.2.2",
   "description": "A powerful command-line tool for managing deployments, builds, and more for your projects. With dploy-cli, you can automate your deployment pipeline, build processes, and easily manage your project releases.",
   "private": false,
   "type": "module",
