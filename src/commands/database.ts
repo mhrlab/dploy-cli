@@ -69,19 +69,20 @@ export function buildMysqlCliAuthArgs(ctx: {
 }): { envPrefix: string; cliArgs: string; sudoPrefix: string } {
     const isLocal = ctx.host === "127.0.0.1" || ctx.host === "localhost";
     const sudoPrefix = ctx.sudoPrefix || "";
+    const targetUser = ctx.user || "root";
 
     if (ctx.isExplicitAdmin && !ctx.password && isLocal) {
         // Modern Linux auth_socket enables passwordless sudo mysql
-        return { envPrefix: "", cliArgs: `-u ${escapeShellArg(ctx.user || "root")}`, sudoPrefix };
+        return { envPrefix: "", cliArgs: `-u ${escapeShellArg(targetUser)}`, sudoPrefix };
     }
 
-    const envPrefix = ctx.password ? `MYSQL_PWD=${escapeShellArg(ctx.password)} ` : "";
     const parts: string[] = [];
-    if (!isLocal || ctx.host) parts.push(`-h ${escapeShellArg(ctx.host)}`);
+    if (ctx.host) parts.push(`-h ${escapeShellArg(ctx.host)}`);
     if (ctx.port && ctx.port !== 3306) parts.push(`-P ${ctx.port}`);
-    if (ctx.user) parts.push(`-u ${escapeShellArg(ctx.user)}`);
+    parts.push(`-u ${escapeShellArg(targetUser)}`);
+    if (ctx.password) parts.push(`-p${escapeShellArg(ctx.password)}`);
 
-    return { envPrefix, cliArgs: parts.join(" "), sudoPrefix };
+    return { envPrefix: "", cliArgs: parts.join(" "), sudoPrefix };
 }
 
 export function buildMysqlCreateQuery(
@@ -188,13 +189,17 @@ export async function resolveDatabaseContext(
         sudoPrefix = "sudo -n ";
     }
 
-    const dbConfig = env.database || cfg.database || {};
-    let dbType: DatabaseType = opts.type || dbConfig.type || "mysql";
-    let host = opts.host || dbConfig.host || "127.0.0.1";
-    let port = opts.port || dbConfig.port;
-    let dbName = opts.name || dbConfig.name;
-    let dbUser = opts.user || dbConfig.user;
-    let dbPassword = opts.password || dbConfig.password;
+    const dbConfig: DatabaseBackupConfig = {
+        ...(cfg.database || {}),
+        ...(env.database || {}),
+    };
+    let dbType: DatabaseType = opts.type || dbConfig.type || (process.env.DB_CONNECTION as any) || "mysql";
+    let host = opts.host || dbConfig.host || process.env.DB_HOST || "127.0.0.1";
+    let port = opts.port || dbConfig.port || (process.env.DB_PORT ? parseInt(process.env.DB_PORT, 10) : undefined);
+    let dbName = opts.name || dbConfig.name || process.env.DB_DATABASE;
+    let dbUser = opts.user || dbConfig.user || process.env.DB_USERNAME;
+    let dbPassword = opts.password || dbConfig.password || process.env.DB_PASSWORD;
+    if (dbPassword === "null" || dbPassword === "undefined") dbPassword = undefined;
     const charset = opts.charset || dbConfig.charset || "utf8mb4";
     const collation = opts.collation || dbConfig.collation || "utf8mb4_unicode_ci";
     let sqlitePath = opts.file || dbConfig.path || (dbType === "sqlite" ? dbName : undefined);
@@ -209,6 +214,7 @@ export async function resolveDatabaseContext(
                 if (!dbName && parsed.get("DB_DATABASE")) dbName = parsed.get("DB_DATABASE");
                 if (!dbUser && parsed.get("DB_USERNAME")) dbUser = parsed.get("DB_USERNAME");
                 if (!dbPassword && parsed.get("DB_PASSWORD")) dbPassword = parsed.get("DB_PASSWORD");
+                if (dbPassword === "null" || dbPassword === "undefined") dbPassword = undefined;
                 if (!opts.host && parsed.get("DB_HOST")) host = parsed.get("DB_HOST")!;
                 if (!opts.port && parsed.get("DB_PORT")) port = parseInt(parsed.get("DB_PORT")!, 10);
                 if (!opts.type && parsed.get("DB_CONNECTION")) {
@@ -221,8 +227,19 @@ export async function resolveDatabaseContext(
         } catch {}
     }
 
-    const rootUser = opts.dbRootUser || dbConfig.admin_user || dbConfig.root_user || (dbType === "postgres" ? "postgres" : "root");
-    const rootPassword = opts.dbRootPassword || dbConfig.admin_password || dbConfig.root_password;
+    const rootUser =
+        opts.dbRootUser ||
+        dbConfig.admin_user ||
+        dbConfig.root_user ||
+        process.env.DB_ROOT_USER ||
+        (dbType === "postgres" ? "postgres" : "root");
+
+    let rootPassword =
+        opts.dbRootPassword ||
+        dbConfig.admin_password ||
+        dbConfig.root_password ||
+        process.env.DB_ROOT_PASSWORD;
+    if (rootPassword === "null" || rootPassword === "undefined") rootPassword = undefined;
 
     return {
         connConfig,
@@ -282,7 +299,7 @@ export async function dbCreate(opts: DatabaseCommandOptions) {
             const auth = buildMysqlCliAuthArgs({
                 host: ctx.host,
                 port: ctx.port,
-                user: ctx.rootPassword ? ctx.rootUser : (ctx.isExplicitAdmin ? "root" : ctx.rootUser),
+                user: ctx.rootUser,
                 password: ctx.rootPassword,
                 sudoPrefix: ctx.sudoPrefix,
                 isExplicitAdmin: ctx.isExplicitAdmin,
@@ -374,7 +391,7 @@ export async function dbDrop(opts: DatabaseCommandOptions) {
             const auth = buildMysqlCliAuthArgs({
                 host: ctx.host,
                 port: ctx.port,
-                user: ctx.rootPassword ? ctx.rootUser : (ctx.isExplicitAdmin ? "root" : ctx.rootUser),
+                user: ctx.rootUser,
                 password: ctx.rootPassword,
                 sudoPrefix: ctx.sudoPrefix,
                 isExplicitAdmin: ctx.isExplicitAdmin,
@@ -607,7 +624,7 @@ export async function dbOptimize(opts: DatabaseCommandOptions) {
             const auth = buildMysqlCliAuthArgs({
                 host: ctx.host,
                 port: ctx.port,
-                user: ctx.rootPassword ? ctx.rootUser : (ctx.isExplicitAdmin ? "root" : (ctx.dbUser || ctx.rootUser)),
+                user: ctx.rootUser,
                 password: ctx.rootPassword || ctx.dbPassword,
                 sudoPrefix: ctx.sudoPrefix,
                 isExplicitAdmin: ctx.isExplicitAdmin,
@@ -671,20 +688,22 @@ export async function dbConsole(opts: DatabaseCommandOptions) {
 
     let remoteDbCmd: string;
     if (ctx.dbType === "mysql") {
-        if (ctx.isExplicitAdmin && !ctx.rootPassword && (ctx.host === "127.0.0.1" || ctx.host === "localhost")) {
-            remoteDbCmd = `${ctx.sudoPrefix}mysql ${ctx.dbName ? escapeShellArg(ctx.dbName) : ""}`;
+        const user = (opts.asAdmin || opts.asSudo) ? ctx.rootUser : (ctx.dbUser || ctx.rootUser);
+        const pass = (opts.asAdmin || opts.asSudo) ? ctx.rootPassword : (ctx.dbPassword || ctx.rootPassword);
+
+        if ((opts.asAdmin || opts.asSudo) && !pass && (ctx.host === "127.0.0.1" || ctx.host === "localhost")) {
+            remoteDbCmd = `${ctx.sudoPrefix}mysql -u ${escapeShellArg(user)} ${ctx.dbName ? escapeShellArg(ctx.dbName) : ""}`;
         } else {
-            const user = ctx.dbUser || ctx.rootUser;
-            const pass = ctx.dbPassword || ctx.rootPassword;
             const passFlag = pass ? `-p${escapeShellArg(pass)} ` : "";
             remoteDbCmd = `mysql -h ${escapeShellArg(ctx.host)} ${ctx.port ? `-P ${ctx.port} ` : ""}-u ${escapeShellArg(user)} ${passFlag}${ctx.dbName ? escapeShellArg(ctx.dbName) : ""}`;
         }
     } else if (ctx.dbType === "postgres") {
-        if (ctx.isExplicitAdmin && !ctx.rootPassword) {
-            remoteDbCmd = `${ctx.sudoPrefix}-u postgres psql ${ctx.dbName ? escapeShellArg(ctx.dbName) : ""}`;
+        const user = (opts.asAdmin || opts.asSudo) ? ctx.rootUser : (ctx.dbUser || ctx.rootUser);
+        const pass = (opts.asAdmin || opts.asSudo) ? ctx.rootPassword : (ctx.dbPassword || ctx.rootPassword);
+
+        if ((opts.asAdmin || opts.asSudo) && !pass) {
+            remoteDbCmd = `${ctx.sudoPrefix}-u ${escapeShellArg(user)} psql ${ctx.dbName ? escapeShellArg(ctx.dbName) : ""}`;
         } else {
-            const user = ctx.dbUser || ctx.rootUser;
-            const pass = ctx.dbPassword || ctx.rootPassword;
             const passPrefix = pass ? `PGPASSWORD=${escapeShellArg(pass)} ` : "";
             remoteDbCmd = `${passPrefix}psql -h ${escapeShellArg(ctx.host)} ${ctx.port ? `-p ${ctx.port} ` : ""}-U ${escapeShellArg(user)} ${ctx.dbName ? `-d ${escapeShellArg(ctx.dbName)}` : ""}`;
         }

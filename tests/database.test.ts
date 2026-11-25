@@ -3,12 +3,15 @@ import { test } from "node:test";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import path from "node:path";
+import os from "node:os";
+import fs from "fs-extra";
 import {
     buildMysqlCliAuthArgs,
     buildMysqlCreateQuery,
     buildMysqlDropQuery,
     buildPostgresCreateQuery,
     buildPostgresDropQuery,
+    resolveDatabaseContext,
 } from "../src/commands/database.js";
 
 const execFileAsync = promisify(execFile);
@@ -26,7 +29,7 @@ test("buildMysqlCliAuthArgs leverages auth_socket for passwordless sudo on local
     assert.equal(auth.sudoPrefix, "sudo -n ");
 });
 
-test("buildMysqlCliAuthArgs uses MYSQL_PWD and host flags when password is provided", () => {
+test("buildMysqlCliAuthArgs formats CLI flags when password is provided", () => {
     const auth = buildMysqlCliAuthArgs({
         host: "db.internal",
         port: 3307,
@@ -34,10 +37,10 @@ test("buildMysqlCliAuthArgs uses MYSQL_PWD and host flags when password is provi
         password: "secret_password",
     });
 
-    assert.equal(auth.envPrefix, "MYSQL_PWD='secret_password' ");
     assert.ok(auth.cliArgs.includes("-h 'db.internal'"));
     assert.ok(auth.cliArgs.includes("-P 3307"));
     assert.ok(auth.cliArgs.includes("-u 'custom_user'"));
+    assert.ok(auth.cliArgs.includes("-p'secret_password'"));
 });
 
 test("buildMysqlCreateQuery produces idempotent database, user, and privilege statements", () => {
@@ -87,4 +90,45 @@ test("CLI exposes db command group and subcommands", async () => {
     const { stdout: createHelp } = await execFileAsync("node", [CLI_PATH, "db:create", "--help"]);
     assert.match(createHelp, /--charset/);
     assert.match(createHelp, /-A, --as-admin/);
+});
+
+test("resolveDatabaseContext respects DB_ROOT_USER and admin_user without falling back to root", async () => {
+    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "dploy-db-test-"));
+    const prevCwd = process.cwd();
+
+    try {
+        process.chdir(tmpDir);
+        await fs.writeFile(
+            "deploy.config.yml",
+            `
+name: test-app
+database:
+  enabled: true
+  type: mysql
+  name: test_db
+  user: test_user
+  admin_user: \${DB_ROOT_USER:-root}
+  admin_password: \${DB_ROOT_PASSWORD:-pass}
+environments:
+  production:
+    host: 127.0.0.1
+    username: deployer
+    deployTo: /var/www/test-app
+`
+        );
+        await fs.writeFile(
+            ".env.dploy",
+            `
+DB_ROOT_USER=custom_admin
+DB_ROOT_PASSWORD=custom_secret_password
+`
+        );
+
+        const ctx = await resolveDatabaseContext({ env: "production" });
+        assert.equal(ctx.rootUser, "custom_admin");
+        assert.equal(ctx.rootPassword, "custom_secret_password");
+    } finally {
+        process.chdir(prevCwd);
+        await fs.remove(tmpDir);
+    }
 });
