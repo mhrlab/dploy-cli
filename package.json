@@ -8,9 +8,30 @@
     "dploy": "./dist/bin/dploy.js"
   },
   "files": [
-    "dist",
+    "dist/bin",
+    "dist/src",
     "templates"
   ],
+  "license": "MIT",
+  "keywords": [
+    "deploy",
+    "deployment",
+    "cli",
+    "zero-downtime",
+    "ssh",
+    "sftp",
+    "nginx",
+    "laravel",
+    "nodejs"
+  ],
+  "homepage": "https://github.com/mhrlab/dploy-cli#readme",
+  "bugs": {
+    "url": "https://github.com/mhrlab/dploy-cli/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mhrlab/dploy-cli.git"
+  },
   "author": {
     "name": "Hemant Kumar Meena",
     "url": "https://github.com/mhrlab"
@@ -19,7 +40,7 @@
     "node": ">=20.17.0"
   },
   "scripts": {
-    "build": "tsc",
+    "build": "node -e \"import('node:fs').then(fs=>fs.rmSync('dist',{recursive:true,force:true}))\" && tsc",
     "dev": "tsc -w",
     "test": "npm run build && node scripts/run-tests.js",
     "prepare": "npm run build"
