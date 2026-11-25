@@ -109,8 +109,8 @@ export async function linkShared(
             }
         } else {
             log.verbose(`Shared item already exists: ${cleanSharedPath}`);
-            // If item is a directory (or writable) and already exists, sync across any missing initial files/subdirectories without overwriting existing files
-            if (item.endsWith("/") || cleanItem === "writable") {
+            // If item is a directory (or known app writable dir) and already exists, sync across any missing initial files/subdirectories without overwriting existing files
+            if (item.endsWith("/") || cleanItem === "writable" || cleanItem === "storage") {
                 await exec(
                     ssh,
                     `if [ -d ${escapeShellArg(cleanReleasePath)} ] && [ -d ${escapeShellArg(cleanSharedPath)} ]; then cp -rn ${escapeShellArg(cleanReleasePath)}/. ${escapeShellArg(cleanSharedPath)}/ 2>/dev/null || rsync -a --ignore-existing ${escapeShellArg(cleanReleasePath)}/ ${escapeShellArg(cleanSharedPath)}/ 2>/dev/null || true; fi`
@@ -124,6 +124,25 @@ export async function linkShared(
             await exec(
                 ssh,
                 `mkdir -p ${escapeShellArg(cleanSharedPath)}/cache ${escapeShellArg(cleanSharedPath)}/logs ${escapeShellArg(cleanSharedPath)}/session ${escapeShellArg(cleanSharedPath)}/uploads ${escapeShellArg(cleanSharedPath)}/debugbar`
+            );
+        }
+
+        // Special handling for Laravel storage directory: ensure standard subdirectories exist
+        if (cleanItem === "storage") {
+            log.verbose(`Ensuring Laravel storage subdirectories in: ${cleanSharedPath}`);
+            await exec(
+                ssh,
+                `mkdir -p ${escapeShellArg(cleanSharedPath)}/app/public ${escapeShellArg(cleanSharedPath)}/framework/cache/data ${escapeShellArg(cleanSharedPath)}/framework/sessions ${escapeShellArg(cleanSharedPath)}/framework/views ${escapeShellArg(cleanSharedPath)}/logs`
+            );
+        }
+
+        // Ensure group-writable permissions (2775 on dirs, 664 on files) for app runtime writable directories
+        // so both the deploy CLI user and the web server user (e.g. www-data) can write cache/log files.
+        if (cleanItem === "storage" || cleanItem === "writable") {
+            log.verbose(`Ensuring group-writable permissions (2775/664) on: ${cleanSharedPath}`);
+            await exec(
+                ssh,
+                `find ${escapeShellArg(cleanSharedPath)} -type d -exec chmod 2775 {} + 2>/dev/null || true; find ${escapeShellArg(cleanSharedPath)} -type f -exec chmod 664 {} + 2>/dev/null || true`
             );
         }
 

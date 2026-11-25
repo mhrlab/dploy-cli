@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { parseEnvContent, updateOrAppendEnv } from "../src/features/env-sync.js";
+import { parseEnvContent, updateOrAppendEnv, diffEnv } from "../src/features/env-sync.js";
 
 test("parseEnvContent parses key-value pairs ignoring comments and empty lines", () => {
     const raw = `
@@ -40,4 +40,26 @@ test("updateOrAppendEnv appends a new key if it does not exist", () => {
 
     assert.ok(updated.includes("APP_ENV=production"));
     assert.ok(updated.includes("NEW_SECRET=supersecret"));
+});
+
+test("diffEnv correctly detects added, modified, and removed environment variables", () => {
+    const before = `
+APP_NAME=OldApp
+APP_PORT=3000
+SECRET_KEY=12345
+REMOVED_KEY=xyz
+`;
+
+    const after = `
+APP_NAME=NewApp
+APP_PORT=3000
+SECRET_KEY=changed
+NEW_VAR=hello
+`;
+
+    const diff = diffEnv(before, after);
+
+    assert.deepEqual(diff.added, ["NEW_VAR"]);
+    assert.deepEqual(diff.modified, ["APP_NAME", "SECRET_KEY"]);
+    assert.deepEqual(diff.removed, ["REMOVED_KEY"]);
 });

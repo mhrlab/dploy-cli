@@ -2,11 +2,12 @@ import inquirer from "inquirer";
 import { loadConfig, getEnvName, EnvironmentConfig } from "../core/config.js";
 import { connect, close, exec } from "../core/ssh.js";
 import { log } from "../core/logger.js";
-import { expandTilde, getReadableFileSize, escapeShellArg, posixJoin } from "../core/utils.js";
+import { expandTilde, getReadableFileSize, escapeShellArg, posixJoin, toSudoersSlug } from "../core/utils.js";
 import { backupSiteConfigurations } from "../features/site-backup.js";
 import { removeSiteConfigurations } from "../features/site-remove.js";
-import { generateNginxConfig, AppKind, SslMode } from "../features/server-wizard.js";
+import { generateNginxConfig, getSslModeGuidance, AppKind, SslMode } from "../features/server-wizard.js";
 import { printElevatedWarning } from "../core/banner.js";
+import { setup, SetupOptions } from "./setup.js";
 
 export interface SiteOptions {
     env?: string;
@@ -192,7 +193,8 @@ export async function siteRemove(opts: SiteOptions) {
         log.info(`[dry-run] Host: ${setupConnConfig.host}`);
         log.info(`[dry-run] Domains to remove from Nginx: ${domains.join(", ")}`);
         log.info(`[dry-run] Services to stop and remove: ${appName}.service, ${appName}-worker.service`);
-        log.info(`[dry-run] Sudoers rule to remove: /etc/sudoers.d/dploy-${appName}`);
+        const appSlug = toSudoersSlug(appName);
+        log.info(`[dry-run] Sudoers rule to remove: /etc/sudoers.d/dploy-${appSlug}`);
         if (opts.purgeSsl) log.info(`[dry-run] Certbot certificate to delete: ${domains.join(", ")}`);
         if (opts.purgeFiles) log.info(`[dry-run] Deploy directory to remove: ${deployTo}`);
         return;
@@ -459,7 +461,19 @@ export async function siteSsl(opts: SiteOptions) {
 
         await exec(bundle.ssh, `${sudoPrefix}systemctl reload nginx`);
         log.ok(`SSL mode updated to '${sslMode}' and Nginx reloaded for ${primaryDomain}!`);
+
+        for (const line of getSslModeGuidance(sslMode, primaryDomain)) {
+            log.info(line);
+        }
     } finally {
         await close(bundle);
     }
+}
+
+export async function siteAdd(opts: SetupOptions) {
+    return setup({
+        ...opts,
+        createDeployer: false,
+        skipUserSetup: true,
+    });
 }

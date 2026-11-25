@@ -8,6 +8,7 @@
 
 ```yaml
 name: my-app
+domain: example.com             # Optional primary domain or domains list
 versionCommand: "git describe --tags --always"
 keepArtifact: false
 cleanAfterDeploy: true
@@ -40,13 +41,24 @@ hooks:
   postDeploy:
     - sudo systemctl reload my-app
 
-# Automated Database Backups
+# Database Configuration (for automated pre-deploy backups & `dploy db` suite)
 database:
   enabled: true
-  type: postgres         # Options: mysql, postgres, sqlite
+  type: mysql            # Options: mysql, postgres, sqlite
+  host: 127.0.0.1
+  port: 3306
   name: myapp_prod
-  user: postgres
+  user: myapp_user
+  password: ${DB_PASSWORD}
+  # Optional root/admin credentials (if not using auth_socket / sudo)
+  admin_user: root
+  admin_password: ${DB_ROOT_PASSWORD}
+  charset: utf8mb4
+  collation: utf8mb4_unicode_ci
   keep: 5
+
+# Custom Application Log Path (optional, for `dploy logs` scanning)
+logsPath: storage/logs   # or writable/logs, shared/logs, or an absolute path
 
 # Team Notifications
 notifications:
@@ -67,6 +79,7 @@ environments:
     host: 192.168.1.100
     port: 22
     username: deployer
+    domain: staging.example.com
     deployTo: /var/www/my-app-staging
     keepVersions: 3
     baseUrl: https://staging.example.com
@@ -81,6 +94,7 @@ environments:
     port: 22
     username: deployer
     ssh_key_path: ~/.ssh/id_ed25519
+    domain: example.com
     deployTo: /var/www/my-app
     keepVersions: 5
     maintenanceMode: true
@@ -90,6 +104,12 @@ environments:
     healthCheckRetries: 3
     healthGate: true
     autoRollback: true
+
+    # Privileged Admin SSH Connection (used by `dploy db -A`, `dploy setup`, `dploy run -A`, `dploy site -A`)
+    admin:
+      username: root
+      ssh_key_path: ~/.ssh/id_ed25519
+      port: 22
 ```
 
 ---
@@ -101,15 +121,38 @@ environments:
 | Property | Type | Description |
 | :--- | :--- | :--- |
 | `name` | `string` | Application name. |
+| `domain` | `string` | Default primary domain for Nginx and SSL. |
+| `domains` | `string[]` | Array of additional domain names / aliases. |
 | `versionCommand` | `string` | Shell command executed locally to detect the version (e.g. `git rev-parse --short HEAD`). |
 | `versionFile` | `string` | File to read version from (e.g. `package.json`, `VERSION`, `composer.json`). |
 | `keepArtifact` | `boolean` | If true, preserves local `.tar.gz` archive in project root. |
 | `cleanAfterDeploy` | `boolean` | Deletes remote temporary upload files after extraction. |
 | `build` | `object` | Build and packaging options. |
-| `hooks` | `object` | Lifecycle execution hooks. |
-| `database` | `object` | Pre-deploy database backup configuration. |
-| `notifications` | `array` | Notification webhook configurations. |
+| `hooks` | `object` | Lifecycle execution hooks (`preBuild`, `postBuild`, `preDeploy`, `postDeploy`). |
+| `database` | `object` | Database backup and management configuration. |
+| `logsPath` | `string` | Custom path or directory for application logs scanned by `dploy logs`. |
+| `notifications` | `array` | Notification webhook configurations (Slack, Discord, Telegram). |
 | `environments` | `object` | Map of deployment environments. |
+
+---
+
+### Database Configuration (`database`)
+
+| Property | Type | Default | Description |
+| :--- | :--- | :--- | :--- |
+| `enabled` | `boolean` | `false` | Enable automated pre-deploy database backup. |
+| `type` | `string` | `mysql` | Database engine (`mysql`, `postgres`, `sqlite`). |
+| `host` | `string` | `127.0.0.1` | Database server host. |
+| `port` | `number` | `3306` / `5432` | Database server port. |
+| `name` | `string` | - | Target database name (falls back to remote `DB_DATABASE`). |
+| `user` | `string` | - | Application database user (falls back to remote `DB_USERNAME`). |
+| `password` | `string` | - | Application database password (falls back to remote `DB_PASSWORD`). |
+| `admin_user` | `string` | `root` / `postgres` | Database admin/root username. |
+| `admin_password` | `string` | - | Database admin/root password (optional if using `sudo -A` / `auth_socket`). |
+| `charset` | `string` | `utf8mb4` | Character set for database creation. |
+| `collation` | `string` | `utf8mb4_unicode_ci` | Collation for database creation. |
+| `path` | `string` | - | Path to SQLite database file. |
+| `keep` | `number` | `5` | Number of previous backup archives retained on server. |
 
 ---
 
@@ -126,6 +169,8 @@ environments:
 | `passphrase` | `string` | - | Passphrase for encrypted private key (or CLI `--passphrase`, or `DPLOY_PASSPHRASE`). |
 | `ssh_key` | `string` | - | Raw SSH private key string. |
 | `ssh_key_path` | `string` | `~/.ssh/id_rsa` | Path to SSH private key file. |
+| `domain` | `string` | - | Environment-specific domain name. |
+| `domains` | `string[]` | - | Environment-specific domain aliases. |
 | `deployTo` | `string` | - | Absolute path on remote server for deployments (must not be root `/`). |
 | `keepVersions` | `number` | `5` | Number of previous releases to retain. |
 | `baseUrl` | `string` | - | Base URL for post-deploy HTTP health checking. |
@@ -135,6 +180,20 @@ environments:
 | `healthGate` | `boolean` | `true` | If true, fails deployment if health check returns non-2xx. |
 | `autoRollback` | `boolean` | `true` | If health check fails, automatically reverts `current` symlink. |
 | `maintenanceMode`| `boolean` | `false` | Automatically toggle `dploy down` before cutover and `dploy up` after. |
+| `admin` | `object` | - | Dedicated privileged admin SSH credentials (`username`, `ssh_key_path`, `password`, `port`). |
+| `database` | `object` | - | Environment-specific database configuration override. |
+
+---
+
+## Variable Resolution Hierarchy
+
+When running commands like `dploy db`, `dploy logs`, `dploy run`, or `dploy env`, parameters are resolved in this order:
+
+1. **CLI Flags** (e.g. `--name`, `--user`, `--host`, `-A`, `--as-admin`)
+2. **Environment Block** (`environments.<env>.database`, `environments.<env>.admin`)
+3. **Top-Level Config** (`database`, `domain`, `logsPath`)
+4. **Remote Shared `.env`** (for `DB_DATABASE`, `DB_USERNAME`, `DB_PASSWORD`, `DB_HOST`, `DB_PORT`)
+5. **System Defaults** (e.g. `127.0.0.1`, port `3306`, `utf8mb4`)
 
 ---
 

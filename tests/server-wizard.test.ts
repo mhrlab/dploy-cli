@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { generateNginxConfig, generateSystemdUnit } from "../src/features/server-wizard.js";
+import { generateNginxConfig, generateSystemdUnit, getSslModeGuidance } from "../src/features/server-wizard.js";
 
 test("generateNginxConfig generates valid Nginx reverse proxy configuration for Node", async () => {
     const config = await generateNginxConfig({
@@ -10,6 +10,8 @@ test("generateNginxConfig generates valid Nginx reverse proxy configuration for 
     });
 
     assert.ok(config.includes("server_name api.example.com example.com;"));
+    assert.ok(config.includes("access_log /var/log/nginx/api.example.com.access.log;"));
+    assert.ok(config.includes("error_log /var/log/nginx/api.example.com.error.log warn;"));
     assert.ok(config.includes("proxy_pass http://127.0.0.1:4000;"));
     assert.ok(config.includes("proxy_set_header Upgrade $http_upgrade;"));
     assert.ok(config.includes("proxy_set_header Host $host;"));
@@ -145,4 +147,21 @@ environments:
         process.chdir(prevCwd);
         await fs.remove(tmp);
     }
+});
+
+test("getSslModeGuidance provides Cloudflare Origin CA instructions and 521 prevention notes", () => {
+    const originLines = getSslModeGuidance("cloudflare-origin", "examsolved.in");
+    assert.ok(originLines.some((l) => l.includes("Origin Server")));
+    assert.ok(originLines.some((l) => l.includes("examsolved.in")));
+    assert.ok(originLines.some((l) => l.includes("Full (Strict)")));
+
+    const flexLines = getSslModeGuidance("cloudflare-flexible", "examsolved.in");
+    assert.ok(flexLines.some((l) => l.includes("Flexible")));
+    assert.ok(flexLines.some((l) => l.includes("521")));
+
+    const noneLines = getSslModeGuidance("none", "examsolved.in");
+    assert.ok(noneLines.some((l) => l.includes("521")));
+
+    const certbotLines = getSslModeGuidance("certbot", "examsolved.in");
+    assert.equal(certbotLines.length, 0);
 });

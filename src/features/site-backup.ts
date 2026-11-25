@@ -5,7 +5,7 @@ import * as tar from "tar";
 import { Client } from "ssh2";
 import SFTPClient from "ssh2-sftp-client";
 import { exec } from "../core/ssh.js";
-import { escapeShellArg, posixJoin } from "../core/utils.js";
+import { escapeShellArg, posixJoin, toSudoersSlug } from "../core/utils.js";
 import { log } from "../core/logger.js";
 
 export interface SiteBackupOptions {
@@ -98,13 +98,17 @@ export async function backupSiteConfigurations(
         }
 
         // 3. Fetch Sudoers rule
-        const sudoersFile = `/etc/sudoers.d/dploy-${opts.appName}`;
-        const sudoersContent = await readRemoteFileSafe(ssh, sudoersFile, sudo);
+        const appSlug = toSudoersSlug(opts.appName);
+        const sudoersFile = `/etc/sudoers.d/dploy-${appSlug}`;
+        let sudoersContent = await readRemoteFileSafe(ssh, sudoersFile, sudo);
+        if (sudoersContent === null && opts.appName !== appSlug) {
+            sudoersContent = await readRemoteFileSafe(ssh, `/etc/sudoers.d/dploy-${opts.appName}`, sudo);
+        }
         if (sudoersContent !== null) {
-            const targetPath = path.join(stagingDir, "sudoers", `dploy-${opts.appName}`);
+            const targetPath = path.join(stagingDir, "sudoers", `dploy-${appSlug}`);
             await fs.outputFile(targetPath, sudoersContent, "utf8");
-            filesIncluded.push(`sudoers/dploy-${opts.appName}`);
-            log.debug(`Backed up remote sudoers rule: dploy-${opts.appName}`);
+            filesIncluded.push(`sudoers/dploy-${appSlug}`);
+            log.debug(`Backed up remote sudoers rule: dploy-${appSlug}`);
         }
 
         // 4. Fetch shared .env file if requested (default true)

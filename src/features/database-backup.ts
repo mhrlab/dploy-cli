@@ -16,6 +16,12 @@ export interface DatabaseBackupConfig {
     path?: string; // For SQLite
     keep?: number;
     extraArgs?: string[];
+    admin_user?: string;
+    admin_password?: string;
+    root_user?: string;
+    root_password?: string;
+    charset?: string;
+    collation?: string;
 }
 
 export function buildDatabaseDumpCommand(

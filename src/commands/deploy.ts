@@ -140,6 +140,14 @@ async function deployToHost(params: {
         if (code !== 0) throw new Error(stderr || "remote extract failed");
         extract.succeed(`[${targetHost}] Extracted ${version}`);
 
+        // Ensure framework runtime cache directories (e.g. Laravel bootstrap/cache) are group-writable
+        // so both the deploy CLI user and the web server user (e.g. www-data) can write compiled manifests.
+        const bootstrapCacheDir = posixJoin(releaseDir, "bootstrap/cache");
+        await exec(
+            bundle.ssh,
+            `if [ -d ${escapeShellArg(bootstrapCacheDir)} ]; then find ${escapeShellArg(bootstrapCacheDir)} -type d -exec chmod 2775 {} + 2>/dev/null || true; find ${escapeShellArg(bootstrapCacheDir)} -type f -exec chmod 664 {} + 2>/dev/null || true; fi`
+        );
+
         // Automated Pre-Deploy Database Backup
         if (isBackupDbEnabled && dbConfig) {
             const spinDb = log.spinner(`[${targetHost}] Creating pre-deploy database backup...`);
@@ -218,7 +226,7 @@ async function deployToHost(params: {
                 spinHealth.succeed(`[${targetHost}] Post-deployment health check passed (${healthResult.status})`);
             } else {
                 spinHealth.fail(`[${targetHost}] Post-deployment health check failed (status: ${healthResult.status || "unreachable"})`);
-                log.err(`[${targetHost}] ❌ Health check failed for ${url}: status ${healthResult.status || "unreachable"}`);
+                log.err(`[${targetHost}] Health check failed for ${url}: status ${healthResult.status || "unreachable"}`);
 
                 if (isGated) {
                     if (shouldAutoRollback && previousTarget) {
@@ -450,7 +458,7 @@ export async function deploy(opts: DeployOptions) {
         }
 
         const durationMs = Date.now() - startTime;
-        log.ok(`✓ Successfully deployed release ${version} to [${envName}] (${hosts.length} host(s)) in ${(durationMs / 1000).toFixed(1)}s`);
+        log.ok(`Successfully deployed release ${version} to [${envName}] (${hosts.length} host(s)) in ${(durationMs / 1000).toFixed(1)}s`);
 
         if (!opts.dryRun) {
             await dispatchNotifications(notificationTargets, {

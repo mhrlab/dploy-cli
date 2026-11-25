@@ -5,11 +5,12 @@ import os from "node:os";
 import { loadConfig, getEnvName, EnvironmentConfig } from "../core/config.js";
 import { connect, close, exec } from "../core/ssh.js";
 import { log } from "../core/logger.js";
-import { posixJoin, escapeShellArg, expandTilde } from "../core/utils.js";
+import { posixJoin, escapeShellArg, expandTilde, toSudoersSlug } from "../core/utils.js";
 import { printElevatedWarning } from "../core/banner.js";
 import {
     generateNginxConfig,
     generateSystemdUnit,
+    getSslModeGuidance,
     AppKind,
     SslMode,
     NginxConfigParams,
@@ -172,6 +173,7 @@ export interface SetupOptions {
     adminKey?: string;
     adminPassword?: string;
     createDeployer?: boolean;
+    skipUserSetup?: boolean;
 }
 
 export async function setup(opts: SetupOptions) {
@@ -311,8 +313,12 @@ export async function setup(opts: SetupOptions) {
 
         setupCertbot = sslMode === "certbot";
 
-        // If Cloudflare Origin CA was selected, ask how user wants to provide the certificate
+        // If Cloudflare Origin CA was selected, show instructions and ask how user wants to provide the certificate
         if (sslMode === "cloudflare-origin" && (!opts.cfCert || !opts.cfKey) && process.stdin.isTTY) {
+            const previewDomain = (domainInput || "yourdomain.com").split(/\s+/)[0];
+            for (const line of getSslModeGuidance("cloudflare-origin", previewDomain)) {
+                log.info(line);
+            }
             const certMethodAns = await inquirer.prompt([
                 {
                     type: "list",
@@ -486,7 +492,9 @@ export async function setup(opts: SetupOptions) {
     if (opts.dryRun) {
         log.info("[dry-run] Planned server setup configurations:");
         log.info(`[dry-run] Would connect to ${setupConnConfig.username}@${setupConnConfig.host} (Privileged Mode: ${isRunningAsRoot ? "root" : "sudo"})`);
-        if (opts.createDeployer && env.username && env.username !== "root") {
+        if (opts.skipUserSetup) {
+            log.info(`[dry-run] Skipping user and sudoers creation (site add mode)`);
+        } else if (opts.createDeployer && env.username && env.username !== "root") {
             log.info(`[dry-run] Would create unprivileged user '${env.username}'`);
         }
         log.info(`[dry-run] Would create directory ${deployTo} and set ownership to ${env.username || "deploy"}:www-data (mode 775)`);
@@ -513,7 +521,7 @@ export async function setup(opts: SetupOptions) {
     const bundle = await connect(setupConnConfig);
     try {
         // If requested or if deploying as a non-root user that doesn't exist yet, provision the deployer user
-        if (opts.createDeployer && env.username && env.username !== "root") {
+        if (!opts.skipUserSetup && opts.createDeployer && env.username && env.username !== "root") {
             log.info(`Provisioning unprivileged deploy user '${env.username}'...`);
             await exec(bundle.ssh, `${sudoPrefix}id -u ${escapeShellArg(env.username)} || ${sudoPrefix}useradd -m -s /bin/bash ${escapeShellArg(env.username)}`);
             await exec(bundle.ssh, `${sudoPrefix}mkdir -p /home/${escapeShellArg(env.username)}/.ssh && ${sudoPrefix}chmod 700 /home/${escapeShellArg(env.username)}/.ssh`);
@@ -536,29 +544,56 @@ export async function setup(opts: SetupOptions) {
                     break;
                 }
             }
+            log.ok(`User '${env.username}' provisioned and authorized.`);
+        }
 
-            // Add limited passwordless sudo rules for service reloads
-            const sudoersFile = `/etc/sudoers.d/dploy-${defaultAppName}`;
+        // Add limited passwordless sudo rules for service reloads (always ensure this exists for non-root deploy users)
+        if (!opts.skipUserSetup && env.username && env.username !== "root") {
+            const appSlug = toSudoersSlug(defaultAppName);
+            const sudoersFile = `/etc/sudoers.d/dploy-${appSlug}`;
+
             const reloadCommands: string[] = [
                 "/usr/bin/systemctl reload nginx",
-                `/usr/bin/systemctl restart ${defaultAppName}`,
-                `/usr/bin/systemctl restart ${workerServiceName}`,
-                `/usr/bin/systemctl status ${defaultAppName}`,
+                "/bin/systemctl reload nginx",
+                "/usr/bin/systemctl restart nginx",
+                "/bin/systemctl restart nginx",
+                "/usr/bin/systemctl status nginx",
+                "/bin/systemctl status nginx",
+                "/usr/sbin/nginx -t",
+                "/usr/bin/nginx -t",
+                "/usr/bin/systemctl reload php*-fpm",
+                "/bin/systemctl reload php*-fpm",
+                "/usr/bin/systemctl restart php*-fpm",
+                "/bin/systemctl restart php*-fpm",
+                "/usr/bin/systemctl status php*-fpm",
+                "/bin/systemctl status php*-fpm",
+                "/usr/bin/systemctl reload php-fpm",
+                "/bin/systemctl reload php-fpm",
+                "/usr/bin/systemctl restart php-fpm",
+                "/bin/systemctl restart php-fpm",
             ];
 
-            // If PHP is used or provisioned, allow reloading and restarting PHP-FPM for OPcache reset
-            if (kind === "php" || env.provision?.runtime?.php || phpSocket) {
-                // Extract version from socket e.g. "unix:/run/php/php8.2-fpm.sock" or provision config
-                const versionMatch = (phpSocket || "").match(/php(\d+\.\d+)-fpm/);
-                const phpVer = versionMatch ? versionMatch[1] : (env.provision?.runtime?.php || "");
-                if (phpVer) {
-                    reloadCommands.push(`/usr/bin/systemctl reload php${phpVer}-fpm`);
-                    reloadCommands.push(`/usr/bin/systemctl restart php${phpVer}-fpm`);
-                }
-                reloadCommands.push("/usr/bin/systemctl reload php*-fpm");
-                reloadCommands.push("/usr/bin/systemctl restart php*-fpm");
-                reloadCommands.push("/usr/bin/systemctl reload php-fpm");
-                reloadCommands.push("/usr/bin/systemctl restart php-fpm");
+            // If an app service is configured or requested
+            if (kind === "node" || systemdUnit) {
+                reloadCommands.push(
+                    `/usr/bin/systemctl restart ${appSlug}`,
+                    `/bin/systemctl restart ${appSlug}`,
+                    `/usr/bin/systemctl reload ${appSlug}`,
+                    `/bin/systemctl reload ${appSlug}`,
+                    `/usr/bin/systemctl status ${appSlug}`,
+                    `/bin/systemctl status ${appSlug}`
+                );
+            }
+
+            if (workerUnit) {
+                reloadCommands.push(
+                    `/usr/bin/systemctl restart ${appSlug}-worker`,
+                    `/bin/systemctl restart ${appSlug}-worker`,
+                    `/usr/bin/systemctl reload ${appSlug}-worker`,
+                    `/bin/systemctl reload ${appSlug}-worker`,
+                    `/usr/bin/systemctl status ${appSlug}-worker`,
+                    `/bin/systemctl status ${appSlug}-worker`
+                );
             }
 
             const sudoersContent = `${env.username} ALL=(ALL) NOPASSWD: ${reloadCommands.join(", ")}\n`;
@@ -566,7 +601,7 @@ export async function setup(opts: SetupOptions) {
                 bundle.ssh,
                 `echo ${escapeShellArg(sudoersContent)} | ${sudoPrefix}tee ${escapeShellArg(sudoersFile)} > /dev/null && ${sudoPrefix}chmod 440 ${escapeShellArg(sudoersFile)}`
             );
-            log.ok(`User '${env.username}' provisioned and authorized with limited sudo rules (including Nginx & PHP-FPM reload)`);
+            log.ok(`Configured passwordless sudo rules for '${env.username}' in ${sudoersFile} (Nginx, PHP-FPM, and systemctl)`);
         }
 
         // Ensure deploy directory structure and permissions exist
@@ -677,8 +712,18 @@ export async function setup(opts: SetupOptions) {
             }
         } else if (sslMode === "cloudflare-origin") {
             log.info(`Cloudflare Origin CA SSL configured in Nginx (expects /etc/ssl/certs/cf-origin-${primaryDomain}.pem and /etc/ssl/private/cf-origin-${primaryDomain}.key).`);
+            for (const line of getSslModeGuidance("cloudflare-origin", primaryDomain)) {
+                log.info(line);
+            }
         } else if (sslMode === "cloudflare-flexible") {
             log.ok("Cloudflare Flexible SSL configured (real visitor IP restoring enabled, HTTPS protocol detection active)");
+            for (const line of getSslModeGuidance("cloudflare-flexible", primaryDomain)) {
+                log.info(line);
+            }
+        } else if (sslMode === "none") {
+            for (const line of getSslModeGuidance("none", primaryDomain)) {
+                log.info(line);
+            }
         }
 
         log.ok("Server setup wizard completed successfully!");

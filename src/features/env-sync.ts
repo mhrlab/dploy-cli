@@ -53,3 +53,35 @@ export function updateOrAppendEnv(content: string, key: string, value: string): 
 
     return updatedLines.join("\n");
 }
+
+export interface EnvDiff {
+    added: string[];
+    modified: string[];
+    removed: string[];
+}
+
+export function diffEnv(oldContent: string, newContent: string): EnvDiff {
+    const oldEntries = parseEnvContent(oldContent).entries;
+    const newEntries = parseEnvContent(newContent).entries;
+
+    const added: string[] = [];
+    const modified: string[] = [];
+    const removed: string[] = [];
+
+    for (const [key, val] of newEntries.entries()) {
+        if (!oldEntries.has(key)) {
+            added.push(key);
+        } else if (oldEntries.get(key) !== val) {
+            modified.push(key);
+        }
+    }
+
+    for (const key of oldEntries.keys()) {
+        if (!newEntries.has(key)) {
+            removed.push(key);
+        }
+    }
+
+    return { added, modified, removed };
+}
+

@@ -69,6 +69,12 @@ export interface DatabaseBackupConfig {
     path?: string;
     keep?: number;
     extraArgs?: string[];
+    admin_user?: string;
+    admin_password?: string;
+    root_user?: string;
+    root_password?: string;
+    charset?: string;
+    collation?: string;
 }
 
 export interface DeployConfig {
@@ -329,7 +335,7 @@ function normalizeSSHConfig(config: DeployConfig): DeployConfig {
 
             // 🌟 ADDED VALIDATION HERE 🌟
             if (typeof env.ssh_key_path !== 'string' || env.ssh_key_path.length === 0) {
-                log.warn('⚠️  SSH key path is invalid after expansion. Skipping key autofill.');
+                log.warn('SSH key path is invalid after expansion. Skipping key autofill.');
                 continue; // Skip the rest of the loop for this environment
             }
 
@@ -338,7 +344,7 @@ function normalizeSSHConfig(config: DeployConfig): DeployConfig {
                 try {
                     env.ssh_key = fs.readFileSync(env.ssh_key_path, "utf8").trim();
                 } catch (err) {
-                    log.warn(`⚠️  Could not read SSH key from ${env.ssh_key_path}: ${(err as Error).message}`);
+                    log.warn(`Could not read SSH key from ${env.ssh_key_path}: ${(err as Error).message}`);
                 }
             }
         }

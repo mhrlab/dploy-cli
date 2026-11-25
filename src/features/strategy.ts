@@ -55,34 +55,33 @@ export async function resolveFiles(cwd: string, cfg: DeployConfig): Promise<{ fr
     }
 
     if (strategy === "include" || strategy === "hybrid") {
-        log.verbose(`Processing include strategy`);
-        log.verbose(`Include patterns: ${JSON.stringify(include)}`);
-        log.verbose(`Exclude patterns: ${JSON.stringify(exclude)}`);
+        log.verbose(`Resolving include patterns (${include.length} include, ${exclude.length} exclude)`);
+        log.debug(`Include patterns: ${JSON.stringify(include)}, Exclude patterns: ${JSON.stringify(exclude)}`);
 
         if (include.length) {
-            log.debug(`Globbing files with include patterns`);
-            log.verbose(`Finding files matching include patterns...`);
             const files = await fg(include, { cwd, dot: true, ignore: exclude });
             log.verbose(`Found ${files.length} files matching include patterns`);
+            if (files.length) {
+                log.debug(`Sample matched files: ${files.slice(0, 5).join(", ")}${files.length > 5 ? ` (+${files.length - 5} more)` : ""}`);
+            }
 
             for (const f of files) {
-                log.debug(`Adding include file: ${f}`);
                 results.push({ from: path.join(cwd, f), to: f });
             }
         }
     }
 
     if (strategy === "exclude") {
-        log.verbose(`Processing exclude strategy`);
+        log.verbose(`Resolving files with exclude strategy (${exclude.length} exclude patterns)`);
         log.debug(`Exclude patterns: ${JSON.stringify(exclude)}`);
 
-        log.debug(`Globbing all files except exclude patterns`);
-        log.verbose(`Finding all files (excluding patterns)...`);
         const files = await fg(["**/*"], { cwd, dot: true, ignore: exclude });
         log.verbose(`Found ${files.length} files after excluding patterns`);
+        if (files.length) {
+            log.debug(`Sample matched files: ${files.slice(0, 5).join(", ")}${files.length > 5 ? ` (+${files.length - 5} more)` : ""}`);
+        }
 
         for (const f of files) {
-            log.debug(`Adding exclude file: ${f}`);
             results.push({ from: path.join(cwd, f), to: f });
         }
     }
