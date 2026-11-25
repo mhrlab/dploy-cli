@@ -226,7 +226,7 @@ async function deployToHost(params: {
                 spinHealth.succeed(`[${targetHost}] Post-deployment health check passed (${healthResult.status})`);
             } else {
                 spinHealth.fail(`[${targetHost}] Post-deployment health check failed (status: ${healthResult.status || "unreachable"})`);
-                log.err(`[${targetHost}] ❌ Health check failed for ${url}: status ${healthResult.status || "unreachable"}`);
+                log.err(`[${targetHost}] Health check failed for ${url}: status ${healthResult.status || "unreachable"}`);
 
                 if (isGated) {
                     if (shouldAutoRollback && previousTarget) {
@@ -458,7 +458,7 @@ export async function deploy(opts: DeployOptions) {
         }
 
         const durationMs = Date.now() - startTime;
-        log.ok(`✓ Successfully deployed release ${version} to [${envName}] (${hosts.length} host(s)) in ${(durationMs / 1000).toFixed(1)}s`);
+        log.ok(`Successfully deployed release ${version} to [${envName}] (${hosts.length} host(s)) in ${(durationMs / 1000).toFixed(1)}s`);
 
         if (!opts.dryRun) {
             await dispatchNotifications(notificationTargets, {
