@@ -10,6 +10,8 @@ test("generateNginxConfig generates valid Nginx reverse proxy configuration for 
     });
 
     assert.ok(config.includes("server_name api.example.com example.com;"));
+    assert.ok(config.includes("access_log /var/log/nginx/api.example.com.access.log;"));
+    assert.ok(config.includes("error_log /var/log/nginx/api.example.com.error.log warn;"));
     assert.ok(config.includes("proxy_pass http://127.0.0.1:4000;"));
     assert.ok(config.includes("proxy_set_header Upgrade $http_upgrade;"));
     assert.ok(config.includes("proxy_set_header Host $host;"));

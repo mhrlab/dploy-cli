@@ -19,6 +19,7 @@ export interface NginxConfigParams {
     cloudflareRealIp?: boolean;
     sslCertPath?: string;
     sslKeyPath?: string;
+    appName?: string;
 }
 
 export interface SystemdConfigParams {
@@ -82,6 +83,9 @@ export async function generateNginxConfig(params: NginxConfigParams): Promise<st
 
     const domainsStr = params.domains.join(" ");
     content = content.replace(/\{\{DOMAINS\}\}/g, domainsStr);
+
+    const primaryDomain = (params.domains && params.domains[0]) || (params.appName ? params.appName.toLowerCase().replace(/[^a-z0-9._-]/g, "-") : "app");
+    content = content.replace(/\{\{PRIMARY_DOMAIN\}\}/g, primaryDomain);
 
     const deployTo = params.deployTo || (params.rootDir ? params.rootDir.replace(/\/current(?:\/.*)?$/, "") : "/var/www/app");
     content = content.replace(/\{\{DEPLOY_TO\}\}/g, deployTo);

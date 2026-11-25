@@ -103,7 +103,14 @@ export async function logs(opts: {
     if (opts.file) {
         targetCmd = `${sudoPrefix}tail -n ${lineCount} ${isFollow ? "-f " : ""}${escapeShellArg(opts.file)}`;
     } else if (opts.type === "nginx") {
-        targetCmd = `${sudoPrefix}tail -n ${lineCount} ${isFollow ? "-f " : ""}/var/log/nginx/error.log /var/log/nginx/access.log 2>/dev/null || ${sudoPrefix}tail -n ${lineCount} ${isFollow ? "-f " : ""}/var/log/nginx/error.log`;
+        const domain = env.domain || (env.domains && env.domains[0]) || cfg.domain || (cfg.domains && cfg.domains[0]);
+        if (domain) {
+            const domainErrorLog = escapeShellArg(`/var/log/nginx/${domain}.error.log`);
+            const domainAccessLog = escapeShellArg(`/var/log/nginx/${domain}.access.log`);
+            targetCmd = `${sudoPrefix}tail -n ${lineCount} ${isFollow ? "-f " : ""}${domainErrorLog} ${domainAccessLog} 2>/dev/null || ${sudoPrefix}tail -n ${lineCount} ${isFollow ? "-f " : ""}/var/log/nginx/error.log /var/log/nginx/access.log 2>/dev/null || ${sudoPrefix}tail -n ${lineCount} ${isFollow ? "-f " : ""}/var/log/nginx/error.log`;
+        } else {
+            targetCmd = `${sudoPrefix}tail -n ${lineCount} ${isFollow ? "-f " : ""}/var/log/nginx/error.log /var/log/nginx/access.log 2>/dev/null || ${sudoPrefix}tail -n ${lineCount} ${isFollow ? "-f " : ""}/var/log/nginx/error.log`;
+        }
     } else if (opts.type === "pm2") {
         const appName = cfg.name || "all";
         targetCmd = `${sudoPrefix}pm2 logs ${appName} --lines ${lineCount} ${isFollow ? "" : "--nostream"}`;
