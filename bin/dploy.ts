@@ -156,7 +156,7 @@ async function main() {
     // Hook to set log levels, credentials, and render banners before executing any command
     program.hook("preAction", (_thisCommand, actionCommand) => {
         const opts = actionCommand.optsWithGlobals();
-        setLogLevel(!!opts.debug, !!opts.verbose || !!opts.dryRun);
+        setLogLevel(!!opts.debug, !!opts.verbose || !!opts.dryRun, !!opts.quiet || !!opts.json);
         if (opts.passphrase) {
             setCachedPassphrase(opts.passphrase);
         }
