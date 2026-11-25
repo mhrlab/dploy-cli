@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { Command, Option } from "commander";
+import { Command, Option, Help } from "commander";
 import { setLogLevel } from "../src/core/logger.js";
 import { getAppVersion } from "../src/core/utils.js";
 import { setCachedPassphrase } from "../src/core/ssh.js";
@@ -70,6 +70,62 @@ process.on("unhandledRejection", (err: any) => {
 });
 
 
+const ROOT_COMMAND_GROUPS: Array<{ title: string; commands: string[] }> = [
+    { title: "Setup & Infrastructure:", commands: ["init", "setup", "provision"] },
+    { title: "Deployment Lifecycle:", commands: ["build", "deploy", "rollback", "clean"] },
+    { title: "Monitoring & Operations:", commands: ["status", "list", "health", "logs", "ssh", "run", "down", "up"] },
+    { title: "Resource Management:", commands: ["env", "site", "db"] },
+];
+
+const formatGroupedRootHelp = (cmd: Command, helper: Help): string => {
+    const base = Help.prototype.formatHelp.call(helper, cmd, helper);
+    if (cmd.parent) return base;
+
+    const visible = helper.visibleCommands(cmd);
+    const byName = new Map(visible.map((c) => [c.name(), c]));
+    const padWidth = helper.padWidth(cmd, helper);
+    const helpWidth = helper.helpWidth || 80;
+    const itemIndent = 2;
+
+    const formatCmd = (c: Command) =>
+        helper.formatItem(helper.subcommandTerm(c), padWidth, helper.subcommandDescription(c), helper);
+
+    const groupedSections: string[] = [];
+    const seen = new Set<string>();
+
+    for (const group of ROOT_COMMAND_GROUPS) {
+        const items: string[] = [];
+        for (const name of group.commands) {
+            const sub = byName.get(name);
+            if (sub) {
+                seen.add(name);
+                items.push(" ".repeat(itemIndent) + formatCmd(sub));
+            }
+        }
+        if (items.length) {
+            groupedSections.push(`${group.title}\n${items.join("\n")}`);
+        }
+    }
+
+    const ungrouped = visible.filter((c) => !seen.has(c.name()));
+    if (ungrouped.length) {
+        groupedSections.push(
+            `Other Commands:\n${ungrouped.map((c) => " ".repeat(itemIndent) + formatCmd(c)).join("\n")}`
+        );
+    }
+
+    const commandsIdx = base.indexOf("\nCommands:\n");
+    if (commandsIdx === -1) return base;
+
+    const beforeCommands = base.slice(0, commandsIdx);
+    const afterHeader = base.slice(commandsIdx + "\nCommands:\n".length);
+    const nextSectionMatch = afterHeader.match(/\n\n(?=[A-Z])/);
+    const afterCommands = nextSectionMatch ? afterHeader.slice(nextSectionMatch.index!) : "";
+
+    void helpWidth;
+    return `${beforeCommands}\n${groupedSections.join("\n\n")}${afterCommands}`;
+};
+
 async function main() {
     const program = new Command();
 
@@ -86,7 +142,10 @@ async function main() {
         .name("dploy")
         .description("Universal deployment tool (MVP version)")
         .version(getAppVersion(), "-a, --app-version")
-        .configureHelp({ showGlobalOptions: true })
+        .configureHelp({
+            showGlobalOptions: true,
+            formatHelp: formatGroupedRootHelp,
+        })
         .addHelpText("beforeAll", () => {
             if (!process.argv.includes("--json") && !process.argv.includes("-q") && !process.argv.includes("--quiet")) {
                 printFullBanner();
@@ -134,6 +193,7 @@ async function main() {
     withDryRun(
         program
             .command("deploy")
+            .alias("d")
             .description("Deploy to remote server")
             .option("-A, --artifact <path>", "Path to a custom archive to upload (skips build)")
             .addOption(new Option("--archive <path>", "Alias for --artifact").hideHelp())
@@ -151,6 +211,7 @@ async function main() {
     withDryRun(
         program
             .command("rollback")
+            .alias("rb")
             .description("Rollback to previous release")
             .option("--latest", "Rollback to the previous release without prompting")
             .option("--to <version>", "Rollback to a specific release by name")
@@ -161,6 +222,7 @@ async function main() {
     withJson(
         program
             .command("list")
+            .aliases(["ls", "releases"])
             .description("List releases on remote")
     ).action(lazyAction(() => import("../src/commands/list.js"), "list"));
 
@@ -174,6 +236,7 @@ async function main() {
     withJson(
         program
             .command("status")
+            .alias("st")
             .description("Show current release and remote deployment status")
     ).action(lazyAction(() => import("../src/commands/status.js"), "status"));
 
@@ -186,7 +249,7 @@ async function main() {
         withDryRun(
             program
                 .command("provision")
-                .alias("setup-server")
+                .aliases(["prov", "setup-server"])
                 .description("Prepare a fresh remote server for deployments")
                 .option("--force", "Re-run all steps even if directories/files exist")
                 .option("--skip-checks", "Skip prerequisite verification (tar, curl, runtime)")
@@ -270,23 +333,23 @@ async function main() {
         .option("--force", "Upload changes without interactive confirmation prompt")
         .action(lazyAction(() => import("../src/commands/env.js"), "envEdit"));
 
-    // Backward-compatible colon aliases: env:push, env:pull, env:set, env:edit
+    // Backward-compatible colon aliases: env:push, env:pull, env:set, env:edit (hidden from root --help)
     program
-        .command("env:push")
+        .command("env:push", { hidden: true })
         .description("Upload local .env to remote shared/.env (alias for 'env push')")
         .option("-f, --file <path>", "Specific local .env file to upload")
         .option("--force", "Overwrite remote .env without interactive prompt")
         .action(lazyAction(() => import("../src/commands/env.js"), "envPush"));
 
     program
-        .command("env:pull")
+        .command("env:pull", { hidden: true })
         .description("Download remote shared/.env to local file (alias for 'env pull')")
         .option("-o, --out <path>", "Destination local path (default: .env.<env>.remote)")
         .option("--force", "Overwrite local file if it already exists")
         .action(lazyAction(() => import("../src/commands/env.js"), "envPull"));
 
     program
-        .command("env:set <pair>")
+        .command("env:set <pair>", { hidden: true })
         .description("Set or update a KEY=VALUE variable in remote shared/.env (alias for 'env set')")
         .action(async (pair: string, _opts: any, cmd: Command) => {
             const { envSet } = await import("../src/commands/env.js");
@@ -294,7 +357,7 @@ async function main() {
         });
 
     program
-        .command("env:edit")
+        .command("env:edit", { hidden: true })
         .description("Interactively edit remote shared/.env in your local text editor (alias for 'env edit')")
         .option("--editor <cmd>", "Custom editor command (default: $VISUAL, $EDITOR, or notepad/nano)")
         .option("--force", "Upload changes without interactive confirmation prompt")
@@ -367,6 +430,7 @@ async function main() {
         withDryRun(
             siteCmd
                 .command("remove")
+                .aliases(["rm", "delete"])
                 .description("Safely decommission and remove remote site configurations and services")
                 .option("-D, --domain <domain>", "Domain name(s) to remove")
                 .option("-f, --force", "Bypass interactive confirmation prompt")
@@ -400,11 +464,11 @@ async function main() {
         "remote configuration"
     ).action(lazyAction(() => import("../src/commands/site.js"), "siteSsl"));
 
-    // Convenient top-level alias `dploy remove`
+    // Convenient top-level alias `dploy remove` (hidden from root --help)
     withAdminAuth(
         withDryRun(
             program
-                .command("remove")
+                .command("remove", { hidden: true })
                 .description("Safely decommission and remove remote site configurations (alias for 'site remove')")
                 .option("-D, --domain <domain>", "Domain name(s) to remove")
                 .option("-f, --force", "Bypass interactive confirmation prompt")
@@ -498,18 +562,18 @@ async function main() {
     withAdminAuth(
         dbCmd
             .command("console")
-            .alias("cli")
+            .aliases(["cli", "sh", "shell"])
             .description("Open an interactive database terminal (mysql/psql/sqlite3) on the remote server")
             .option("--type <type>", "Database type (mysql, postgres, sqlite)")
             .option("--name <name>", "Database name to connect to"),
         "SSH connection"
     ).action(lazyAction(() => import("../src/commands/database.js"), "dbConsole"));
 
-    // Backward-compatible colon aliases: db:create, db:drop, db:backup, db:restore, db:optimize, db:console
+    // Backward-compatible colon aliases: db:create, db:drop, db:backup, db:restore, db:optimize, db:console (hidden from root --help)
     withAdminAuth(
         withDryRun(
             program
-                .command("db:create [name]")
+                .command("db:create [name]", { hidden: true })
                 .description("Create a remote database, user, and grant privileges (alias for 'db create')")
                 .option("--type <type>", "Database type (mysql, postgres, sqlite)")
                 .option("-u, --user <user>", "Database user to create/grant")
@@ -532,7 +596,7 @@ async function main() {
     withAdminAuth(
         withDryRun(
             program
-                .command("db:drop [name]")
+                .command("db:drop [name]", { hidden: true })
                 .description("Permanently drop a remote database (alias for 'db drop')")
                 .option("--type <type>", "Database type (mysql, postgres, sqlite)")
                 .option("--drop-user", "Also drop the associated database user")
@@ -548,7 +612,7 @@ async function main() {
 
     withAdminAuth(
         program
-            .command("db:backup")
+            .command("db:backup", { hidden: true })
             .description("Trigger a manual database dump (alias for 'db backup')")
             .option("--type <type>", "Database type (mysql, postgres, sqlite)")
             .option("--name <name>", "Database name to backup")
@@ -559,7 +623,7 @@ async function main() {
 
     withAdminAuth(
         program
-            .command("db:restore <file>")
+            .command("db:restore <file>", { hidden: true })
             .description("Restore a remote database from a dump file (alias for 'db restore')")
             .option("--type <type>", "Database type (mysql, postgres, sqlite)")
             .option("--name <name>", "Database name to restore into")
@@ -572,7 +636,7 @@ async function main() {
 
     withAdminAuth(
         program
-            .command("db:optimize")
+            .command("db:optimize", { hidden: true })
             .description("Optimize database tables and defragment storage (alias for 'db optimize')")
             .option("--type <type>", "Database type (mysql, postgres, sqlite)")
             .option("--name <name>", "Database name to optimize"),
@@ -581,7 +645,7 @@ async function main() {
 
     withAdminAuth(
         program
-            .command("db:console")
+            .command("db:console", { hidden: true })
             .alias("db:cli")
             .description("Open an interactive database terminal on remote server (alias for 'db console')")
             .option("--type <type>", "Database type (mysql, postgres, sqlite)")
