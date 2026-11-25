@@ -51,17 +51,19 @@ npx dploy-cli <command>
 ## Quick Start
 
 ### 1. Initialize Configuration
-Generate a starter configuration file for your stack:
+Generate a starter configuration file for your stack (`node`, `laravel`, `ci4`, `fastapi`, `go`, `spa`):
 ```bash
-dploy init node      # Node.js / Express / Next.js
+dploy init node      # Node.js / Express
 dploy init laravel   # PHP / Laravel
 dploy init fastapi   # Python / FastAPI
 ```
 
 ### 2. Prepare Remote Server
-Prepare directories, shared storage, and permissions idempotently:
+Run the interactive setup wizard on a fresh server, or add a new domain to an existing server:
 ```bash
-dploy provision -e production
+dploy setup -e production --admin-user root --create-deployer   # First-time VPS setup
+dploy site add -e production -D second-domain.com --kind php -A # 2nd+ domain on same VPS
+dploy provision -e production                                   # Directories & permissions only
 ```
 
 ### 3. Deploy
@@ -205,14 +207,19 @@ environments:
 
 ## Documentation Index
 
-Explore comprehensive guides and references in the [`docs/`](./docs) directory:
+Explore comprehensive guides and references in [`docs/`](./docs/index.md):
 
-- 📖 **[CLI Commands Reference](./docs/cli-reference.md)**: Full syntax, arguments, and flags for all 17 CLI commands.
-- ⚙️ **[Configuration Guide](./docs/configuration.md)**: Exhaustive schema documentation, hooks, and environment variable expansion.
-- 🌐 **[Cluster & Multi-Server Deployments](./docs/cluster-deployments.md)**: Orchestrating parallel and rolling deployments across fleets.
-- 🛠️ **[Server Provisioning & Setup Wizard](./docs/server-provisioning.md)**: Preparing fresh servers and configuring Nginx, Systemd, and Certbot.
-- 🛡️ **[Operational Safety Guide](./docs/operational-safety.md)**: Maintenance mode controls and automated pre-deploy database snapshots.
-- 🔔 **[Webhooks & Notifications](./docs/notifications.md)**: Configuring deployment alerts for Slack, Discord, and Telegram.
+- 🧭 **[Documentation Hub](./docs/index.md)** — Full map of all guides and references.
+- 🚀 **[Getting Started](./docs/getting-started.md)** — Prerequisites, installation, templates, and first deploy.
+- 🏗️ **[Architecture Overview](./docs/architecture/overview.md)** & **[Deployment Lifecycle](./docs/architecture/deployment-lifecycle.md)** — System design, module layers, and end-to-end data flow.
+- 📖 **[CLI Commands Reference](./docs/cli-reference.md)** — Global flags, grouped commands, aliases, and full options.
+- ⚙️ **[Configuration Guide](./docs/configuration.md)** — `deploy.config.yml` schema, hooks, and `${VAR}` interpolation.
+- 🛠️ **[Server Provisioning & SSL](./docs/server-provisioning.md)** — `setup`, `site add`, `provision`, Cloudflare Origin CA / Flexible SSL, and Laravel permissions.
+- 🌐 **[Cluster Deployments](./docs/cluster-deployments.md)** — Parallel and rolling multi-server orchestration.
+- 🛡️ **[Operational Safety](./docs/operational-safety.md)** — Maintenance mode, `dploy db` suite, pre-deploy DB backups, `dploy logs`, and `dploy env`.
+- 🔔 **[Webhooks & Notifications](./docs/notifications.md)** — Slack, Discord, Telegram, and custom webhook alerts.
+- 🧑‍💻 **[Development Guide](./docs/development.md)** — Local TypeScript setup, adding commands, testing, and CI/CD.
+- 🩺 **[Troubleshooting](./docs/troubleshooting.md)** — Common errors (Cloudflare 521, Laravel permissions, DB root auth, SSH passphrases).
 
 ---
 
