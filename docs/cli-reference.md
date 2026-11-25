@@ -22,7 +22,8 @@
 | [`dploy ssh`](#dploy-ssh--dploy-run) | Open interactive native SSH session into `current/` |
 | [`dploy run`](#dploy-ssh--dploy-run) | Execute arbitrary remote command in `current/` |
 | [`dploy logs`](#dploy-logs) | Stream remote logs (`tail -f`) directly to your terminal |
-| [`dploy env`](#dploy-env) | Manage remote shared `.env` variables (`push`, `pull`, `set`) |
+| [`dploy env`](#dploy-env-aliases-dploy-env) | Manage remote shared `.env` variables (`push`, `pull`, `set`, `edit`) |
+| [`dploy db`](#dploy-db-aliases-dploy-db) | Manage remote databases (`create`, `drop`, `backup`, `restore`, `optimize`, `console`) |
 | [`dploy site info`](#dploy-site-info) | Inspect remote site status (Nginx vhost, systemd, SSL, release) |
 | [`dploy site backup`](#dploy-site-backup) | Snapshot remote Nginx, systemd, sudoers, & `.env` into local `.tar.gz` |
 | [`dploy site ssl`](#dploy-site-ssl) | Switch SSL modes on the fly (Certbot, Cloudflare Flexible, Origin CA) |
@@ -154,6 +155,28 @@ dploy env push [-e <env>] [--file <local-path>] [--force]
 dploy env pull [-e <env>] [--out <local-path>] [--force]
 dploy env set KEY=VALUE [-e <env>]
 dploy env edit [-e <env>] [--editor <cmd>] [--force] [-y]
+```
+
+### `dploy db` (aliases: `dploy database`, `dploy db:*`)
+Remote database management for MySQL, PostgreSQL, and SQLite. Automatically detects database credentials from `deploy.config.yml` or remote `shared/.env`. Supports `-A, --as-admin` / `--as-sudo` for passwordless root database operations on modern Linux distributions via `auth_socket`.
+```bash
+# Create database, user, and grant privileges
+dploy db create [name] [-e <env>] [-u <user>] [-p <pass>] [-A]
+
+# Drop database (with confirmation prompt)
+dploy db drop [name] [-e <env>] [--drop-user] [-f, --force] [-A]
+
+# Create an immediate manual database backup (and optionally download locally)
+dploy db backup [-e <env>] [--download] [-o ./backups] [-A]
+
+# Restore database from local or remote SQL / SQL.gz dump
+dploy db restore <file> [-e <env>] [-f, --force] [-A]
+
+# Optimize tables and reclaim disk space
+dploy db optimize [-e <env>] [-A]
+
+# Open an interactive remote database client (mysql, psql, sqlite3)
+dploy db console [-e <env>] [-A]
 ```
 
 ### `dploy site`

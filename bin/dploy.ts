@@ -16,6 +16,7 @@ import { envPush, envPull, envSet, envEdit } from "../src/commands/env.js";
 import { logs } from "../src/commands/logs.js";
 import { down, up } from "../src/commands/maintenance.js";
 import { siteBackup, siteRemove, siteInfo, siteSsl } from "../src/commands/site.js";
+import { dbCreate, dbDrop, dbBackup, dbRestore, dbOptimize, dbConsole } from "../src/commands/database.js";
 import { setLogLevel } from "../src/core/logger.js";
 import { getAppVersion } from "../src/core/utils.js";
 import { setCachedPassphrase } from "../src/core/ssh.js";
@@ -447,6 +448,229 @@ async function main() {
         .option("--admin-password <pass>", "Admin user password or sudo password")
         .action(async (opts, cmd) => {
             await siteRemove(cmd.optsWithGlobals());
+        });
+
+    // 🗄️ Database Management Group
+    const dbCmd = program
+        .command("db")
+        .alias("database")
+        .description("Manage remote databases (MySQL, PostgreSQL, SQLite)");
+
+    dbCmd
+        .command("create [name]")
+        .description("Create a remote database, user, and grant full privileges")
+        .option("-e, --env <env>", "Target environment (default: production)")
+        .option("--type <type>", "Database type (mysql, postgres, sqlite)")
+        .option("-u, --user <user>", "Database user to create/grant")
+        .option("-p, --password <password>", "Database user password")
+        .option("--host <host>", "Database host (default: 127.0.0.1)")
+        .option("--port <port>", "Database port")
+        .option("--db-root-user <user>", "Database root/admin user (default: root)")
+        .option("--db-root-password <pass>", "Database root/admin password")
+        .option("--charset <charset>", "Database character set (default: utf8mb4)")
+        .option("--collation <collation>", "Database collation (default: utf8mb4_unicode_ci)")
+        .option("-n, --dry-run", "Preview database creation queries without executing")
+        .option("-A, --as-admin", "Connect via admin SSH credentials defined in deploy.config.yml")
+        .option("--as-sudo", "Alias for --as-admin")
+        .option("--admin-user <user>", "Admin / sudo username for SSH connection")
+        .option("--admin-key <path>", "Path to admin SSH private key")
+        .option("--admin-password <pass>", "Admin user password or sudo password")
+        .action(async (name, opts, cmd) => {
+            const merged = { ...cmd.optsWithGlobals(), name: name || cmd.optsWithGlobals().name };
+            await dbCreate(merged);
+        });
+
+    dbCmd
+        .command("drop [name]")
+        .description("Permanently drop a remote database and optionally its user")
+        .option("-e, --env <env>", "Target environment (default: production)")
+        .option("--type <type>", "Database type (mysql, postgres, sqlite)")
+        .option("--drop-user", "Also drop the associated database user")
+        .option("-f, --force", "Bypass interactive confirmation prompt")
+        .option("-y, --yes", "Automatic yes to prompts")
+        .option("-n, --dry-run", "Preview drop query without executing")
+        .option("-A, --as-admin", "Connect via admin SSH credentials defined in deploy.config.yml")
+        .option("--as-sudo", "Alias for --as-admin")
+        .option("--admin-user <user>", "Admin / sudo username for SSH connection")
+        .option("--admin-key <path>", "Path to admin SSH private key")
+        .option("--admin-password <pass>", "Admin user password or sudo password")
+        .action(async (name, opts, cmd) => {
+            const merged = { ...cmd.optsWithGlobals(), name: name || cmd.optsWithGlobals().name };
+            await dbDrop(merged);
+        });
+
+    dbCmd
+        .command("backup")
+        .description("Trigger a manual database dump and optionally download locally")
+        .option("-e, --env <env>", "Target environment (default: production)")
+        .option("--type <type>", "Database type (mysql, postgres, sqlite)")
+        .option("--name <name>", "Database name to backup")
+        .option("-o, --output <path>", "Local destination path for downloaded backup")
+        .option("--download [path]", "Download backup to local machine after creation")
+        .option("-A, --as-admin", "Connect via admin SSH credentials defined in deploy.config.yml")
+        .option("--as-sudo", "Alias for --as-admin")
+        .option("--admin-user <user>", "Admin / sudo username for SSH connection")
+        .option("--admin-key <path>", "Path to admin SSH private key")
+        .option("--admin-password <pass>", "Admin user password or sudo password")
+        .action(async (opts, cmd) => {
+            await dbBackup(cmd.optsWithGlobals());
+        });
+
+    dbCmd
+        .command("restore <file>")
+        .description("Restore a remote database from a local or remote SQL dump file")
+        .option("-e, --env <env>", "Target environment (default: production)")
+        .option("--type <type>", "Database type (mysql, postgres, sqlite)")
+        .option("--name <name>", "Database name to restore into")
+        .option("-f, --force", "Bypass interactive confirmation prompt")
+        .option("-y, --yes", "Automatic yes to prompts")
+        .option("-A, --as-admin", "Connect via admin SSH credentials defined in deploy.config.yml")
+        .option("--as-sudo", "Alias for --as-admin")
+        .option("--admin-user <user>", "Admin / sudo username for SSH connection")
+        .option("--admin-key <path>", "Path to admin SSH private key")
+        .option("--admin-password <pass>", "Admin user password or sudo password")
+        .action(async (file, opts, cmd) => {
+            await dbRestore(file, cmd.optsWithGlobals());
+        });
+
+    dbCmd
+        .command("optimize")
+        .description("Optimize database tables and defragment storage")
+        .option("-e, --env <env>", "Target environment (default: production)")
+        .option("--type <type>", "Database type (mysql, postgres, sqlite)")
+        .option("--name <name>", "Database name to optimize")
+        .option("-A, --as-admin", "Connect via admin SSH credentials defined in deploy.config.yml")
+        .option("--as-sudo", "Alias for --as-admin")
+        .option("--admin-user <user>", "Admin / sudo username for SSH connection")
+        .option("--admin-key <path>", "Path to admin SSH private key")
+        .option("--admin-password <pass>", "Admin user password or sudo password")
+        .action(async (opts, cmd) => {
+            await dbOptimize(cmd.optsWithGlobals());
+        });
+
+    dbCmd
+        .command("console")
+        .alias("cli")
+        .description("Open an interactive database terminal (mysql/psql/sqlite3) on the remote server")
+        .option("-e, --env <env>", "Target environment (default: production)")
+        .option("--type <type>", "Database type (mysql, postgres, sqlite)")
+        .option("--name <name>", "Database name to connect to")
+        .option("-A, --as-admin", "Connect via admin SSH credentials defined in deploy.config.yml")
+        .option("--as-sudo", "Alias for --as-admin")
+        .option("--admin-user <user>", "Admin / sudo username for SSH connection")
+        .option("--admin-key <path>", "Path to admin SSH private key")
+        .option("--admin-password <pass>", "Admin user password or sudo password")
+        .action(async (opts, cmd) => {
+            await dbConsole(cmd.optsWithGlobals());
+        });
+
+    // Backward-compatible colon aliases: db:create, db:drop, db:backup, db:restore, db:optimize, db:console
+    program
+        .command("db:create [name]")
+        .description("Create a remote database, user, and grant privileges (alias for 'db create')")
+        .option("-e, --env <env>", "Target environment (default: production)")
+        .option("--type <type>", "Database type (mysql, postgres, sqlite)")
+        .option("-u, --user <user>", "Database user to create/grant")
+        .option("-p, --password <password>", "Database user password")
+        .option("--host <host>", "Database host (default: 127.0.0.1)")
+        .option("--port <port>", "Database port")
+        .option("--db-root-user <user>", "Database root/admin user (default: root)")
+        .option("--db-root-password <pass>", "Database root/admin password")
+        .option("--charset <charset>", "Database character set (default: utf8mb4)")
+        .option("--collation <collation>", "Database collation (default: utf8mb4_unicode_ci)")
+        .option("-n, --dry-run", "Preview database creation queries without executing")
+        .option("-A, --as-admin", "Connect via admin SSH credentials defined in deploy.config.yml")
+        .option("--as-sudo", "Alias for --as-admin")
+        .option("--admin-user <user>", "Admin / sudo username for SSH connection")
+        .option("--admin-key <path>", "Path to admin SSH private key")
+        .option("--admin-password <pass>", "Admin user password or sudo password")
+        .action(async (name, opts, cmd) => {
+            const merged = { ...cmd.optsWithGlobals(), name: name || cmd.optsWithGlobals().name };
+            await dbCreate(merged);
+        });
+
+    program
+        .command("db:drop [name]")
+        .description("Permanently drop a remote database (alias for 'db drop')")
+        .option("-e, --env <env>", "Target environment (default: production)")
+        .option("--type <type>", "Database type (mysql, postgres, sqlite)")
+        .option("--drop-user", "Also drop the associated database user")
+        .option("-f, --force", "Bypass interactive confirmation prompt")
+        .option("-y, --yes", "Automatic yes to prompts")
+        .option("-n, --dry-run", "Preview drop query without executing")
+        .option("-A, --as-admin", "Connect via admin SSH credentials defined in deploy.config.yml")
+        .option("--as-sudo", "Alias for --as-admin")
+        .option("--admin-user <user>", "Admin / sudo username for SSH connection")
+        .option("--admin-key <path>", "Path to admin SSH private key")
+        .option("--admin-password <pass>", "Admin user password or sudo password")
+        .action(async (name, opts, cmd) => {
+            const merged = { ...cmd.optsWithGlobals(), name: name || cmd.optsWithGlobals().name };
+            await dbDrop(merged);
+        });
+
+    program
+        .command("db:backup")
+        .description("Trigger a manual database dump (alias for 'db backup')")
+        .option("-e, --env <env>", "Target environment (default: production)")
+        .option("--type <type>", "Database type (mysql, postgres, sqlite)")
+        .option("--name <name>", "Database name to backup")
+        .option("-o, --output <path>", "Local destination path for downloaded backup")
+        .option("--download [path]", "Download backup to local machine after creation")
+        .option("-A, --as-admin", "Connect via admin SSH credentials defined in deploy.config.yml")
+        .option("--as-sudo", "Alias for --as-admin")
+        .option("--admin-user <user>", "Admin / sudo username for SSH connection")
+        .option("--admin-key <path>", "Path to admin SSH private key")
+        .option("--admin-password <pass>", "Admin user password or sudo password")
+        .action(async (opts, cmd) => {
+            await dbBackup(cmd.optsWithGlobals());
+        });
+
+    program
+        .command("db:restore <file>")
+        .description("Restore a remote database from a dump file (alias for 'db restore')")
+        .option("-e, --env <env>", "Target environment (default: production)")
+        .option("--type <type>", "Database type (mysql, postgres, sqlite)")
+        .option("--name <name>", "Database name to restore into")
+        .option("-f, --force", "Bypass interactive confirmation prompt")
+        .option("-y, --yes", "Automatic yes to prompts")
+        .option("-A, --as-admin", "Connect via admin SSH credentials defined in deploy.config.yml")
+        .option("--as-sudo", "Alias for --as-admin")
+        .option("--admin-user <user>", "Admin / sudo username for SSH connection")
+        .option("--admin-key <path>", "Path to admin SSH private key")
+        .option("--admin-password <pass>", "Admin user password or sudo password")
+        .action(async (file, opts, cmd) => {
+            await dbRestore(file, cmd.optsWithGlobals());
+        });
+
+    program
+        .command("db:optimize")
+        .description("Optimize database tables and defragment storage (alias for 'db optimize')")
+        .option("-e, --env <env>", "Target environment (default: production)")
+        .option("--type <type>", "Database type (mysql, postgres, sqlite)")
+        .option("--name <name>", "Database name to optimize")
+        .option("-A, --as-admin", "Connect via admin SSH credentials defined in deploy.config.yml")
+        .option("--as-sudo", "Alias for --as-admin")
+        .option("--admin-user <user>", "Admin / sudo username for SSH connection")
+        .option("--admin-key <path>", "Path to admin SSH private key")
+        .option("--admin-password <pass>", "Admin user password or sudo password")
+        .action(async (opts, cmd) => {
+            await dbOptimize(cmd.optsWithGlobals());
+        });
+
+    program
+        .command("db:console")
+        .alias("db:cli")
+        .description("Open an interactive database terminal on remote server (alias for 'db console')")
+        .option("-e, --env <env>", "Target environment (default: production)")
+        .option("--type <type>", "Database type (mysql, postgres, sqlite)")
+        .option("--name <name>", "Database name to connect to")
+        .option("-A, --as-admin", "Connect via admin SSH credentials defined in deploy.config.yml")
+        .option("--as-sudo", "Alias for --as-admin")
+        .option("--admin-user <user>", "Admin / sudo username for SSH connection")
+        .option("--admin-key <path>", "Path to admin SSH private key")
+        .option("--admin-password <pass>", "Admin user password or sudo password")
+        .action(async (opts, cmd) => {
+            await dbConsole(cmd.optsWithGlobals());
         });
 
     await program.parseAsync(process.argv);
