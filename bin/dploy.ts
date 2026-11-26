@@ -73,7 +73,7 @@ process.on("unhandledRejection", (err: any) => {
 const ROOT_COMMAND_GROUPS: Array<{ title: string; commands: string[] }> = [
     { title: "Setup & Infrastructure:", commands: ["init", "setup", "provision"] },
     { title: "Deployment Lifecycle:", commands: ["build", "deploy", "rollback", "clean"] },
-    { title: "Monitoring & Operations:", commands: ["status", "list", "health", "logs", "ssh", "run", "down", "up"] },
+    { title: "Monitoring & Operations:", commands: ["tui", "status", "list", "health", "logs", "ssh", "run", "down", "up"] },
     { title: "Resource Management:", commands: ["env", "site", "db"] },
 ];
 
@@ -282,6 +282,16 @@ async function main() {
             .option("--create-deployer", "Provision dedicated unprivileged deploy user and grant limited sudo"),
         "Preview planned Nginx and systemd configs without touching the server"
     ).action(lazyAction(() => import("../src/commands/setup.js"), "setup"));
+
+    withAdminAuth(
+        withDryRun(
+            program
+                .command("tui")
+                .aliases(["ui", "menu"])
+                .description("Launch interactive guided terminal interface (beginner-friendly menu)")
+        ),
+        "admin operations"
+    ).action(lazyAction(() => import("../src/commands/tui.js"), "tui"));
 
     program
         .command("ssh")
