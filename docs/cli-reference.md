@@ -1,216 +1,228 @@
 # CLI Commands Reference
 
-`dploy-cli` organizes root commands into four logical groups and supports short ergonomic aliases for daily workflows.
+This reference lists every `dploy` command, its short aliases, and what each flag does with practical examples.
 
 ---
 
-## Global Options
+## Global Options (Work on Every Command)
 
-These flags can be passed before or after any command (shown under `Global Options:` in `--help`):
+You can pass global flags **before or after** any command name:
 
-| Flag | Description |
-| :--- | :--- |
-| `-e, --env <env>` | Target environment (default: `production`, or `DPLOY_DEFAULT_ENV` / `DPLOY_ENV`) |
-| `-v, --verbose` | Enable timestamped `[VERBOSE]` logging |
-| `-d, --debug` | Enable timestamped `[DEBUG]` logging (includes truncated SSH stdout/stderr) |
-| `-q, --quiet` | Suppress non-essential stdout and banners (errors/warnings still print to stderr) |
-| `-y, --yes` | Automatic yes to interactive prompts |
-| `--passphrase <passphrase>` | Passphrase for encrypted SSH private key |
-| `-a, --app-version` | Output the `dploy-cli` version |
-| `-h, --help` | Display help for command |
+| Flag | Plain-English Meaning | Example |
+| :--- | :--- | :--- |
+| `-e, --env <env>` | Which environment from `deploy.config.yml` to target (default: `production`, or `DPLOY_ENV`). | `dploy deploy -e staging` |
+| `-v, --verbose` | Print timestamped `[VERBOSE]` progress details (which commands/steps are running). | `dploy deploy -v` |
+| `-d, --debug` | Print timestamped `[DEBUG]` diagnostics (SSH exit codes, truncated stdout/stderr, config details). Secrets are auto-redacted. | `dploy deploy -d` |
+| `-q, --quiet` | Hide banners and normal info messages; only errors and warnings print to `stderr`. Great for CI scripts. | `dploy status -q --json` |
+| `-y, --yes` | Answer "yes" automatically to confirmation prompts. | `dploy env push -y` |
+| `--passphrase <text>` | Passphrase for an encrypted SSH private key (so you aren't prompted). | `dploy deploy --passphrase "..."` |
+| `-a, --app-version` | Print the installed `dploy-cli` version and exit. | `dploy -a` |
+| `-h, --help` | Show help for `dploy` or any subcommand. | `dploy site --help` |
+
+> [!TIP]
+> Notice `-d` means `--debug` everywhere. When passing a domain to `dploy site` commands, use uppercase **`-D, --domain`**.
 
 ---
 
-## Command Overview
+## Root Commands at a Glance
 
 ### Setup & Infrastructure
-| Command | Alias | Description |
-| :--- | :--- | :--- |
-| [`dploy init [template]`](#dploy-init) | — | Initialize `deploy.config.yml` and `.env.dploy.example` from templates |
-| [`dploy setup`](#dploy-setup) | — | Interactive server wizard: Nginx, systemd, queue worker, SSL, and deploy user |
-| [`dploy provision`](#dploy-provision) | `prov`, `setup-server` | Idempotently prepare remote directories, shared paths, and permissions |
+- `dploy init [template]` — Create `deploy.config.yml` and `.env.dploy.example`
+- `dploy setup` — Full first-time VPS wizard (user, sudoers, Nginx, systemd, SSL)
+- `dploy provision` *(alias: `prov`)* — Create `<deployTo>` directories, shared paths, and permissions
 
 ### Deployment Lifecycle
-| Command | Alias | Description |
-| :--- | :--- | :--- |
-| [`dploy build`](#dploy-build) | — | Package project locally into `.tar.gz` release archive |
-| [`dploy deploy`](#dploy-deploy) | `d` | Zero-downtime deploy to remote server or cluster |
-| [`dploy rollback`](#dploy-rollback) | `rb` | Switch `current` symlink back to a previous release |
-| [`dploy clean`](#dploy-clean) | — | Prune old releases beyond `keepVersions` |
+- `dploy build` — Package your app locally into a `.tar.gz` archive
+- `dploy deploy` *(alias: `d`)* — Build, upload, verify, link shared files, and switch `current`
+- `dploy rollback` *(alias: `rb`)* — Switch `current` back to an earlier release
+- `dploy clean` — Delete old releases beyond `keepVersions`
 
 ### Monitoring & Operations
-| Command | Alias | Description |
-| :--- | :--- | :--- |
-| [`dploy status`](#dploy-status) | `st` | Show active release, host info, and deployment metadata |
-| [`dploy list`](#dploy-list) | `ls`, `releases` | List releases on the remote server |
-| [`dploy health`](#dploy-health) | — | Probe the configured HTTP health endpoint |
-| [`dploy logs`](#dploy-logs) | — | Stream or tail remote app, Nginx, PM2, or systemd logs |
-| [`dploy ssh`](#dploy-ssh--dploy-run) | — | Open an interactive SSH terminal in `<deployTo>/current` |
-| [`dploy run <command>`](#dploy-ssh--dploy-run) | — | Execute an ad-hoc command inside `current` (or `--release`) |
-| [`dploy down`](#dploy-down--dploy-up) | — | Enable HTTP 503 maintenance mode |
-| [`dploy up`](#dploy-down--dploy-up) | — | Disable maintenance mode and restore live traffic |
+- `dploy status` *(alias: `st`)* — Show active release and deployment metadata
+- `dploy list` *(aliases: `ls`, `releases`)* — List releases stored on the server
+- `dploy health` — Check your app's HTTP health endpoint
+- `dploy logs` — Tail or stream app, Nginx, PM2, or systemd logs
+- `dploy ssh` — Open an interactive SSH shell in `<deployTo>/current`
+- `dploy run <command>` — Run one command on the server inside `current`
+- `dploy down` / `dploy up` — Turn HTTP 503 maintenance mode on/off
 
 ### Resource Management
-| Command | Alias | Description |
-| :--- | :--- | :--- |
-| [`dploy env`](#dploy-env) | `env:*` *(hidden)* | Manage remote `shared/.env` (`push`, `pull`, `set`, `edit`) |
-| [`dploy site`](#dploy-site) | `remove` *(hidden)* | Manage sites (`add`, `info`, `ssl`, `backup`, `remove`) |
-| [`dploy db`](#dploy-db) | `database`, `db:*` *(hidden)* | Manage remote databases (`create`, `drop`, `backup`, `restore`, `optimize`, `console`) |
-
-> [!NOTE]
-> Legacy top-level colon aliases (`env:push`, `env:pull`, `env:set`, `env:edit`, `db:create`, `db:drop`, `db:backup`, `db:restore`, `db:optimize`, `db:console`, and `dploy remove`) remain executable for backward compatibility, but are hidden from `dploy --help`.
+- `dploy env` — Manage remote `shared/.env` (`push`, `pull`, `set`, `edit`)
+- `dploy site` — Manage sites (`add`, `info`, `ssl`, `backup`, `remove`)
+- `dploy db` *(alias: `database`)* — Manage databases (`create`, `drop`, `backup`, `restore`, `optimize`, `console`)
 
 ---
 
-## Detailed Command Specifications
+## Detailed Command & Flag Guide
 
-### `dploy init`
-Initialize deployment configuration in the current working directory (`src/commands/init.ts`).
+### `dploy init [template]`
+Creates starter configuration files in your current folder.
 ```bash
-dploy init [template]
+dploy init            # Interactive template picker
+dploy init laravel    # Directly use templates/laravel.yaml
 ```
-- **Available Templates** (`templates/`): `node`, `laravel`, `ci4`, `fastapi`, `go`, `spa` (plus JSON variants `node`, `laravel` if selected interactively).
-- Copies `.env.dploy.example` if missing and updates `.gitignore`.
+Available templates: `laravel`, `ci4`, `node`, `fastapi`, `go`, `spa`.
+
+---
 
 ### `dploy build`
-Package your project files into a local `.tar.gz` archive (`src/commands/build.ts`).
+Packages your project into a local `.tar.gz` without uploading it. Useful for testing `build.include` / `build.exclude` / `.dployignore`.
 ```bash
 dploy build [-V, --version <ver>] [-n, --dry-run]
 ```
-- `-V, --version <ver>`: Override release version string.
-- `-n, --dry-run`: Show planned build actions without writing files.
+- `-V, --version <ver>`: Force a specific version name (e.g., `1.4.0`) instead of auto-detecting from Git/`package.json`.
+- `-n, --dry-run`: List which files would be packed without creating the `.tar.gz`.
 
-### `dploy deploy`
-Execute an atomic zero-downtime deployment (`src/commands/deploy.ts`).
+---
+
+### `dploy deploy` *(alias: `dploy d`)*
+Runs the full zero-downtime deployment pipeline.
 ```bash
-dploy deploy [options]   # alias: dploy d
+dploy deploy -e production
+dploy d -e staging --dry-run
 ```
-- `-A, --artifact <path>`: Deploy a custom `.tar.gz` archive (skips build). Hidden alias: `--archive <path>`.
-- `-s, --skip-build`: Skip local build and use the newest matching local artifact.
-- `--version-override <ver>`: Override release version string (hidden alias: `-V, --version <ver>`).
-- `-n, --dry-run`: Preview planned deploy actions without changing anything.
-- `--keep-artifact`: Preserve local `.tar.gz` artifact after deployment.
-- `--no-auto-rollback`: Disable automatic rollback if post-deploy health check fails.
-- `--no-health-gate`: Do not abort deployment if health check fails.
-- `--maintenance`: Enable maintenance mode before cutover and disable after completion.
-- `--backup-db`: Take automated pre-deployment database backup before release cutover.
+| Flag | What It Does |
+| :--- | :--- |
+| `-n, --dry-run` | Preview every local and remote step without modifying anything. |
+| `-A, --artifact <path>` | Upload an existing `.tar.gz` file directly (skips local build). Hidden alias: `--archive`. |
+| `-s, --skip-build` | Reuse the latest `release-*.tar.gz` already on disk instead of rebuilding. |
+| `--version-override <ver>` | Override the release version string (hidden alias: `-V, --version`). |
+| `--keep-artifact` | Keep the local `.tar.gz` file after deploy finishes (normally deleted if `keepArtifact: false`). |
+| `--no-health-gate` | Do not fail the deployment if the post-deploy HTTP health check returns non-2xx. |
+| `--no-auto-rollback` | Do not automatically revert `current` if the health check fails. |
+| `--maintenance` | Automatically run `dploy down` before cutover and `dploy up` after health checks pass. |
+| `--backup-db` | Take a pre-deploy database dump before cutover (aborts deploy if the dump fails). |
 
-### `dploy rollback`
-Roll back to a previous release (`src/commands/rollback.ts`).
+---
+
+### `dploy rollback` *(alias: `dploy rb`)*
+Instantly switches `<deployTo>/current` back to a previous release.
 ```bash
-dploy rollback [options]   # alias: dploy rb
+dploy rollback -e production           # Pick a release interactively
+dploy rb -e production --latest        # Jump straight to the previous release
+dploy rb -e production --to v1.2.0     # Jump to a specific release folder
 ```
 - `--latest`: Roll back to the immediately preceding release without prompting.
-- `--to <version>`: Roll back to a specific release by directory name.
-- `-n, --dry-run`: Preview symlink switch without modifying the server.
-- `--non-interactive`: Disable interactive prompts.
+- `--to <version>`: Target a specific release directory name.
+- `-n, --dry-run`: Preview the symlink change without applying it.
+- `--non-interactive`: Fail instead of waiting for terminal input if no target is given.
 
-### `dploy list`
-List releases on the remote server (`src/commands/list.ts`).
-```bash
-dploy list [-e <env>] [--json]   # aliases: dploy ls, dploy releases
-```
+---
 
-### `dploy status`
-Show active release and remote deployment status (`src/commands/status.ts`).
+### `dploy list` *(aliases: `ls`, `releases`)* & `dploy status` *(alias: `st`)*
+Inspect what is currently deployed on the server.
 ```bash
-dploy status [-e <env>] [--json]   # alias: dploy st
+dploy list -e production
+dploy status -e production --json
 ```
+- `--json`: Print machine-readable JSON (banners are automatically suppressed).
+
+---
 
 ### `dploy clean`
-Remove old releases beyond `keepVersions` (`src/commands/clean.ts`).
+Deletes old release folders beyond `keepVersions` (never deletes the currently active release).
 ```bash
-dploy clean [-e <env>] [-n, --dry-run]
+dploy clean -e production --dry-run
 ```
+- `-n, --dry-run`: Show which release directories would be deleted without removing them.
 
-### `dploy provision`
-Prepare directories, shared paths, and permissions idempotently (`src/commands/provision.ts`).
+---
+
+### `dploy provision` *(aliases: `prov`, `setup-server`)*
+Bootstraps `<deployTo>` directories (`releases`, `shared`, `backups`, `tmp`), shared paths, permissions, and runtime checks.
 ```bash
-dploy provision [-e <env>] [-n, --dry-run] [--force] [--skip-checks] [--only <step>] [--json]
+dploy provision -e production
+dploy provision -e production --only dirs --dry-run
 ```
-- **Aliases**: `prov`, `setup-server`
-- `--only <step>`: Run a single step (`prereqs`, `dirs`, `shared`, `permissions`, `service`).
+- `--force`: Re-run all steps even if directories/files already exist.
+- `--skip-checks`: Skip verifying remote tools (`tar`, `curl`, runtime versions).
+- `--only <step>`: Run only one step: `prereqs`, `dirs`, `shared`, `permissions`, or `service`.
+- `--json`: Output JSON provisioning report.
+- `-n, --dry-run`: Preview planned actions (works offline if SSH cannot connect).
+
+---
 
 ### `dploy setup`
-Interactive server setup wizard (`src/commands/setup.ts`).
+Interactive wizard for first-time server setup (creates `deploy` user, sudoers rules, `<deployTo>`, Nginx vhost, systemd/queue worker, and SSL).
 ```bash
-dploy setup [options]
+dploy setup -e production --admin-user root --create-deployer
 ```
-- `--webserver <type>`: `nginx` or `none`
-- `--kind <type>`: `node`, `php`, or `spa`
-- `--domain <domain>`: Primary domain(s)
-- `--port <port>`: Upstream port for Node.js reverse proxy
-- `--php-socket <path>`: PHP-FPM socket path
-- `--ssl <mode>`: `certbot`, `cloudflare-flexible`, `cloudflare-origin`, or `none`
-- `--cloudflare`: Shortcut for `cloudflare-flexible` with Real-IP headers
-- `--cf-cert <pathOrContent>`: Cloudflare Origin CA certificate (`.pem` path or PEM content)
-- `--cf-key <pathOrContent>`: Cloudflare Origin CA private key (`.key` path or PEM content)
-- `--certbot`: Shortcut for `--ssl certbot`
-- `--service`: Create and enable a systemd background service
-- `--exec-start <cmd>`: `ExecStart` command for the systemd service
-- `--queue-worker`: Create and enable a background queue worker (e.g., Laravel)
-- `--worker-command <cmd>`: Command for the queue worker service
-- `--admin-user <user>`, `--admin-key <path>`, `--admin-password <pass>`: Admin/sudo SSH credentials
-- `--create-deployer`: Create unprivileged deploy user and configure `/etc/sudoers.d/dploy-<app>`
-- `-n, --dry-run`: Preview generated Nginx and systemd configs without modifying the server
+| Flag | What It Does |
+| :--- | :--- |
+| `--webserver <type>` | Web server to configure: `nginx` or `none`. |
+| `--kind <type>` | App type: `node` (reverse proxy), `php` (PHP-FPM), or `spa` (static HTML). |
+| `--domain <domain>` | Domain name(s), space-separated (e.g. `"example.com www.example.com"`). |
+| `--port <port>` | Upstream local port for Node.js apps (default: `3000`). |
+| `--php-socket <path>` | PHP-FPM socket path (default: `unix:/run/php/php8.4-fpm.sock`). |
+| `--ssl <mode>` | SSL mode: `certbot`, `cloudflare-flexible`, `cloudflare-origin`, or `none`. |
+| `--certbot` | Shortcut for `--ssl certbot`. |
+| `--cloudflare` | Shortcut for `--ssl cloudflare-flexible`. |
+| `--cf-cert <pathOrContent>` | Cloudflare Origin CA certificate (`.pem` path or PEM text). |
+| `--cf-key <pathOrContent>` | Cloudflare Origin CA private key (`.key` path or PEM text). |
+| `--service` | Create and enable a systemd app service. |
+| `--exec-start <cmd>` | Command for the systemd service (`ExecStart`). |
+| `--queue-worker` | Create and enable a Laravel queue worker systemd service. |
+| `--worker-command <cmd>` | Custom command for the queue worker. |
+| `--create-deployer` | Create the unprivileged `deploy` user, copy your SSH key, and configure `/etc/sudoers.d/`. |
+| `--admin-user`, `--admin-key`, `--admin-password` | Sudo/root SSH credentials used for OS-level setup. |
+| `-n, --dry-run` | Print generated Nginx/systemd files without modifying the server. |
 
-### `dploy down` & `dploy up`
-Toggle HTTP 503 maintenance mode (`src/commands/maintenance.ts`).
-```bash
-dploy down [-e <env>] [-m, --message <msg>] [--retry <seconds>]
-dploy up [-e <env>]
-```
-
-### `dploy ssh` & `dploy run`
-Interactive shell or one-off remote command execution (`src/commands/ssh.ts`, `src/commands/run.ts`).
-```bash
-dploy ssh [-e <env>]
-dploy run "<command>" [-e <env>] [--release <name>] [-A, --as-admin] [--admin-user <user>] [--admin-key <path>] [--admin-password <pass>]
-```
-
-### `dploy logs`
-Stream or tail remote logs (`src/commands/logs.ts`).
-```bash
-dploy logs [-e <env>] [-f, --follow] [-n, --lines <count>] [--type <app|nginx|pm2|systemd>] [--file <path>] [--latest] [--sudo] [-A, --as-admin]
-```
-- `--type nginx` tails `/var/log/nginx/<domain>.error.log` and `<domain>.access.log` (falling back to global Nginx logs).
-- `--latest` automatically selects the newest daily log file (e.g., `laravel-YYYY-MM-DD.log`).
-
-### `dploy env`
-Manage remote `shared/.env` (`src/commands/env.ts`).
-```bash
-dploy env push [-e <env>] [-f, --file <path>] [--force]
-dploy env pull [-e <env>] [-o, --out <path>] [--force]
-dploy env set KEY=VALUE [-e <env>]
-dploy env edit [-e <env>] [--editor <cmd>] [--force]
-```
+---
 
 ### `dploy site`
-Manage websites, Nginx vhosts, SSL, and teardown (`src/commands/site.ts`).
+Manage websites on your server without re-running full user/sudoers setup.
+
+| Subcommand | Purpose & Key Flags |
+| :--- | :--- |
+| `dploy site add` | Add a 2nd+ domain/app to an existing VPS (same Nginx/SSL/systemd flags as `setup`, skips user & sudoers creation). Uses `-D, --domain <domain>`. |
+| `dploy site info` | Inspect Nginx vhost, syntax check, systemd/worker status, SSL expiry/mode, and current release. Flag: `-D, --domain <domain>`. |
+| `dploy site ssl` | Switch SSL mode (`--ssl <certbot\|cloudflare-flexible\|cloudflare-origin\|none>`, `--cloudflare`, `--certbot`, `-D, --domain`, `-n, --dry-run`). |
+| `dploy site backup` | Download a `.tar.gz` snapshot of Nginx config, systemd units, sudoers rule, and `shared/.env`. Flags: `-D, --domain`, `-o, --output <dir>`. |
+| `dploy site remove` *(aliases: `rm`, `delete`)* | Safely remove Nginx vhost, systemd units, and sudoers rule. Flags: `-D, --domain`, `-f, --force`, `--no-backup`, `--purge-ssl`, `--purge-files`, `-n, --dry-run`. |
+
+All `dploy site` subcommands support `-A, --as-admin`, `--admin-user`, `--admin-key`, and `--admin-password`.
+
+---
+
+### `dploy db` *(alias: `dploy database`)*
+Manage MySQL, PostgreSQL, and SQLite databases remotely.
+
 ```bash
-# Add a 2nd domain/site to an already-provisioned VPS (skips user & sudoers creation)
-dploy site add [-e <env>] [-D, --domain <domain>] [--kind <node|php|spa>] [--ssl <mode>] [-A, --as-admin] [-n, --dry-run]
-
-# Inspect Nginx vhost, systemd units, SSL status, and current release
-dploy site info [-e <env>] [-D, --domain <domain>] [-A, --as-admin]
-
-# Switch SSL mode without re-running full setup
-dploy site ssl [-e <env>] [-D, --domain <domain>] [--ssl <certbot|cloudflare-flexible|cloudflare-origin|none>] [--cloudflare] [--certbot] [-A, --as-admin] [-n, --dry-run]
-
-# Snapshot Nginx, systemd, sudoers, and shared/.env into a local .tar.gz
-dploy site backup [-e <env>] [-D, --domain <domain>] [-o, --output <dir>] [-A, --as-admin]
-
-# Remove site configs, services, and optionally SSL/files (aliases: rm, delete)
-dploy site remove [-e <env>] [-D, --domain <domain>] [-f, --force] [--no-backup] [--purge-ssl] [--purge-files] [-A, --as-admin] [-n, --dry-run]
+dploy db create myapp_prod -u myapp -p secret -A
+dploy db backup -e production --download ./backups
+dploy db restore ./backups/dump.sql.gz -e production -A
+dploy db console -e production
 ```
 
-### `dploy db`
-Manage MySQL, PostgreSQL, and SQLite databases (`src/commands/database.ts`, alias: `dploy database`).
+- `create [name]` — Create DB, user, and grant privileges (`--type`, `-u/--user`, `-p/--password`, `--host`, `--port`, `--db-root-user`, `--db-root-password`, `--charset`, `--collation`, `-n/--dry-run`).
+- `drop [name]` — Drop DB (`--drop-user`, `-f/--force`, `-n/--dry-run`).
+- `backup` — Create dump on server (`--name`, `--type`, `--download [path]`, `-o/--output`).
+- `restore <file>` — Restore from local or remote `.sql` / `.sql.gz` (`--name`, `--type`, `-f/--force`).
+- `optimize` — Optimize tables (`--name`, `--type`).
+- `console` *(aliases: `cli`, `sh`, `shell`)* — Open interactive `mysql`, `psql`, or `sqlite3` session.
+
+All `dploy db` subcommands support `-A, --as-admin`, `--admin-user`, `--admin-key`, and `--admin-password`.
+
+---
+
+### `dploy env`
+Manage `<deployTo>/shared/.env` securely:
 ```bash
-dploy db create [name] [-e <env>] [--type <mysql|postgres|sqlite>] [-u <user>] [-p <password>] [--host <host>] [--port <port>] [--db-root-user <user>] [--db-root-password <pass>] [--charset <charset>] [--collation <collation>] [-n, --dry-run] [-A, --as-admin]
-dploy db drop [name] [-e <env>] [--type <type>] [--drop-user] [-f, --force] [-n, --dry-run] [-A, --as-admin]
-dploy db backup [-e <env>] [--type <type>] [--name <name>] [--download [path]] [-o, --output <path>] [-A, --as-admin]
-dploy db restore <file> [-e <env>] [--type <type>] [--name <name>] [-f, --force] [-A, --as-admin]
-dploy db optimize [-e <env>] [--type <type>] [--name <name>] [-A, --as-admin]
-dploy db console [-e <env>] [--type <type>] [--name <name>] [-A, --as-admin]   # aliases: cli, sh, shell
+dploy env push [-f, --file <localPath>] [--force]   # Upload local .env (creates remote backup)
+dploy env pull [-o, --out <localPath>] [--force]    # Download remote shared/.env
+dploy env set KEY=VALUE                             # Set or update one key
+dploy env edit [--editor <cmd>] [--force]           # Edit in local editor with SHA-256 diff check
+```
+
+---
+
+### `dploy logs`, `dploy ssh`, `dploy run`, `dploy down`, `dploy up`
+```bash
+dploy logs -e production -f -n 100                  # Stream last 100 lines of app logs
+dploy logs -e production --latest                   # Auto-pick newest daily log file
+dploy logs -e production --type nginx -A            # Tail site-specific Nginx error + access logs
+dploy ssh -e production                             # Open SSH shell in <deployTo>/current
+dploy run "php artisan migrate --force" -e production
+dploy down -e production -m "Upgrading database" --retry 300
+dploy up -e production
 ```
