@@ -179,3 +179,40 @@ test("findPackageRoot discovers directory containing package.json", () => {
   const pkg = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8"));
   assert.equal(getAppVersion(), pkg.version);
 });
+
+test("loadConfig preserves extends fallback values when child env var is empty or unset", async () => {
+  const cwd = await createTempProject();
+  const prevHost = process.env.TEST_EMPTY_HOST;
+  const prevPort = process.env.TEST_EMPTY_PORT;
+  process.env.TEST_EMPTY_HOST = "";
+  delete process.env.TEST_EMPTY_PORT;
+
+  try {
+    await writeFile(
+      path.join(cwd, "deploy.config.yml"),
+      `
+name: Inheritance Fallback Test
+environments:
+  default:
+    host: default.example.com
+    username: deploy
+    port: \${TEST_EMPTY_PORT:-2222}
+    deployTo: /var/www/app
+  production:
+    extends: default
+    host: \${TEST_EMPTY_HOST}
+`,
+      "utf8"
+    );
+
+    const config = await loadConfig(cwd);
+    assert.equal(config.environments?.production.host, "default.example.com");
+    assert.equal(config.environments?.production.username, "deploy");
+    assert.equal(config.environments?.production.port, 2222);
+  } finally {
+    if (prevHost === undefined) delete process.env.TEST_EMPTY_HOST;
+    else process.env.TEST_EMPTY_HOST = prevHost;
+    if (prevPort === undefined) delete process.env.TEST_EMPTY_PORT;
+    else process.env.TEST_EMPTY_PORT = prevPort;
+  }
+});

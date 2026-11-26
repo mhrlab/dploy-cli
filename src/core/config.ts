@@ -195,8 +195,8 @@ function isDangerousKey(key: string): boolean {
 function substituteEnv(value: any): any {
     if (typeof value === "string") {
         return value.replace(/\$\{([^:}]+)(?::-(.*?)?)?}/g, (_, key, fallback) => {
-        // return value.replace(/\$\{([^:}]+)(?::-(.*?)?)?\}/g, (_, key, fallback) => {
-            if (process.env[key] !== undefined) return process.env[key]!;
+            const envVal = process.env[key];
+            if (envVal !== undefined && envVal !== "") return envVal;
             return fallback ?? "";
         });
     } else if (Array.isArray(value)) {
@@ -219,6 +219,10 @@ function deepMerge(base: AnyObject, override: AnyObject): AnyObject {
     const out: AnyObject = { ...base };
     for (const [key, val] of Object.entries(override)) {
         if (isDangerousKey(key)) continue;
+        // Preserve inherited base values when override is undefined or an empty substituted string (e.g. unset ${VAR})
+        if ((val === undefined || val === "") && base[key] !== undefined && base[key] !== "") {
+            continue;
+        }
         if (
             base[key] &&
             typeof base[key] === "object" &&
