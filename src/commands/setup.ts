@@ -287,7 +287,7 @@ export async function setup(opts: SetupOptions) {
                     type: "input",
                     name: "phpSocket",
                     message: "PHP-FPM socket path:",
-                    default: "unix:/run/php/php8.2-fpm.sock",
+                    default: "unix:/run/php/php8.4-fpm.sock",
                 },
             ]);
             phpSocket = ans.phpSocket;
@@ -440,7 +440,7 @@ export async function setup(opts: SetupOptions) {
             deployTo,
             rootDir,
             port: port || 3000,
-            phpSocket: phpSocket || "unix:/run/php/php8.2-fpm.sock",
+            phpSocket: phpSocket || "unix:/run/php/php8.4-fpm.sock",
             ssl: sslMode || (setupCertbot ? "certbot" : "none"),
             cloudflareRealIp: Boolean(isCloudflare || sslMode?.startsWith("cloudflare")),
         });

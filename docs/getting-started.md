@@ -1,116 +1,150 @@
-# Getting Started
+# Getting Started (Beginner's Step-by-Step Guide)
 
-This guide walks you through installing `dploy-cli`, initializing a project configuration, preparing a server, and running your first zero-downtime deployment.
-
----
-
-## Prerequisites
-
-- **Local Machine**:
-  - **Node.js** `>= 20.17.0`
-  - **SSH key** (recommended) or SSH password access to your target server
-- **Remote Server** (Linux VPS, e.g., Ubuntu/Debian):
-  - `tar` and `gzip`
-  - `nginx` and runtime (`php-fpm`, `node`, etc.) if using `dploy setup` / `dploy site add`
-  - `mysqldump` / `pg_dump` / `sqlite3` if using database backups or `dploy db`
+This guide takes you from zero to a live, HTTPS-enabled zero-downtime deployment—even if this is your first time deploying with `dploy-cli`.
 
 ---
 
-## Installation
+## What You Need Before Starting
 
-Install globally via `npm`:
+1. **On your computer (local):**
+   - **Node.js `20.17.0` or newer** (`node -v`)
+   - An **SSH key** (recommended) or SSH login credentials for your server
+2. **On your server (Linux VPS, e.g., Ubuntu/Debian):**
+   - `nginx` (and `php8.4-fpm` for Laravel/PHP, or `node` for Node.js apps)
+   - `tar` and `gzip` (pre-installed on almost every Linux server)
+
+---
+
+## Step 1: Install `dploy-cli`
+
+Install globally so the `dploy` command is available in every project:
 
 ```bash
 npm install -g dploy-cli
 ```
 
-Or run without global installation via `npx`:
+Verify the installation:
 
 ```bash
-npx dploy-cli --app-version
+dploy --app-version
 ```
 
 ---
 
-## 1. Initialize Configuration (`dploy init`)
+## Step 2: Initialize Your Project (`dploy init`)
 
-Run `dploy init` in your project root, or pass a template name directly:
+Open your project folder in the terminal and run:
 
 ```bash
-dploy init node      # Node.js / Express (deploy.config.yml)
-dploy init laravel   # PHP / Laravel (deploy.config.yml)
-dploy init ci4       # CodeIgniter 4 (deploy.config.yml)
-dploy init fastapi   # Python / FastAPI (deploy.config.yml)
-dploy init go        # Go binary/service (deploy.config.yml)
-dploy init spa       # Static / SPA (deploy.config.yml)
+dploy init
 ```
 
-`dploy init` performs three actions (`src/commands/init.ts`):
-1. Copies the chosen template into `deploy.config.yml` (or `deploy.config.json` for `.json` templates).
-2. Copies `templates/.env.dploy.example` to `.env.dploy` if it does not already exist.
-3. Updates `.gitignore` so `.env.dploy` and generated build artifacts are not committed.
+Or pick a starter template directly:
+
+```bash
+dploy init laravel   # PHP / Laravel + Vite
+dploy init ci4       # CodeIgniter 4 + Nginx
+dploy init node      # Node.js + PM2 / systemd
+dploy init fastapi   # Python / FastAPI
+dploy init go        # Go binary
+dploy init spa       # React / Vue / Static SPA
+```
+
+This creates:
+1. **`deploy.config.yml`** — tells `dploy` what files to build, which folders to keep shared (`.env`, `storage`), and which server to deploy to.
+2. **`.env.dploy.example`** — a template for your private server IP, SSH user, and passwords.
+3. Updates **`.gitignore`** so secrets and build archives are never committed to Git.
 
 ---
 
-## 2. Configure Secrets in `.env.dploy`
+## Step 3: Add Your Server Details in `.env.dploy`
 
-`dploy-cli` loads `.env` first and `.env.dploy` second (`.env.dploy` overrides `.env` when both define the same key):
+Copy the example secrets file:
 
 ```bash
 cp .env.dploy.example .env.dploy
 ```
 
-Example `.env.dploy`:
+Edit `.env.dploy` with your actual server IP and SSH user:
 
 ```env
 DPLOY_ENV=production
 SSH_PORT=22
 SSH_KEY_PATH=~/.ssh/id_ed25519
-PROD_HOST=198.51.100.10
+
+PROD_HOST=203.0.113.10
 PROD_USER=deploy
 DPLOY_BASE_URL=https://example.com
 ```
 
-Reference these values in `deploy.config.yml` using `${VAR}` or `${VAR:-default}` fallback syntax.
+> [!TIP]
+> `dploy` reads `.env` first and `.env.dploy` second. Anything in `.env.dploy` overrides `.env`, so you can keep deployment credentials separate from your app's `.env`.
 
 ---
 
-## 3. Prepare the Remote Server
+## Step 4: Set Up the Server (First Time Only)
 
-### Option A: Interactive Full Server Wizard (`dploy setup`)
-Use `dploy setup` on a fresh VPS to create the `deploy` user, configure passwordless `sudo` rules for Nginx/PHP-FPM/systemd, initialize `<deployTo>/{releases,shared}`, create Nginx vhosts, and configure SSL:
+You have three ways to prepare your server depending on what is already installed:
+
+### A. Fresh VPS (Configure Nginx, SSL & `deploy` User)
+Run the interactive setup wizard:
 
 ```bash
 dploy setup -e production --admin-user root --create-deployer
 ```
 
-### Option B: Directory & Permission Bootstrap Only (`dploy provision`)
-If Nginx and users are already configured, prepare only the release directory layout and permissions:
+The wizard asks you simple questions (app type: Node/PHP/SPA, domain name, PHP socket—default `php8.4-fpm.sock`, and SSL: Certbot / Cloudflare Origin CA / Cloudflare Flexible / Plain HTTP) and configures everything automatically.
+
+### B. Adding a 2nd Website/Domain to the Same VPS
+If your `deploy` user and sudo rules already exist on that VPS, use `dploy site add`:
+
+```bash
+dploy site add -e production -D second-site.com --kind php --ssl certbot -A
+```
+
+### C. Nginx Already Configured? (Directories & Permissions Only)
+If you already configured Nginx yourself and only want `dploy` to create `<deployTo>/releases`, `shared`, and permissions:
 
 ```bash
 dploy provision -e production
 ```
 
-### Option C: Adding a 2nd Domain to the Same VPS (`dploy site add`)
-Use `dploy site add` to configure a new site directory, Nginx vhost, and SSL while skipping user and sudoers creation:
-
-```bash
-dploy site add -e production -D second-domain.com --kind php --ssl cloudflare-origin -A
-```
-
 ---
 
-## 4. Deploy Your Application
+## Step 5: Preview & Deploy (`--dry-run` -> Live)
 
-Preview first with `--dry-run`, then run the live deployment:
+Always preview your first deploy with `--dry-run`—it checks your config and shows every step without touching the server:
 
 ```bash
 dploy deploy -e production --dry-run
+```
+
+When everything looks good, run the live deploy (you can also use the short alias `dploy d`):
+
+```bash
 dploy deploy -e production
 ```
 
-Or use the short alias:
+### What Happens During `dploy deploy`?
+1. Runs your local `preBuild` hooks (like `composer install` or `npm run build`).
+2. Packs your app into a `.tar.gz` archive.
+3. Uploads it to `<deployTo>/tmp/` over SFTP and verifies the SHA-256 checksum.
+4. Extracts into a new folder `<deployTo>/releases/<version>/` (and fixes Laravel `bootstrap/cache` permissions automatically).
+5. Links `shared/.env` and `shared/storage` into the new release.
+6. Runs `preDeploy` hooks (like `php artisan migrate --force`).
+7. Switches the `current` symlink atomically—zero downtime.
+8. Runs `postDeploy` hooks (like reloading PHP-FPM / Nginx) and checks your health URL.
+
+---
+
+## Step 6: Useful Day-to-Day Commands
 
 ```bash
-dploy d -e production
+dploy status -e production          # Check which release is currently live (alias: dploy st)
+dploy list -e production            # List all deployed releases on server (alias: dploy ls)
+dploy logs -e production -f         # Stream live application logs
+dploy env edit -e production        # Edit remote .env safely in your local editor
+dploy rollback -e production        # Instantly switch back to an earlier release (alias: dploy rb)
 ```
+
+If you get stuck, check the **[Troubleshooting Guide](./troubleshooting.md)**.

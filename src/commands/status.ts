@@ -14,12 +14,17 @@ export async function status(opts: { env?: string; json?: boolean }) {
     if (!env) throw new Error(`Unknown environment: ${envName}`);
     if (!env.deployTo) throw new Error(`Environment '${envName}' is missing deployTo`);
 
+    const targetHost = env.host || env.hosts?.[0];
+    if (!targetHost || !env.username) {
+        throw new Error(`Environment '${envName}' is missing required 'host' or 'username'`);
+    }
+
     if (!opts.json) {
-        log.info(`Connecting to ${env.username}@${env.host} to inspect status`);
+        log.info(`Connecting to ${env.username}@${targetHost} to inspect status`);
     }
 
     const spin = opts.json ? null : log.spinner("Connecting");
-    const bundle = await connect(env).catch((e) => {
+    const bundle = await connect({ ...env, host: targetHost }).catch((e) => {
         if (spin) spin.fail("SSH connect failed");
         log.err(e.message || String(e));
         process.exit(1);

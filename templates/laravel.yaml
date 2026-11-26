@@ -49,7 +49,7 @@ hooks:
     - php artisan view:cache
   postDeploy:
     - echo "🔄 Reloading PHP-FPM OPcache and Nginx gracefully"
-    - sudo systemctl reload php8.2-fpm || sudo systemctl reload php-fpm
+    - sudo systemctl reload php8.4-fpm || sudo systemctl reload php-fpm
     - sudo systemctl reload nginx
     - echo "🔄 Gracefully restarting background queue workers"
     - php artisan queue:restart || true
@@ -88,7 +88,7 @@ environments:
     env:
       APP_ENV: production
       APP_DEBUG: true
-      PHP_VERSION: "8.2"
+      PHP_VERSION: "8.4"
 
   staging:
     extends: default

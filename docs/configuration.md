@@ -1,22 +1,23 @@
 # Configuration Guide (`deploy.config.yml`)
 
-`dploy-cli` is configured via `deploy.config.yml`, `deploy.config.yaml`, or `deploy.config.json` in the root of your project.
+`dploy-cli` reads its configuration from `deploy.config.yml`, `deploy.config.yaml`, or `deploy.config.json` in the root of your project. YAML is recommended because it supports inline comments and is what `dploy init` generates.
+
+If you are new to `dploy-cli`, start with `dploy init <template>` and customize only the blocks you need.
 
 ---
 
-## Full Schema Example
+## Quick Annotated Example
 
 ```yaml
 name: my-app
-domain: example.com             # Optional primary domain or domains list
+domain: example.com
 versionCommand: "git describe --tags --always"
 keepArtifact: false
 cleanAfterDeploy: true
 
-# Local Build Configuration
 build:
-  strategy: exclude      # Options: copy, include, exclude, hybrid
-  buildDir: dist         # Staging directory for artifact creation
+  strategy: exclude       # Options: copy | include | exclude | hybrid
+  buildDir: build
   exclude:
     - .git/**
     - node_modules/**
@@ -24,187 +25,231 @@ build:
     - "*.md"
   shared:
     - .env
-    - storage/
-    - uploads/
+    - storage
   sharedDefaults:
-    .env: ".env.example"
+    .env: .env.example
 
-# Lifecycle Hooks
 hooks:
   preBuild:
-    - npm run lint
+    - npm ci
     - npm run build
-  postBuild: []
   preDeploy:
-    - npm ci --omit=dev
-    - npm run db:migrate
+    - php artisan migrate --force
   postDeploy:
-    - sudo systemctl reload my-app
+    - sudo systemctl reload php8.4-fpm || sudo systemctl reload php-fpm
+    - sudo systemctl reload nginx
 
-# Database Configuration (for automated pre-deploy backups & `dploy db` suite)
 database:
   enabled: true
-  type: mysql            # Options: mysql, postgres, sqlite
+  type: mysql             # Options: mysql | postgres | sqlite
   host: 127.0.0.1
   port: 3306
-  name: myapp_prod
-  user: myapp_user
+  name: ${DB_DATABASE:-myapp_prod}
+  user: ${DB_USERNAME:-myapp_user}
   password: ${DB_PASSWORD}
-  # Optional root/admin credentials (if not using auth_socket / sudo)
-  admin_user: root
+  admin_user: ${DB_ROOT_USER:-root}
   admin_password: ${DB_ROOT_PASSWORD}
-  charset: utf8mb4
-  collation: utf8mb4_unicode_ci
   keep: 5
 
-# Custom Application Log Path (optional, for `dploy logs` scanning)
-logsPath: storage/logs   # or writable/logs, shared/logs, or an absolute path
-
-# Team Notifications
-notifications:
-  - channel: slack
-    url: ${SLACK_WEBHOOK_URL}
-    on: [start, success, failure, rollback]
-  - channel: discord
-    url: ${DISCORD_WEBHOOK_URL}
-    on: [failure, rollback]
-  - channel: telegram
-    token: ${TELEGRAM_BOT_TOKEN}
-    chatId: ${TELEGRAM_CHAT_ID}
-    on: [success, failure]
-
-# Target Environments
 environments:
-  staging:
-    host: 192.168.1.100
-    port: 22
-    username: deployer
-    domain: staging.example.com
-    deployTo: /var/www/my-app-staging
-    keepVersions: 3
-    baseUrl: https://staging.example.com
-    healthCheckPath: /health
-
-  production:
-    # Multi-host cluster deployment
-    hosts:
-      - 10.0.0.10
-      - 10.0.0.11
-    strategy: rolling     # Options: parallel, rolling
-    port: 22
-    username: deployer
-    ssh_key_path: ~/.ssh/id_ed25519
-    domain: example.com
-    deployTo: /var/www/my-app
+  default:
+    port: ${SSH_PORT:-22}
+    ssh_key_path: ${SSH_KEY_PATH:-~/.ssh/id_ed25519}
     keepVersions: 5
-    maintenanceMode: true
-    baseUrl: https://example.com
-    healthCheckPath: /api/health
-    healthCheckTimeout: 8000
-    healthCheckRetries: 3
+    healthCheckPath: /health
     healthGate: true
     autoRollback: true
-
-    # Privileged Admin SSH Connection (used by `dploy db -A`, `dploy setup`, `dploy run -A`, `dploy site -A`)
     admin:
       username: root
-      ssh_key_path: ~/.ssh/id_ed25519
-      port: 22
+
+  production:
+    extends: default
+    host: ${PROD_HOST}
+    username: ${PROD_USER:-deploy}
+    deployTo: /var/www/example.com
+    baseUrl: https://example.com
+    maintenanceMode: true
+    env:
+      APP_ENV: production
 ```
 
 ---
 
-## Configuration Properties
+## 1. Top-Level Properties
 
-### Top-Level Properties
+| Property | Type | Default | Description |
+| :--- | :--- | :--- | :--- |
+| `name` | `string` | folder name | Application name (used for default `deployTo` path and systemd service names). |
+| `domain` | `string` | - | Primary domain name for Nginx virtual hosts and SSL certificates. |
+| `domains` | `string[]` | - | Additional domain names / aliases (e.g. `["example.com", "www.example.com"]`). |
+| `versionCommand` | `string` | - | Local shell command used to determine the release version (e.g. `git rev-parse --short HEAD`). |
+| `versionFile` | `string` | - | File to read the version from (supports plain text or JSON with a `"version"` field). |
+| `logsPath` | `string` | - | Custom log file or directory scanned by `dploy logs`. |
+| `keepArtifact` | `boolean` | `false` | When `true`, keeps the generated `.tar.gz` file locally after deployment. |
+| `cleanAfterDeploy` | `boolean` | `true` | Deletes the temporary `.tar.gz` archive from `<deployTo>/tmp/` after extraction. |
+| `maintenanceMode` | `boolean` | `false` | Default maintenance mode toggle during deployments (can be set per-environment). |
+| `shared` | `string[]` | `[]` | Top-level shared files/folders (can also be set inside `build.shared` or per environment). |
+| `sharedDefaults` | `object` | `{}` | Map of shared file -> template file used to seed it on first deploy (e.g. `.env: .env.example`). |
 
-| Property | Type | Description |
+---
+
+## 2. Build & Packaging (`build`)
+
+The `build` block controls which files from your project are packed into the release `.tar.gz` archive.
+
+### Choosing a Build Strategy
+
+| Strategy | How It Works | Best For |
 | :--- | :--- | :--- |
-| `name` | `string` | Application name. |
-| `domain` | `string` | Default primary domain for Nginx and SSL. |
-| `domains` | `string[]` | Array of additional domain names / aliases. |
-| `versionCommand` | `string` | Shell command executed locally to detect the version (e.g. `git rev-parse --short HEAD`). |
-| `versionFile` | `string` | File to read version from (e.g. `package.json`, `VERSION`, `composer.json`). |
-| `keepArtifact` | `boolean` | If true, preserves local `.tar.gz` archive in project root. |
-| `cleanAfterDeploy` | `boolean` | Deletes remote temporary upload files after extraction. |
-| `build` | `object` | Build and packaging options. |
-| `hooks` | `object` | Lifecycle execution hooks (`preBuild`, `postBuild`, `preDeploy`, `postDeploy`). |
-| `database` | `object` | Database backup and management configuration. |
-| `logsPath` | `string` | Custom path or directory for application logs scanned by `dploy logs`. |
-| `notifications` | `array` | Notification webhook configurations (Slack, Discord, Telegram). |
-| `environments` | `object` | Map of deployment environments. |
+| `exclude` | Packages **everything** in your project except paths in `exclude` (and `.dployignore`). | Simple Node, static, or PHP apps where most files should be uploaded. |
+| `include` | Packages **only** files matching `include` glob patterns (minus `exclude`). | Clean builds where you only want `dist/**`, `package.json`, etc. |
+| `copy` | Copies explicit `from` -> `to` entries into `buildDir` and packages them. | Custom folder restructuring before upload. |
+| `hybrid` | Combines `include` patterns **and** explicit `copy` entries. | **Laravel / CI4** apps (e.g. include `app/**`, `public/**`, plus copy `public/build`). |
 
----
-
-### Database Configuration (`database`)
+### Build Properties
 
 | Property | Type | Default | Description |
 | :--- | :--- | :--- | :--- |
-| `enabled` | `boolean` | `false` | Enable automated pre-deploy database backup. |
-| `type` | `string` | `mysql` | Database engine (`mysql`, `postgres`, `sqlite`). |
-| `host` | `string` | `127.0.0.1` | Database server host. |
-| `port` | `number` | `3306` / `5432` | Database server port. |
-| `name` | `string` | - | Target database name (falls back to remote `DB_DATABASE`). |
-| `user` | `string` | - | Application database user (falls back to remote `DB_USERNAME`). |
-| `password` | `string` | - | Application database password (falls back to remote `DB_PASSWORD`). |
-| `admin_user` | `string` | `root` / `postgres` | Database admin/root username. |
-| `admin_password` | `string` | - | Database admin/root password (optional if using `sudo -A` / `auth_socket`). |
-| `charset` | `string` | `utf8mb4` | Character set for database creation. |
-| `collation` | `string` | `utf8mb4_unicode_ci` | Collation for database creation. |
-| `path` | `string` | - | Path to SQLite database file. |
-| `keep` | `number` | `5` | Number of previous backup archives retained on server. |
+| `strategy` | `string` | `copy` | Packaging strategy: `copy`, `include`, `exclude`, or `hybrid`. |
+| `buildDir` | `string` | `dist` | Local temporary staging folder used while assembling the archive. |
+| `include` | `string[]` | `[]` | Glob patterns of files to include (`include` and `hybrid` strategies). |
+| `exclude` | `string[]` | `[]` | Glob patterns of files/folders to skip (`.dployignore` rules are also applied). |
+| `copy` | `array` | `[]` | Explicit copy rules: `{ from: "src", to: "dest", optional: true }`. |
+| `shared` | `string[]` | `[]` | Files/directories preserved across releases via symlinks (e.g. `.env`, `storage`, `writable`). |
+| `sharedDefaults` | `object` | `{}` | Seed source in the release if the shared file does not exist on the server yet. |
+| `cleanAfterDeploy` | `boolean` | `true` | Cleans up temporary build files after deployment. |
+
+> [!TIP]
+> You can also create a `.dployignore` file in your project root (using `.gitignore`-style patterns) to exclude files across all strategies.
 
 ---
 
-### Environment Properties (`environments.<name>`)
+## 3. Lifecycle Hooks (`hooks`)
 
-| Property | Type | Default | Description |
+Hooks run shell commands automatically at four points in the deployment lifecycle:
+
+| Hook | Where It Runs | Working Directory | Common Uses |
 | :--- | :--- | :--- | :--- |
-| `host` | `string` | - | Primary SSH hostname or IP. |
-| `hosts` | `string[]` | - | List of target hostnames/IPs for cluster deployments. |
-| `strategy` | `string` | `parallel` | Cluster strategy (`parallel` or `rolling`). |
-| `port` | `number` | `22` | SSH port. |
-| `username` | `string` | - | SSH user. |
-| `password` | `string` | - | SSH password (can also be read from `DPLOY_PASSWORD` or `SSH_PASSWORD`). |
-| `passphrase` | `string` | - | Passphrase for encrypted private key (or CLI `--passphrase`, or `DPLOY_PASSPHRASE`). |
-| `ssh_key` | `string` | - | Raw SSH private key string. |
-| `ssh_key_path` | `string` | `~/.ssh/id_rsa` | Path to SSH private key file. |
-| `domain` | `string` | - | Environment-specific domain name. |
-| `domains` | `string[]` | - | Environment-specific domain aliases. |
-| `deployTo` | `string` | - | Absolute path on remote server for deployments (must not be root `/`). |
-| `keepVersions` | `number` | `5` | Number of previous releases to retain. |
-| `baseUrl` | `string` | - | Base URL for post-deploy HTTP health checking. |
-| `healthCheckPath`| `string` | `/health` | Relative path to probe for 2xx response. |
-| `healthCheckTimeout` | `number` | `10000` | Health check timeout in milliseconds. |
-| `healthCheckRetries` | `number` | `3` | Number of retry attempts on failure. |
-| `healthGate` | `boolean` | `true` | If true, fails deployment if health check returns non-2xx. |
-| `autoRollback` | `boolean` | `true` | If health check fails, automatically reverts `current` symlink. |
-| `maintenanceMode`| `boolean` | `false` | Automatically toggle `dploy down` before cutover and `dploy up` after. |
-| `admin` | `object` | - | Dedicated privileged admin SSH credentials (`username`, `ssh_key_path`, `password`, `port`). |
-| `database` | `object` | - | Environment-specific database configuration override. |
-
----
-
-## Variable Resolution Hierarchy
-
-When running commands like `dploy db`, `dploy logs`, `dploy run`, or `dploy env`, parameters are resolved in this order:
-
-1. **CLI Flags** (e.g. `--name`, `--user`, `--host`, `-A`, `--as-admin`)
-2. **Environment Block** (`environments.<env>.database`, `environments.<env>.admin`)
-3. **Top-Level Config** (`database`, `domain`, `logsPath`)
-4. **Remote Shared `.env`** (for `DB_DATABASE`, `DB_USERNAME`, `DB_PASSWORD`, `DB_HOST`, `DB_PORT`)
-5. **System Defaults** (e.g. `127.0.0.1`, port `3306`, `utf8mb4`)
-
----
-
-## Environment Variable Interpolation
-
-`dploy-cli` supports `${VARIABLE}` expansion inside your config file. Values can be provided in your shell environment, `.env`, or `.env.dploy`:
+| `preBuild` | **Local machine** | Project root | `npm ci`, `npm run build`, `composer install --no-dev` |
+| `postBuild` | **Local machine** | Project root | Sign/verify artifact, notify local tooling |
+| `preDeploy` | **Remote server** | `<deployTo>/releases/<version>` | `php artisan migrate --force`, `php artisan config:cache`, `npm ci --omit=dev` |
+| `postDeploy` | **Remote server** | `<deployTo>/releases/<version>` | `sudo systemctl reload php8.4-fpm`, `sudo systemctl reload nginx`, `pm2 reload` |
 
 ```yaml
-environments:
-  production:
-    host: ${PROD_SERVER_IP}
-    username: ${DEPLOY_USER}
-    password: ${DEPLOY_PASSWORD}
+hooks:
+  preBuild:
+    - composer install --no-dev --optimize-autoloader
+    - npm ci && npm run build
+  preDeploy:
+    - php artisan migrate --force
+  postDeploy:
+    - sudo systemctl reload php8.4-fpm || sudo systemctl reload php-fpm
+    - sudo systemctl reload nginx
 ```
+
+---
+
+## 4. Database Configuration (`database`)
+
+Used by automated pre-deploy snapshots (`--backup-db` or `enabled: true`) and the `dploy db` command suite (`create`, `drop`, `backup`, `restore`, `optimize`, `console`).
+
+| Property | Type | Default | Description |
+| :--- | :--- | :--- | :--- |
+| `enabled` | `boolean` | `false` | When `true`, automatically dumps the database before every deploy cutover. |
+| `type` | `string` | `mysql` | Database engine: `mysql`, `postgres`, or `sqlite`. |
+| `host` | `string` | `127.0.0.1` | Database server host on the remote server. |
+| `port` | `number` | `3306` / `5432` | Database server port. |
+| `name` | `string` | - | Application database name (falls back to remote `shared/.env` `DB_DATABASE`). |
+| `user` | `string` | - | Application database user (falls back to remote `shared/.env` `DB_USERNAME`). |
+| `password` | `string` | - | Application database password (falls back to remote `shared/.env` `DB_PASSWORD`). |
+| `admin_user` | `string` | `root` / `postgres` | Database admin username (also reads `root_user` or `DB_ROOT_USER`). |
+| `admin_password` | `string` | - | Database admin password (also reads `root_password` or `DB_ROOT_PASSWORD`). |
+| `charset` | `string` | `utf8mb4` | Character set used by `dploy db create`. |
+| `collation` | `string` | `utf8mb4_unicode_ci` | Collation used by `dploy db create`. |
+| `path` | `string` | - | Path to SQLite database file (for `type: sqlite`). |
+| `keep` | `number` | `5` | Number of backup archives kept in `<deployTo>/backups/`. |
+| `extraArgs` | `string[]` | `[]` | Extra CLI flags passed to `mysqldump` / `pg_dump`. |
+
+---
+
+## 5. Server Provisioning (`provision`)
+
+Used by `dploy provision` to prepare directories, permissions, runtime checks, and services. Can be placed at the top level or inside an environment block.
+
+```yaml
+provision:
+  checkPrerequisites: true
+  runtime:
+    php: "8.4"
+    composer: "2.0"
+  dirs:
+    - storage/logs
+  permissions:
+    owner: deploy
+    group: www-data
+    mode: "755"
+    sharedMode: "775"
+  service:
+    type: systemd
+    name: my-app
+    action: check   # Options: check | restart | reload | enable
+```
+
+| Property | Type | Default | Description |
+| :--- | :--- | :--- | :--- |
+| `checkPrerequisites` | `boolean` | `true` | Verifies required remote tools (`tar`, `curl`, configured `runtime`). |
+| `runtime` | `object` | `{}` | Map of runtime names and minimum expected versions (e.g. `node: "20"`, `php: "8.4"`). |
+| `dirs` | `string[]` | `[]` | Extra subdirectories to ensure under `<deployTo>`. |
+| `permissions` | `object` | - | Ownership and modes: `owner`, `group`, `mode` (e.g. `"755"`), `sharedMode` (e.g. `"775"`). |
+| `service` / `services` | `object` / `array` | - | Systemd or PM2 services to `check`, `restart`, `reload`, or `enable`. |
+
+---
+
+## 6. Team Notifications (`notifications`)
+
+Send non-blocking alerts to Slack, Discord, Telegram, or custom HTTP webhooks on `start`, `success`, `failure`, and `rollback`. See [Webhooks & Notifications](./notifications.md) for full examples.
+
+---
+
+## 7. Environments (`environments`)
+
+Define one or more target environments (`default`, `staging`, `production`, etc.). Use `extends: default` to share common SSH and health-check settings without repeating them.
+
+| Property | Type | Default | Description |
+| :--- | :--- | :--- | :--- |
+| `extends` | `string` | - | Inherit all settings from another environment block (usually `default`). |
+| `host` | `string` | - | Single server hostname or IP address. |
+| `hosts` | `string[]` | - | Multiple hosts for cluster deployments (`parallel` or `rolling`). |
+| `strategy` | `string` | `parallel` | Cluster rollout strategy: `parallel` or `rolling`. |
+| `port` | `number` | `22` | SSH port. |
+| `username` | `string` | - | Everyday unprivileged SSH deploy user (e.g. `deploy`). |
+| `ssh_key_path` | `string` | `~/.ssh/id_rsa` | Path to local SSH private key (`~` is expanded automatically). |
+| `ssh_key` | `string` | - | Inline SSH private key string (useful in CI/CD secrets). |
+| `password` | `string` | - | SSH password (or `DPLOY_PASSWORD` / `SSH_PASSWORD`). |
+| `passphrase` | `string` | - | Passphrase for encrypted SSH private key (or `--passphrase` / `DPLOY_PASSPHRASE`). |
+| `deployTo` | `string` | - | Absolute path on the remote server (e.g. `/var/www/example.com`). Must not be `/`. |
+| `domain` / `domains` | `string` / `string[]` | - | Environment-specific domain(s) for Nginx/SSL. |
+| `keepVersions` | `number` | `5` | Number of previous releases retained on the server. |
+| `baseUrl` | `string` | - | Public URL used for post-deploy HTTP health checks. |
+| `healthCheckPath` | `string` | `/health` | Path appended to `baseUrl` for the health probe (expects 2xx). |
+| `healthCheckTimeout` | `number` | `10000` | Timeout per health check request in milliseconds. |
+| `healthCheckRetries` | `number` | `3` | Retry attempts before marking the health check failed. |
+| `healthGate` | `boolean` | `true` | Fails the deploy if the health check does not return 2xx. |
+| `autoRollback` | `boolean` | `true` | Automatically reverts `current` symlink if `healthGate` fails. |
+| `maintenanceMode` | `boolean` | `false` | Enables `dploy down` before cutover and `dploy up` after completion. |
+| `admin` | `object` | - | Privileged SSH credentials (`username`, `ssh_key_path`, `password`, `passphrase`, `port`) used by `setup`, `site`, and `-A`. |
+| `database` | `object` | - | Environment-specific overrides for the `database` block. |
+| `provision` | `object` | - | Environment-specific overrides for the `provision` block. |
+| `env` | `object` | `{}` | Key-value environment variables injected into remote hooks (e.g. `APP_ENV`, `NODE_ENV`). |
+
+---
+
+## Variable Resolution Hierarchy & Interpolation
+
+1. **Variable Interpolation**: Use `${VAR}` or `${VAR:-default}` anywhere in `deploy.config.yml`. `dploy-cli` loads `.env` first and `.env.dploy` second (`.env.dploy` takes precedence), on top of shell environment variables.
+2. **Database & Runtime Parameter Precedence** (highest to lowest):
+   1. CLI Flags (`--name`, `--user`, `--host`, `-A`, `--db-root-user`)
+   2. Environment block (`environments.<env>.database`, `environments.<env>.admin`)
+   3. Top-level config (`database`, `domain`, `logsPath`)
+   4. Remote `shared/.env` (`DB_DATABASE`, `DB_USERNAME`, `DB_PASSWORD`, `DB_HOST`, `DB_PORT`)
+   5. System defaults (`127.0.0.1`, port `3306`/`5432`, `utf8mb4`)
