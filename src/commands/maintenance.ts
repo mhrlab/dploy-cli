@@ -16,19 +16,24 @@ export async function down(opts: {
         throw new Error(`Environment '${envName}' is missing or lacks deployTo path`);
     }
 
-    log.info(`Enabling maintenance mode on [${envName}] (${env.host})...`);
-    const bundle = await connect(env);
+    const spin = log.spinner(`Connecting to ${env.host} to enable maintenance mode...`);
+    let bundle;
     try {
+        bundle = await connect(env);
+        spin.text = `Enabling maintenance mode on [${envName}]...`;
         const flagPath = await enableMaintenance(bundle.ssh, env.deployTo, {
             message: opts.message,
             retryAfter: opts.retry ? Number(opts.retry) : undefined,
         });
-        log.ok(`Maintenance mode enabled (${flagPath})`);
+        spin.succeed(`Maintenance mode enabled (${flagPath})`);
         if (opts.message) {
             log.info(`Notice: "${opts.message}"`);
         }
+    } catch (err) {
+        spin.fail(`Failed to enable maintenance mode on [${envName}]`);
+        throw err;
     } finally {
-        await close(bundle);
+        if (bundle) await close(bundle);
     }
 }
 
@@ -41,18 +46,23 @@ export async function up(opts: { env?: string }) {
         throw new Error(`Environment '${envName}' is missing or lacks deployTo path`);
     }
 
-    log.info(`Disabling maintenance mode on [${envName}] (${env.host})...`);
-    const bundle = await connect(env);
+    const spin = log.spinner(`Connecting to ${env.host} to disable maintenance mode...`);
+    let bundle;
     try {
+        bundle = await connect(env);
+        spin.text = `Checking maintenance status on [${envName}]...`;
         const status = await checkMaintenance(bundle.ssh, env.deployTo);
         if (!status) {
-            log.warn(`Site is not currently in maintenance mode`);
+            spin.warn(`Site is not currently in maintenance mode`);
             return;
         }
 
         await disableMaintenance(bundle.ssh, env.deployTo);
-        log.ok(`Maintenance mode disabled. Site is live!`);
+        spin.succeed(`Maintenance mode disabled. Site is live!`);
+    } catch (err) {
+        spin.fail(`Failed to disable maintenance mode on [${envName}]`);
+        throw err;
     } finally {
-        await close(bundle);
+        if (bundle) await close(bundle);
     }
 }

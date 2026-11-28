@@ -1,4 +1,3 @@
-import inquirer from "inquirer";
 import chalk from "chalk";
 import { loadConfig, getEnvName, EnvironmentConfig, DeployConfig } from "../core/config.js";
 import { connect, close, exec } from "../core/ssh.js";
@@ -190,8 +189,15 @@ export async function logs(opts: {
     const lineCount = entriesCount > 0 && !isFollow ? Math.max(entriesCount * 80, 1000) : Number(opts.lines) || 50;
 
     // Connect to server early so we can scan directories if needed
-    log.info(`Connecting to ${connConfig.username}@${connConfig.host} to inspect logs...`);
-    const bundle = await connect(connConfig);
+    const connSpin = log.spinner(`Connecting to ${connConfig.username}@${connConfig.host} to inspect logs...`);
+    let bundle;
+    try {
+        bundle = await connect(connConfig);
+        connSpin.succeed(`Connected to ${connConfig.host}`);
+    } catch (err) {
+        connSpin.fail(`Failed to connect to ${connConfig.host}`);
+        throw err;
+    }
 
     let targetCmd: string;
 
@@ -262,7 +268,9 @@ export async function logs(opts: {
             `if [ -d ${escapeShellArg(dir)} ]; then ls -lt ${escapeShellArg(dir)}/*.log ${escapeShellArg(dir)}/log-*.php ${escapeShellArg(dir)}/*.txt 2>/dev/null; fi`
         ).join("; ");
 
+        const scanSpin = log.spinner("Scanning remote log directories...");
         const scanRes = await exec(bundle.ssh, `${sudoPrefix}bash -c ${escapeShellArg(scanScript)} 2>/dev/null || true`);
+        scanSpin.stop();
         const foundFiles: RemoteLogFile[] = [];
         for (const line of scanRes.stdout.split(/\r?\n/)) {
             const parsed = parseLsLtLine(line);
@@ -291,6 +299,7 @@ export async function logs(opts: {
                 value: "__ALL__",
             });
 
+            const { default: inquirer } = await import("inquirer");
             const ans = await inquirer.prompt([
                 {
                     type: "list",

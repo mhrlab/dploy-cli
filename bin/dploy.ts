@@ -71,7 +71,7 @@ process.on("unhandledRejection", (err: any) => {
 
 
 const ROOT_COMMAND_GROUPS: Array<{ title: string; commands: string[] }> = [
-    { title: "Setup & Infrastructure:", commands: ["init", "setup", "provision"] },
+    { title: "Setup & Infrastructure:", commands: ["init", "setup", "provision", "doctor"] },
     { title: "Deployment Lifecycle:", commands: ["build", "deploy", "rollback", "clean"] },
     { title: "Monitoring & Operations:", commands: ["tui", "status", "list", "health", "logs", "ssh", "run", "down", "up"] },
     { title: "Resource Management:", commands: ["env", "site", "db"] },
@@ -245,18 +245,29 @@ async function main() {
         .description("Call the health endpoint")
         .action(lazyAction(() => import("../src/commands/health.js"), "health"));
 
-    withJson(
-        withDryRun(
-            program
-                .command("provision")
-                .aliases(["prov", "setup-server"])
-                .description("Prepare a fresh remote server for deployments")
-                .option("--force", "Re-run all steps even if directories/files exist")
-                .option("--skip-checks", "Skip prerequisite verification (tar, curl, runtime)")
-                .option("--only <step>", "Run a specific provisioning step (prereqs, dirs, shared, permissions, service)"),
-            "Preview planned server changes without executing"
-        )
+    withAdminAuth(
+        withJson(
+            withDryRun(
+                program
+                    .command("provision")
+                    .aliases(["prov", "setup-server"])
+                    .description("Prepare a fresh remote server for deployments")
+                    .option("--force", "Re-run all steps even if directories/files exist")
+                    .option("--skip-checks", "Skip prerequisite verification (tar, curl, runtime)")
+                    .option("--only <step>", "Run a specific provisioning step (prereqs, dirs, shared, permissions, service)"),
+                "Preview planned server changes without executing"
+            )
+        ),
+        "remote provisioning"
     ).action(lazyAction(() => import("../src/commands/provision.js"), "provision"));
+
+    withJson(
+        program
+            .command("doctor")
+            .aliases(["check", "test"])
+            .description("Validate deploy.config.yml, environment variables, SSH keys, and build files")
+            .option("--ssh", "Also test live SSH connectivity and deployTo directory access")
+    ).action(lazyAction(() => import("../src/commands/doctor.js"), "doctor"));
 
     withDryRun(
         program
@@ -474,6 +485,25 @@ async function main() {
         ),
         "remote configuration"
     ).action(lazyAction(() => import("../src/commands/site.js"), "siteSsl"));
+
+    withAdminAuth(
+        withDryRun(
+            siteCmd
+                .command("service [name] [action]")
+                .aliases(["services"])
+                .description("Manage remote systemd services (start, stop, restart, reload, enable, disable, status, logs)")
+                .option("-D, --domain <domain>", "Domain name to resolve app context"),
+            "Preview service management without executing"
+        ),
+        "systemd service management"
+    ).action(async (name: string | undefined, action: string | undefined, _opts: any, cmd: Command) => {
+        const { siteService } = await import("../src/commands/site.js");
+        await siteService({
+            ...cmd.optsWithGlobals(),
+            serviceName: name,
+            action,
+        });
+    });
 
     // Convenient top-level alias `dploy remove` (hidden from root --help)
     withAdminAuth(

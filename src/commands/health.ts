@@ -75,23 +75,25 @@ export async function health(opts: { env?: string }) {
 
     try {
         log.verbose(`Sending HTTP request to health endpoint with retries`);
+        const spin = log.spinner(`Checking health: GET ${url}...`);
         const { ok, status, text } = await performHealthCheckWithRetry(url, {
             timeoutMs,
             retries,
             intervalMs,
             onRetry: (err, attempt, nextDelay) => {
-                log.warn(`Health check attempt ${attempt}/${retries} failed (${err.message}). Retrying in ${nextDelay}ms...`);
+                spin.warn(`Health check attempt ${attempt}/${retries} failed (${err.message}). Retrying in ${nextDelay}ms...`);
+                spin.start(`Retrying health check: GET ${url}...`);
             },
         });
         log.debug(`Health check response - status: ${status}, content length: ${text.length}`);
 
         if (ok) {
-            log.ok(`Health check passed (${status})`);
+            spin.succeed(`Health check passed (${status})`);
             if (text.trim()) {
                 console.log(text);
             }
         } else {
-            log.warn(`Health check failed (${status || "unreachable"})`);
+            spin.fail(`Health check failed (${status || "unreachable"})`);
             if (text.trim()) {
                 console.log(text);
             }
