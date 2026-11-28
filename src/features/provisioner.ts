@@ -14,6 +14,11 @@ export interface ProvisionOptions {
     skipChecks?: boolean;
     only?: ProvisionStepName | string;
     json?: boolean;
+    asAdmin?: boolean;
+    asSudo?: boolean;
+    adminUser?: string;
+    adminKey?: string;
+    adminPassword?: string;
 }
 
 export interface ProvisionStepResult {

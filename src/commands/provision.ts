@@ -1,6 +1,7 @@
 import { loadConfig, getEnvName, EnvironmentConfig } from "../core/config.js";
 import { connect, close } from "../core/ssh.js";
 import { log } from "../core/logger.js";
+import { expandTilde } from "../core/utils.js";
 import { printElevatedWarning } from "../core/banner.js";
 import {
     executeProvisioning,
@@ -41,21 +42,40 @@ export async function provision(opts: ProvisionOptions = {}): Promise<ProvisionR
         },
     };
 
+    // Resolve admin SSH connection if -A / --as-admin / --admin-* was requested
+    const isAdminRequested = Boolean(opts.asAdmin || opts.asSudo || opts.adminUser || opts.adminKey || opts.adminPassword);
+    let connEnv: EnvironmentConfig = mergedEnv;
+    if (isAdminRequested) {
+        const adminUser = opts.adminUser || process.env.DPLOY_ADMIN_USER || env.admin?.username;
+        if ((opts.asAdmin || opts.asSudo) && !adminUser) {
+            throw new Error(`Admin credentials not found in 'admin' block of deploy.config.yml for '${envName}'. Configure 'admin:' or pass --admin-user.`);
+        }
+        const adminKey = opts.adminKey || process.env.DPLOY_ADMIN_KEY || env.admin?.ssh_key_path;
+        const adminPassword = opts.adminPassword || process.env.DPLOY_ADMIN_PASSWORD || env.admin?.password;
+        connEnv = {
+            ...mergedEnv,
+            username: adminUser || mergedEnv.username,
+            ssh_key_path: adminKey ? expandTilde(adminKey) : mergedEnv.ssh_key_path,
+            password: adminPassword || mergedEnv.password,
+            passphrase: env.admin?.passphrase || mergedEnv.passphrase,
+        };
+    }
+
     let report: ProvisionReport;
 
     // Handle offline dry-run if host is missing or dry-run requested without network
-    if (opts.dryRun && (!mergedEnv.host || !mergedEnv.username)) {
+    if (opts.dryRun && (!connEnv.host || !connEnv.username)) {
         report = planProvisioningOffline(mergedEnv, opts);
         renderReport(report, opts);
         return report;
     }
 
-    log.info(`Connecting to ${mergedEnv.username}@${mergedEnv.host} to provision server`);
+    log.info(`Connecting to ${connEnv.username}@${connEnv.host} to provision server`);
     const spin = log.spinner("Connecting");
 
     let bundle;
     try {
-        bundle = await connect(mergedEnv);
+        bundle = await connect(connEnv);
         spin.succeed("Connected");
     } catch (err: any) {
         spin.fail("SSH connect failed");
