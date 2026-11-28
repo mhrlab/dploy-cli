@@ -1,8 +1,51 @@
 import inquirer from "inquirer";
-import { loadConfig, getEnvName, EnvironmentConfig } from "../core/config.js";
+import chalk from "chalk";
+import { loadConfig, getEnvName, EnvironmentConfig, DeployConfig } from "../core/config.js";
 import { connect, close, exec } from "../core/ssh.js";
 import { log } from "../core/logger.js";
 import { posixJoin, escapeShellArg, expandTilde, getReadableFileSize } from "../core/utils.js";
+
+/**
+ * Colorize `tail` file header titles (`==> path <==`) so error logs stand out in red
+ * and access/stdout logs stand out in blue.
+ */
+export function colorizeLogLine(line: string): string {
+    const headerMatch = line.match(/^==> (.+?) <==$/);
+    if (headerMatch) {
+        const filePath = headerMatch[1].toLowerCase();
+        if (/(?:^|[/._-])(error|err|stderr)(?:[/._-]|$)/.test(filePath)) {
+            return chalk.bold.red(line);
+        }
+        if (/(?:^|[/._-])(access|out|stdout)(?:[/._-]|$)/.test(filePath)) {
+            return chalk.bold.blue(line);
+        }
+        return chalk.bold.green(line);
+    }
+    return line;
+}
+
+/**
+ * Resolve configured log path for a given log type from environment or top-level config.
+ */
+export function resolveConfiguredLogPath(
+    env: EnvironmentConfig,
+    cfg: DeployConfig,
+    logType = "app"
+): string | undefined {
+    const envAny = env as any;
+    const cfgAny = cfg as any;
+    if (logType === "app") {
+        return (
+            envAny.logsPath ||
+            envAny.logPath ||
+            envAny.logs?.app ||
+            cfgAny.logsPath ||
+            cfgAny.logPath ||
+            cfgAny.logs?.app
+        );
+    }
+    return envAny.logs?.[logType] || cfgAny.logs?.[logType];
+}
 
 export interface RemoteLogFile {
     path: string;
@@ -97,18 +140,31 @@ export async function logs(opts: {
 
     let targetCmd: string;
 
-    // Support configurable log path in deploy.config.yml (environment-level or top-level fallback):
-    const configuredLogPath =
-        (env as any).logsPath ||
-        (env as any).logPath ||
-        (env as any).logs?.app ||
-        (cfg as any).logsPath ||
-        (cfg as any).logPath ||
-        (cfg as any).logs?.app;
+    const requestedType = opts.type || "app";
+    const builtInTypes = new Set(["app", "nginx", "pm2", "systemd"]);
+    const customLogTarget = !builtInTypes.has(requestedType)
+        ? resolveConfiguredLogPath(env, cfg, requestedType)
+        : undefined;
+
+    if (!builtInTypes.has(requestedType) && !customLogTarget && !opts.file) {
+        const customKeys = Object.keys({
+            ...((cfg as any).logs || {}),
+            ...((env as any).logs || {}),
+        });
+        const available = ["app", "nginx", "pm2", "systemd", ...customKeys].filter(
+            (v, i, a) => a.indexOf(v) === i
+        );
+        await close(bundle);
+        throw new Error(
+            `Unknown log type '${requestedType}'. Available types: ${available.join(", ")}`
+        );
+    }
+
+    const configuredLogPath = customLogTarget || resolveConfiguredLogPath(env, cfg, "app");
 
     if (opts.file) {
         targetCmd = `${sudoPrefix}tail -n ${lineCount} ${isFollow ? "-f " : ""}${escapeShellArg(opts.file)}`;
-    } else if (opts.type === "nginx") {
+    } else if (requestedType === "nginx") {
         const domain = env.domain || (env.domains && env.domains[0]) || cfg.domain || (cfg.domains && cfg.domains[0]);
         if (domain) {
             const domainErrorLog = escapeShellArg(`/var/log/nginx/${domain}.error.log`);
@@ -117,23 +173,35 @@ export async function logs(opts: {
         } else {
             targetCmd = `${sudoPrefix}tail -n ${lineCount} ${isFollow ? "-f " : ""}/var/log/nginx/error.log /var/log/nginx/access.log 2>/dev/null || ${sudoPrefix}tail -n ${lineCount} ${isFollow ? "-f " : ""}/var/log/nginx/error.log`;
         }
-    } else if (opts.type === "pm2") {
+    } else if (requestedType === "pm2") {
         const appName = cfg.name || "all";
         targetCmd = `${sudoPrefix}pm2 logs ${appName} --lines ${lineCount} ${isFollow ? "" : "--nostream"}`;
-    } else if (opts.type === "systemd") {
+    } else if (requestedType === "systemd") {
         const serviceName = cfg.name ? `${cfg.name}.service` : "";
         targetCmd = `${sudoPrefix}journalctl -n ${lineCount} ${isFollow ? "-f " : ""}${serviceName ? `-u ${serviceName}` : ""}`;
+    } else if (customLogTarget && /\.(log|txt|php)$/i.test(customLogTarget.trim())) {
+        const resolvedFile = customLogTarget.startsWith("/")
+            ? customLogTarget
+            : posixJoin(env.deployTo.trim(), "current", customLogTarget);
+        log.info(`Tailing configured '${requestedType}' log file: ${resolvedFile}`);
+        targetCmd = `${sudoPrefix}tail -n ${lineCount} ${isFollow ? "-f " : ""}${escapeShellArg(resolvedFile)}`;
     } else {
-        // App logs: scan candidate directories for daily or rotating log files
-        const candidateDirs = [
-            configuredLogPath
-                ? (configuredLogPath.startsWith("/") ? configuredLogPath : posixJoin(env.deployTo.trim(), "current", configuredLogPath))
-                : null,
-            posixJoin(env.deployTo.trim(), "current", "writable", "logs"), // CodeIgniter 4
-            posixJoin(env.deployTo.trim(), "current", "storage", "logs"),  // Laravel
-            posixJoin(env.deployTo.trim(), "shared", "logs"),             // Shared logs
-            posixJoin(env.deployTo.trim(), "logs"),                       // Standard logs
-        ].filter(Boolean) as string[];
+        // App or custom directory logs: scan candidate directories for daily or rotating log files
+        const candidateDirs = customLogTarget
+            ? [
+                  customLogTarget.startsWith("/")
+                      ? customLogTarget
+                      : posixJoin(env.deployTo.trim(), "current", customLogTarget),
+              ]
+            : ([
+                  configuredLogPath
+                      ? (configuredLogPath.startsWith("/") ? configuredLogPath : posixJoin(env.deployTo.trim(), "current", configuredLogPath))
+                      : null,
+                  posixJoin(env.deployTo.trim(), "current", "writable", "logs"), // CodeIgniter 4
+                  posixJoin(env.deployTo.trim(), "current", "storage", "logs"),  // Laravel
+                  posixJoin(env.deployTo.trim(), "shared", "logs"),             // Shared logs
+                  posixJoin(env.deployTo.trim(), "logs"),                       // Standard logs
+              ].filter(Boolean) as string[]);
 
         const scanScript = candidateDirs.map((dir) =>
             `if [ -d ${escapeShellArg(dir)} ]; then ls -lt ${escapeShellArg(dir)}/*.log ${escapeShellArg(dir)}/log-*.php ${escapeShellArg(dir)}/*.txt 2>/dev/null; fi`
@@ -197,15 +265,29 @@ export async function logs(opts: {
                 return reject(err);
             }
 
+            let lineBuffer = "";
             stream.on("data", (data: Buffer) => {
-                process.stdout.write(data);
+                lineBuffer += data.toString();
+                const lines = lineBuffer.split(/\r?\n/);
+                lineBuffer = lines.pop() ?? "";
+                for (const line of lines) {
+                    process.stdout.write(`${colorizeLogLine(line)}\n`);
+                }
             });
 
             stream.stderr.on("data", (data: Buffer) => {
-                process.stderr.write(data);
+                process.stderr.write(chalk.red(data.toString()));
             });
 
+            const flushRemaining = () => {
+                if (lineBuffer) {
+                    process.stdout.write(colorizeLogLine(lineBuffer));
+                    lineBuffer = "";
+                }
+            };
+
             const cleanup = async () => {
+                flushRemaining();
                 try {
                     stream.end();
                     await close(bundle);
@@ -216,6 +298,7 @@ export async function logs(opts: {
             process.on("SIGINT", cleanup);
 
             stream.on("close", async () => {
+                flushRemaining();
                 process.off("SIGINT", cleanup);
                 await close(bundle);
                 resolve();

@@ -283,9 +283,11 @@ environments:
     # Option 1: Direct path (relative to current/ or absolute)
     logsPath: storage/logs/
 
-    # Option 2: Nested logs block (equivalent to logsPath for app logs)
+    # Option 2: Nested logs block (supports custom --type keys like `dploy logs --type system`)
     logs:
       app: storage/logs/
+      system: storage/system/logs/
+      worker: storage/logs/worker.log
 ```
 
 ### How `--type` Maps to Log Sources in `dploy logs`
@@ -293,7 +295,8 @@ environments:
 | Command | Source Used on Remote Server |
 | :--- | :--- |
 | `dploy logs` *(default `app`)* | Scans `environments.<env>.logsPath` / `logs.app` first, then `current/writable/logs`, `current/storage/logs`, `shared/logs`, `<deployTo>/logs` for `*.log`, `log-*.php`, `*.txt`. |
-| `dploy logs --type nginx` | Tails `/var/log/nginx/<domain>.error.log` and `<domain>.access.log` (falls back to global `/var/log/nginx/{error,access}.log`). |
+| `dploy logs --type <custom>` | Looks up `environments.<env>.logs.<custom>` or top-level `logs.<custom>` (e.g., `dploy logs --type system`). |
+| `dploy logs --type nginx` | Tails `/var/log/nginx/<domain>.error.log` (red title) and `<domain>.access.log` (blue title), falling back to global `/var/log/nginx/{error,access}.log`. |
 | `dploy logs --type pm2` | Streams `pm2 logs <name>`. |
 | `dploy logs --type systemd` | Streams `journalctl -u <name>.service`. |
 
