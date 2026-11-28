@@ -226,6 +226,49 @@ environments:
     }
 });
 
+test("siteService dry-run previews service management and rejects invalid action", async () => {
+    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "dploy-site-svc-"));
+    const prevCwd = process.cwd();
+
+    try {
+        process.chdir(tmpDir);
+        await fs.writeJson("package.json", { name: "svc-site", version: "1.0.0" });
+        await fs.writeFile(
+            "deploy.config.yml",
+            `
+name: svc-site
+environments:
+  production:
+    host: 192.168.1.120
+    username: deploy
+    deployTo: /var/www/svc-site.in
+`
+        );
+
+        const { siteService } = await import("../src/commands/site.js");
+        await assert.doesNotReject(async () => {
+            await siteService({
+                env: "production",
+                dryRun: true,
+                serviceName: "svc-site-worker.service",
+                action: "restart",
+            });
+        });
+
+        await assert.rejects(
+            siteService({
+                env: "production",
+                dryRun: true,
+                action: "invalid-action",
+            }),
+            /Invalid service action/
+        );
+    } finally {
+        process.chdir(prevCwd);
+        await fs.remove(tmpDir);
+    }
+});
+
 test("site commands auto-detect domain from deployTo path (e.g. /var/www/tunenest.in)", async () => {
     const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "dploy-site-detect-"));
     const prevCwd = process.cwd();

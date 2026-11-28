@@ -123,8 +123,8 @@ export async function tui(opts: TuiOptions = {}): Promise<void> {
                 message: "What would you like to do?",
                 choices: [
                     { name: "1. Deploy & Releases      (deploy, build, status, list, rollback, clean)", value: "deploy" },
-                    { name: "2. Setup & Server         (init, setup wizard, add 2nd site, provision)", value: "setup" },
-                    { name: "3. Site & SSL             (info, switch SSL, backup, remove)", value: "site" },
+                    { name: "2. Setup & Server         (init, setup wizard, add 2nd site, provision, doctor)", value: "setup" },
+                    { name: "3. Site & SSL             (info, service manager, switch SSL, backup, remove)", value: "site" },
                     { name: "4. Environment (.env)     (edit, push, pull, set variable)", value: "env" },
                     { name: "5. Database               (create, backup, restore, optimize, drop, console)", value: "db" },
                     { name: "6. Logs, Shell & Safety   (logs, ssh, run command, health, down/up)", value: "ops" },
@@ -204,6 +204,7 @@ export async function tui(opts: TuiOptions = {}): Promise<void> {
                     message: "Setup & Server:",
                     choices: [
                         { name: "Initialize project (dploy init)", value: "init" },
+                        { name: "Validate config & SSH (dploy doctor)", value: "doctor" },
                         { name: "First-time server setup wizard (dploy setup)", value: "setup" },
                         { name: "Add 2nd site/domain to existing VPS (dploy site add)", value: "siteAdd" },
                         { name: "Provision directories & permissions (dploy provision)", value: "provision" },
@@ -218,6 +219,14 @@ export async function tui(opts: TuiOptions = {}): Promise<void> {
                     const { init } = await import("./init.js");
                     await init({});
                 });
+            } else if (action === "doctor") {
+                const { testSsh } = await inquirer.prompt([
+                    { type: "confirm", name: "testSsh", message: "Also test live SSH connection?", default: false },
+                ]);
+                await runSafe(async () => {
+                    const { doctor } = await import("./doctor.js");
+                    await doctor({ env: activeEnv, ssh: testSsh });
+                });
             } else if (action === "setup") {
                 await runSafe(async () => {
                     const { setup } = await import("./setup.js");
@@ -231,7 +240,7 @@ export async function tui(opts: TuiOptions = {}): Promise<void> {
             } else if (action === "provision") {
                 await runSafe(async () => {
                     const { provision } = await import("./provision.js");
-                    await provision({ env: activeEnv, dryRun });
+                    await provision({ env: activeEnv, dryRun, asAdmin });
                 });
             }
         } else if (category === "site") {
@@ -242,6 +251,7 @@ export async function tui(opts: TuiOptions = {}): Promise<void> {
                     message: "Site & SSL:",
                     choices: [
                         { name: "Inspect site info (Nginx, SSL, services)", value: "info" },
+                        { name: "Manage background services (start/stop/restart/logs)", value: "service" },
                         { name: "Switch SSL mode (Certbot / Cloudflare)", value: "ssl" },
                         { name: "Backup site configs (Nginx, systemd, .env)", value: "backup" },
                         { name: "Remove site from server", value: "remove" },
@@ -254,6 +264,7 @@ export async function tui(opts: TuiOptions = {}): Promise<void> {
             await runSafe(async () => {
                 const siteMod = await import("./site.js");
                 if (action === "info") await siteMod.siteInfo(baseOpts);
+                else if (action === "service") await siteMod.siteService(baseOpts);
                 else if (action === "ssl") await siteMod.siteSsl(baseOpts);
                 else if (action === "backup") await siteMod.siteBackup(baseOpts);
                 else if (action === "remove") await siteMod.siteRemove(baseOpts);
@@ -355,16 +366,28 @@ export async function tui(opts: TuiOptions = {}): Promise<void> {
                         name: "mode",
                         message: "How would you like to view logs?",
                         choices: [
+                            { name: "Show last 5 complete app log entries (--entries 5)", value: "entries" },
                             { name: "Show last 50 lines right here (app logs)", value: "snapshot" },
+                            { name: "Show last 5 Nginx error & access entries", value: "nginx-entries" },
                             { name: "Live stream app logs (-f) -> show CLI command", value: "app-follow" },
                             { name: "Live stream Nginx logs (-f) -> show CLI command", value: "nginx-follow" },
                         ],
                     },
                 ]);
-                if (ans.mode === "snapshot") {
+                if (ans.mode === "entries") {
+                    await runSafe(async () => {
+                        const { logs } = await import("./logs.js");
+                        await logs({ env: activeEnv, entries: 5, latest: true, asAdmin });
+                    });
+                } else if (ans.mode === "snapshot") {
                     await runSafe(async () => {
                         const { logs } = await import("./logs.js");
                         await logs({ env: activeEnv, lines: 50, latest: true, asAdmin });
+                    });
+                } else if (ans.mode === "nginx-entries") {
+                    await runSafe(async () => {
+                        const { logs } = await import("./logs.js");
+                        await logs({ env: activeEnv, type: "nginx", entries: 5, asAdmin });
                     });
                 } else if (ans.mode === "app-follow") {
                     showCommandHint("Live App Logs", buildCliCommandHint("logs", { env: activeEnv, asAdmin, extraFlags: ["-f"] }));

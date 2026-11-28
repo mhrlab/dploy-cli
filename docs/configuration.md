@@ -84,11 +84,11 @@ environments:
 | `domains` | `string[]` | - | Additional domain names / aliases (e.g. `["example.com", "www.example.com"]`). |
 | `versionCommand` | `string` | - | Local shell command used to determine the release version (e.g. `git rev-parse --short HEAD`). |
 | `versionFile` | `string` | - | File to read the version from (supports plain text or JSON with a `"version"` field). |
-| `logsPath` | `string` | - | Custom log file or directory scanned by `dploy logs`. |
+| `logsPath` | `string` | - | Custom log file or directory scanned by `dploy logs` (also supports `logPath` or nested `logs.app`, at top level or per environment). |
 | `keepArtifact` | `boolean` | `false` | When `true`, keeps the generated `.tar.gz` file locally after deployment. |
-| `cleanAfterDeploy` | `boolean` | `true` | Deletes the temporary `.tar.gz` archive from `<deployTo>/tmp/` after extraction. |
+| `cleanAfterDeploy` | `boolean` | `false` | Deletes the temporary `.tar.gz` archive from `<deployTo>/tmp/` after extraction. |
 | `maintenanceMode` | `boolean` | `false` | Default maintenance mode toggle during deployments (can be set per-environment). |
-| `shared` | `string[]` | `[]` | Top-level shared files/folders (can also be set inside `build.shared` or per environment). |
+| `shared` | `string[]` | `[]` | Top-level shared files/folders (can also be set inside `build.shared`, or per environment for `dploy provision`). |
 | `sharedDefaults` | `object` | `{}` | Map of shared file -> template file used to seed it on first deploy (e.g. `.env: .env.example`). |
 
 ---
@@ -117,7 +117,7 @@ The `build` block controls which files from your project are packed into the rel
 | `copy` | `array` | `[]` | Explicit copy rules: `{ from: "src", to: "dest", optional: true }`. |
 | `shared` | `string[]` | `[]` | Files/directories preserved across releases via symlinks (e.g. `.env`, `storage`, `writable`). |
 | `sharedDefaults` | `object` | `{}` | Seed source in the release if the shared file does not exist on the server yet. |
-| `cleanAfterDeploy` | `boolean` | `true` | Cleans up temporary build files after deployment. |
+| `cleanAfterDeploy` | `boolean` | `false` | Cleans up temporary uploaded archive after deployment. |
 
 > [!TIP]
 > You can also create a `.dployignore` file in your project root (using `.gitignore`-style patterns) to exclude files across all strategies.
@@ -151,7 +151,25 @@ hooks:
 
 ## 4. Database Configuration (`database`)
 
-Used by automated pre-deploy snapshots (`--backup-db` or `enabled: true`) and the `dploy db` command suite (`create`, `drop`, `backup`, `restore`, `optimize`, `console`).
+Used by automated pre-deploy snapshots (`--backup-db` or `enabled: true`) and the `dploy db` command suite (`create`, `drop`, `backup`, `restore`, `optimize`, `console`). Can be placed at the top level or overridden per environment.
+
+```yaml
+database:
+  enabled: true
+  type: mysql                     # Options: mysql | postgres | sqlite
+  host: ${DB_HOST:-127.0.0.1}
+  port: 3306
+  name: ${DB_DATABASE:-myapp_prod}
+  user: ${DB_USERNAME:-myapp_user}
+  password: ${DB_PASSWORD}
+  # Optional DB admin credentials (used by `dploy db create` / `drop`, decoupled from SSH admin)
+  admin_user: ${DB_ROOT_USER:-root}
+  admin_password: ${DB_ROOT_PASSWORD}
+  charset: utf8mb4
+  collation: utf8mb4_unicode_ci
+  keep: 5                         # Retain latest 5 snapshots in <deployTo>/backups/
+  # path: /var/www/app/shared/database.sqlite   # Required when type: sqlite
+```
 
 | Property | Type | Default | Description |
 | :--- | :--- | :--- | :--- |
@@ -240,7 +258,47 @@ Define one or more target environments (`default`, `staging`, `production`, etc.
 | `admin` | `object` | - | Privileged SSH credentials (`username`, `ssh_key_path`, `password`, `passphrase`, `port`) used by `setup`, `site`, and `-A`. |
 | `database` | `object` | - | Environment-specific overrides for the `database` block. |
 | `provision` | `object` | - | Environment-specific overrides for the `provision` block. |
+| `notifications` | `array` | - | Environment-specific overrides for the `notifications` list. |
+| `logsPath` | `string` | - | Custom log file or folder for `dploy logs` (alias: `logPath`, or nested `logs.app`). |
 | `env` | `object` | `{}` | Key-value environment variables injected into remote hooks (e.g. `APP_ENV`, `NODE_ENV`). |
+
+---
+
+## 8. Remote Logs Configuration (`logsPath` & `logs.app`)
+
+By default, `dploy logs` (which defaults to `--type app`) scans common framework log directories (`current/writable/logs`, `current/storage/logs`, `shared/logs`, `<deployTo>/logs`). You can point it to a custom directory at **either** the top level or inside an environment (environment-level takes precedence) using `logsPath`, `logPath`, or `logs.app`:
+
+```yaml
+# Top-level (applies to all environments unless overridden)
+logs:
+  app: storage/logs/
+
+environments:
+  production:
+    host: ${PROD_HOST}
+    username: ${PROD_USER:-deploy}
+    deployTo: /var/www/example.com
+    domain: example.com
+
+    # Option 1: Direct path (relative to current/ or absolute)
+    logsPath: storage/logs/
+
+    # Option 2: Nested logs block (supports custom --type keys like `dploy logs --type system`)
+    logs:
+      app: storage/logs/
+      system: storage/system/logs/
+      worker: storage/logs/worker.log
+```
+
+### How `--type` Maps to Log Sources in `dploy logs`
+
+| Command | Source Used on Remote Server |
+| :--- | :--- |
+| `dploy logs` *(default `app`)* | Scans `environments.<env>.logsPath` / `logs.app` first, then `current/writable/logs`, `current/storage/logs`, `shared/logs`, `<deployTo>/logs` for `*.log`, `log-*.php`, `*.txt`. |
+| `dploy logs --type <custom>` | Looks up `environments.<env>.logs.<custom>` or top-level `logs.<custom>` (e.g., `dploy logs --type system`). |
+| `dploy logs --type nginx` | Tails `/var/log/nginx/<domain>.error.log` (red title) and `<domain>.access.log` (blue title), falling back to global `/var/log/nginx/{error,access}.log`. |
+| `dploy logs --type pm2` | Streams `pm2 logs <name>`. |
+| `dploy logs --type systemd` | Streams `journalctl -u <name>.service`. |
 
 ---
 

@@ -25,8 +25,15 @@ export async function clean(opts: { env?: string; dryRun?: boolean }) {
     const keep = env.keepVersions ?? 5;
     log.debug(`Releases directory: ${releases}, Keeping versions: ${keep}`);
 
-    log.info(`Connecting to ${env.username}@${env.host} to clean old releases`);
-    const bundle = await connect(env);
+    const spin = log.spinner(`Connecting to ${env.username}@${env.host} to clean old releases...`);
+    let bundle;
+    try {
+        bundle = await connect(env);
+        spin.succeed(`Connected to ${env.host}`);
+    } catch (err) {
+        spin.fail(`SSH connect failed`);
+        throw err;
+    }
     try {
         await cleanupReleases(bundle, releases, keep, { dryRun: opts.dryRun })
     } finally {

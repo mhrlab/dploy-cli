@@ -1,4 +1,3 @@
-import inquirer from "inquirer";
 import { loadConfig, getEnvName, EnvironmentConfig } from "../core/config.js";
 import { connect, close, exec } from "../core/ssh.js";
 import { log } from "../core/logger.js";
@@ -103,8 +102,15 @@ export async function siteBackup(opts: SiteOptions) {
     const { env, appName, deployTo, domains } = resolveSiteContext(cfg, envName, opts.domain);
     const { setupConnConfig, sudoPrefix } = resolveAdminConnection(env, opts);
 
-    log.info(`Connecting to ${setupConnConfig.username}@${setupConnConfig.host} to backup configurations for '${domains.join(", ")}'...`);
-    const bundle = await connect(setupConnConfig);
+    const spin = log.spinner(`Connecting to ${setupConnConfig.username}@${setupConnConfig.host} to backup configurations...`);
+    let bundle;
+    try {
+        bundle = await connect(setupConnConfig);
+        spin.succeed(`Connected to ${setupConnConfig.host}`);
+    } catch (err) {
+        spin.fail(`Failed to connect to ${setupConnConfig.host}`);
+        throw err;
+    }
 
     try {
         const result = await backupSiteConfigurations(bundle.ssh, bundle.sftp, {
@@ -144,6 +150,7 @@ export async function siteRemove(opts: SiteOptions) {
         }
 
         log.warn(`You are about to remove server configurations for: ${domains.join(", ")} (${envName})`);
+        const { default: inquirer } = await import("inquirer");
         const confirmAnswer = await inquirer.prompt([
             {
                 type: "input",
@@ -258,8 +265,15 @@ export async function siteInfo(opts: SiteOptions) {
     const primaryDomain = domains[0];
     const { setupConnConfig, sudoPrefix } = resolveAdminConnection(env, opts);
 
-    log.info(`Connecting to ${setupConnConfig.username}@${setupConnConfig.host} to inspect site '${primaryDomain}'...`);
-    const bundle = await connect(setupConnConfig);
+    const spin = log.spinner(`Connecting to ${setupConnConfig.username}@${setupConnConfig.host} to inspect '${primaryDomain}'...`);
+    let bundle;
+    try {
+        bundle = await connect(setupConnConfig);
+        spin.succeed(`Connected to ${setupConnConfig.host}`);
+    } catch (err) {
+        spin.fail(`Failed to connect to ${setupConnConfig.host}`);
+        throw err;
+    }
 
     try {
         console.log(`\n======================================================`);
@@ -358,6 +372,7 @@ export async function siteSsl(opts: SiteOptions) {
     }
 
     if (!sslMode && process.stdin.isTTY) {
+        const { default: inquirer } = await import("inquirer");
         const ans = await inquirer.prompt([
             {
                 type: "list",
@@ -476,4 +491,262 @@ export async function siteAdd(opts: SetupOptions) {
         createDeployer: false,
         skipUserSetup: true,
     });
+}
+
+export interface DiscoveredService {
+    name: string;
+    activeState: string;
+    enabledState: string;
+}
+
+export type ServiceAction = "start" | "stop" | "restart" | "reload" | "enable" | "disable" | "status" | "logs";
+
+const VALID_SERVICE_ACTIONS: ServiceAction[] = [
+    "restart",
+    "reload",
+    "start",
+    "stop",
+    "enable",
+    "disable",
+    "status",
+    "logs",
+];
+
+/**
+ * Manage systemd background services (app, queue worker, nginx, php-fpm) on the remote server.
+ */
+export async function siteService(
+    opts: SiteOptions & { serviceName?: string; action?: string }
+): Promise<void> {
+    printElevatedWarning("dploy site service", "Manages remote systemd services (start, stop, restart, enable, logs).");
+    const cfg = await loadConfig();
+    const envName = getEnvName(opts.env);
+    const { env, appName, deployTo, domains } = resolveSiteContext(cfg, envName, opts.domain);
+    const { setupConnConfig, sudoPrefix } = resolveAdminConnection(env, opts);
+
+    const requestedAction = opts.action?.toLowerCase() as ServiceAction | undefined;
+    if (requestedAction && !VALID_SERVICE_ACTIONS.includes(requestedAction)) {
+        throw new Error(
+            `Invalid service action '${opts.action}'. Valid actions: ${VALID_SERVICE_ACTIONS.join(", ")}`
+        );
+    }
+
+    if (opts.dryRun) {
+        const appSlug = toSudoersSlug(appName);
+        log.info("[dry-run] Planned service management:");
+        log.info(`[dry-run] Host: ${setupConnConfig.host}`);
+        log.info(`[dry-run] Target service: ${opts.serviceName || `${appSlug}.service / ${appSlug}-worker.service / nginx / php*-fpm`}`);
+        log.info(`[dry-run] Action: ${requestedAction || "(interactive selection)"}`);
+        return;
+    }
+
+    const spin = log.spinner(`Connecting to ${setupConnConfig.username}@${setupConnConfig.host}...`);
+    let bundle;
+    try {
+        bundle = await connect(setupConnConfig);
+        spin.succeed(`Connected to ${setupConnConfig.host}`);
+    } catch (err: any) {
+        spin.fail(`Failed to connect to ${setupConnConfig.host}`);
+        throw err;
+    }
+
+    try {
+        const discoverServices = async (): Promise<DiscoveredService[]> => {
+            const scanSpin = log.spinner("Discovering installed services on server...");
+            const appSlug = toSudoersSlug(appName);
+            const primaryDomain = domains[0];
+            const candidates = [
+                `${appName}.service`,
+                `${appName}-worker.service`,
+                `${appSlug}.service`,
+                `${appSlug}-worker.service`,
+                ...(primaryDomain ? [`${primaryDomain}.service`, `${primaryDomain}-worker.service`] : []),
+                "nginx.service",
+            ];
+
+            // Discover any systemd service in /etc/systemd/system referencing this site's deployTo path
+            const grepScanRes = await exec(
+                bundle.ssh,
+                `${sudoPrefix}grep -l ${escapeShellArg(deployTo)} /etc/systemd/system/*.service 2>/dev/null || true`
+            );
+            for (const line of grepScanRes.stdout.split(/\r?\n/)) {
+                const fullPath = line.trim();
+                if (fullPath) {
+                    const unit = fullPath.split("/").pop();
+                    if (unit && !candidates.includes(unit)) candidates.push(unit);
+                }
+            }
+
+            // Discover installed php*-fpm units as well
+            const phpScanRes = await exec(
+                bundle.ssh,
+                `${sudoPrefix}systemctl list-unit-files 'php*-fpm.service' 'php-fpm.service' --no-legend 2>/dev/null | awk '{print $1}'`
+            );
+            for (const line of phpScanRes.stdout.split(/\r?\n/)) {
+                const unit = line.trim();
+                if (unit && !candidates.includes(unit)) candidates.push(unit);
+            }
+
+            const uniqueCandidates = Array.from(new Set(candidates));
+            const discovered: DiscoveredService[] = [];
+            for (const unit of uniqueCandidates) {
+                const checkRes = await exec(
+                    bundle.ssh,
+                    `if ${sudoPrefix}systemctl list-unit-files ${escapeShellArg(unit)} --no-legend 2>/dev/null | grep -q ${escapeShellArg(unit)} || [ -f ${escapeShellArg(`/etc/systemd/system/${unit}`)} ]; then ` +
+                    `active=$(${sudoPrefix}systemctl is-active ${escapeShellArg(unit)} 2>/dev/null || echo inactive); ` +
+                    `enabled=$(${sudoPrefix}systemctl is-enabled ${escapeShellArg(unit)} 2>/dev/null || echo disabled); ` +
+                    `echo "$active|$enabled"; fi`
+                );
+                const out = checkRes.stdout.trim();
+                if (out) {
+                    const [activeState, enabledState] = out.split("|");
+                    discovered.push({
+                        name: unit,
+                        activeState: activeState || "unknown",
+                        enabledState: enabledState || "unknown",
+                    });
+                }
+            }
+            scanSpin.succeed(`Found ${discovered.length} installed service(s)`);
+            return discovered;
+        };
+
+        const executeServiceAction = async (svcName: string, act: ServiceAction): Promise<void> => {
+            const svcArg = escapeShellArg(svcName);
+            if (act === "logs") {
+                const logSpin = log.spinner(`Fetching recent logs for ${svcName}...`);
+                const res = await exec(bundle.ssh, `${sudoPrefix}journalctl -u ${svcArg} -n 50 --no-pager`);
+                logSpin.stop();
+                if (res.stdout) console.log(res.stdout);
+                if (res.stderr) console.error(res.stderr);
+                return;
+            }
+
+            if (act === "status") {
+                const statusSpin = log.spinner(`Checking status of ${svcName}...`);
+                const res = await exec(bundle.ssh, `${sudoPrefix}systemctl status ${svcArg} --no-pager -l || true`);
+                statusSpin.stop();
+                if (res.stdout) console.log(res.stdout);
+                return;
+            }
+
+            const actSpin = log.spinner(`Running '${act}' on ${svcName}...`);
+            const res = await exec(bundle.ssh, `${sudoPrefix}systemctl ${act} ${svcArg}`);
+            if (res.code !== 0) {
+                actSpin.fail(`Failed to ${act} ${svcName}`);
+                throw new Error(res.stderr.trim() || res.stdout.trim() || `systemctl ${act} exited with code ${res.code}`);
+            }
+            actSpin.succeed(`Successfully ran '${act}' on ${svcName}`);
+        };
+
+        // Direct non-interactive / explicit service execution
+        if (opts.serviceName?.trim()) {
+            const targetService = opts.serviceName.trim();
+            let action = requestedAction;
+            if (!action) {
+                if (!process.stdin.isTTY) {
+                    action = "status";
+                } else {
+                    const { default: inquirer } = await import("inquirer");
+                    const actAns = await inquirer.prompt([
+                        {
+                            type: "list",
+                            name: "action",
+                            message: `Select action for ${targetService}:`,
+                            choices: [
+                                { name: "Restart", value: "restart" },
+                                { name: "Reload", value: "reload" },
+                                { name: "Start", value: "start" },
+                                { name: "Stop", value: "stop" },
+                                { name: "Enable on boot", value: "enable" },
+                                { name: "Disable on boot", value: "disable" },
+                                { name: "Show status", value: "status" },
+                                { name: "View last 50 journal logs", value: "logs" },
+                                { name: "Cancel", value: "cancel" },
+                            ],
+                        },
+                    ]);
+                    if (actAns.action === "cancel") return;
+                    action = actAns.action;
+                }
+            }
+            await executeServiceAction(targetService, action!);
+            return;
+        }
+
+        // Interactive discovery + Back navigation loop
+        let discovered = await discoverServices();
+        if (discovered.length === 0) {
+            log.warn(`No managed services found for '${appName}'. Run 'dploy setup' or pass a service name explicitly.`);
+            return;
+        }
+
+        if (!process.stdin.isTTY) {
+            for (const svc of discovered) {
+                console.log(`  - ${svc.name.padEnd(28)} [${svc.activeState}, ${svc.enabledState}]`);
+            }
+            return;
+        }
+
+        const { default: inquirer } = await import("inquirer");
+        while (true) {
+            const svcAns = await inquirer.prompt([
+                {
+                    type: "list",
+                    name: "service",
+                    message: "Select a service to manage:",
+                    choices: [
+                        ...discovered.map((s) => ({
+                            name: `${s.name.padEnd(28)} [${s.activeState}, ${s.enabledState}]`,
+                            value: s.name,
+                        })),
+                        new inquirer.Separator(),
+                        { name: "Refresh service list", value: "__REFRESH__" },
+                        { name: "Exit", value: "__EXIT__" },
+                    ],
+                },
+            ]);
+
+            if (svcAns.service === "__EXIT__") return;
+            if (svcAns.service === "__REFRESH__") {
+                discovered = await discoverServices();
+                continue;
+            }
+
+            const targetService = svcAns.service as string;
+            if (requestedAction) {
+                await executeServiceAction(targetService, requestedAction);
+                return;
+            }
+
+            const actAns = await inquirer.prompt([
+                {
+                    type: "list",
+                    name: "action",
+                    message: `Select action for ${targetService}:`,
+                    choices: [
+                        { name: "Restart", value: "restart" },
+                        { name: "Reload", value: "reload" },
+                        { name: "Start", value: "start" },
+                        { name: "Stop", value: "stop" },
+                        { name: "Enable on boot", value: "enable" },
+                        { name: "Disable on boot", value: "disable" },
+                        { name: "Show status", value: "status" },
+                        { name: "View last 50 journal logs", value: "logs" },
+                        new inquirer.Separator(),
+                        { name: "<- Back to services", value: "__BACK__" },
+                    ],
+                },
+            ]);
+
+            if (actAns.action === "__BACK__") {
+                continue;
+            }
+
+            await executeServiceAction(targetService, actAns.action as ServiceAction);
+            discovered = await discoverServices();
+        }
+    } finally {
+        await close(bundle);
+    }
 }

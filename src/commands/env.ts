@@ -3,7 +3,6 @@ import path from "node:path";
 import os from "node:os";
 import { spawnSync } from "node:child_process";
 import crypto from "node:crypto";
-import inquirer from "inquirer";
 import { loadConfig, getEnvName } from "../core/config.js";
 import { connect, close, exec } from "../core/ssh.js";
 import { log } from "../core/logger.js";
@@ -41,7 +40,15 @@ export async function envPush(opts: {
     const remoteEnvPath = getRemoteSharedEnvPath(env.deployTo);
     log.info(`Pushing ${path.basename(localFile)} to ${env.username}@${env.host}:${remoteEnvPath}`);
 
-    const bundle = await connect(env);
+    const spin = log.spinner(`Connecting to ${env.username}@${env.host}...`);
+    let bundle;
+    try {
+        bundle = await connect(env);
+        spin.succeed(`Connected to ${env.host}`);
+    } catch (err) {
+        spin.fail(`Failed to connect to ${env.host}`);
+        throw err;
+    }
     try {
         const sharedDir = posixJoin(env.deployTo.trim(), "shared");
         await exec(bundle.ssh, `mkdir -p ${escapeShellArg(sharedDir)}`);
@@ -51,6 +58,7 @@ export async function envPush(opts: {
         const remoteExists = checkRes.stdout.trim() === "exists";
 
         if (remoteExists && !opts.force && !opts.yes && process.stdin.isTTY) {
+            const { default: inquirer } = await import("inquirer");
             const answer = await inquirer.prompt([
                 {
                     type: "confirm",
@@ -99,6 +107,7 @@ export async function envPull(opts: {
     const destFile = path.resolve(process.cwd(), opts.out || defaultOut);
 
     if ((await fs.pathExists(destFile)) && !opts.force && !opts.yes && process.stdin.isTTY) {
+        const { default: inquirer } = await import("inquirer");
         const answer = await inquirer.prompt([
             {
                 type: "confirm",
@@ -116,7 +125,15 @@ export async function envPull(opts: {
     const remoteEnvPath = getRemoteSharedEnvPath(env.deployTo);
     log.info(`Pulling from ${env.username}@${env.host}:${remoteEnvPath} -> ${path.basename(destFile)}`);
 
-    const bundle = await connect(env);
+    const spin = log.spinner(`Connecting to ${env.username}@${env.host}...`);
+    let bundle;
+    try {
+        bundle = await connect(env);
+        spin.succeed(`Connected to ${env.host}`);
+    } catch (err) {
+        spin.fail(`Failed to connect to ${env.host}`);
+        throw err;
+    }
     try {
         const checkRes = await exec(bundle.ssh, `[ -f ${escapeShellArg(remoteEnvPath)} ] && echo "exists" || true`);
         if (checkRes.stdout.trim() !== "exists") {
@@ -154,7 +171,15 @@ export async function envSet(keyValuePair: string, opts: { env?: string }) {
     const remoteEnvPath = getRemoteSharedEnvPath(env.deployTo);
     log.info(`Setting ${key} in remote ${env.username}@${env.host}:${remoteEnvPath}`);
 
-    const bundle = await connect(env);
+    const spin = log.spinner(`Connecting to ${env.username}@${env.host}...`);
+    let bundle;
+    try {
+        bundle = await connect(env);
+        spin.succeed(`Connected to ${env.host}`);
+    } catch (err) {
+        spin.fail(`Failed to connect to ${env.host}`);
+        throw err;
+    }
     try {
         const sharedDir = posixJoin(env.deployTo.trim(), "shared");
         await exec(bundle.ssh, `mkdir -p ${escapeShellArg(sharedDir)}`);
@@ -195,7 +220,15 @@ export async function envEdit(opts: {
     const remoteEnvPath = getRemoteSharedEnvPath(env.deployTo);
     log.info(`Connecting to ${env.username}@${env.host} to edit ${remoteEnvPath}...`);
 
-    const bundle = await connect(env);
+    const spin = log.spinner(`Connecting to ${env.username}@${env.host}...`);
+    let bundle;
+    try {
+        bundle = await connect(env);
+        spin.succeed(`Connected to ${env.host}`);
+    } catch (err) {
+        spin.fail(`Failed to connect to ${env.host}`);
+        throw err;
+    }
     const tempFile = path.join(os.tmpdir(), `dploy-${envName}-${Date.now()}.env`);
 
     try {
@@ -259,6 +292,7 @@ export async function envEdit(opts: {
         }
 
         if (!opts.force && !opts.yes && process.stdin.isTTY) {
+            const { default: inquirer } = await import("inquirer");
             const answer = await inquirer.prompt([
                 {
                     type: "confirm",

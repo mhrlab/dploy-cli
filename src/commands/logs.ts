@@ -1,8 +1,103 @@
-import inquirer from "inquirer";
-import { loadConfig, getEnvName, EnvironmentConfig } from "../core/config.js";
+import chalk from "chalk";
+import { loadConfig, getEnvName, EnvironmentConfig, DeployConfig } from "../core/config.js";
 import { connect, close, exec } from "../core/ssh.js";
 import { log } from "../core/logger.js";
 import { posixJoin, escapeShellArg, expandTilde, getReadableFileSize } from "../core/utils.js";
+
+/**
+ * Colorize `tail` file header titles (`==> path <==`) so error logs stand out in red
+ * and access/stdout logs stand out in blue.
+ */
+export function colorizeLogLine(line: string): string {
+    const headerMatch = line.match(/^==> (.+?) <==$/);
+    if (headerMatch) {
+        const filePath = headerMatch[1].toLowerCase();
+        if (/(?:^|[/._-])(error|err|stderr)(?:[/._-]|$)/.test(filePath)) {
+            return chalk.bold.red(line);
+        }
+        if (/(?:^|[/._-])(access|out|stdout)(?:[/._-]|$)/.test(filePath)) {
+            return chalk.bold.blue(line);
+        }
+        return chalk.bold.green(line);
+    }
+    return line;
+}
+
+/**
+ * Resolve configured log path for a given log type from environment or top-level config.
+ */
+export function resolveConfiguredLogPath(
+    env: EnvironmentConfig,
+    cfg: DeployConfig,
+    logType = "app"
+): string | undefined {
+    const envAny = env as any;
+    const cfgAny = cfg as any;
+    if (logType === "app") {
+        return (
+            envAny.logsPath ||
+            envAny.logPath ||
+            envAny.logs?.app ||
+            cfgAny.logsPath ||
+            cfgAny.logPath ||
+            cfgAny.logs?.app
+        );
+    }
+    return envAny.logs?.[logType] || cfgAny.logs?.[logType];
+}
+
+const LOG_ENTRY_START_REGEX =
+    /^(?:\[\d{4}-\d{2}-\d{2}[T\s]\d{2}:\d{2}:\d{2}|\d{4}[/-]\d{2}[/-]\d{2}[T\s]\d{2}:\d{2}:\d{2}|(?:EMERGENCY|ALERT|CRITICAL|ERROR|WARNING|NOTICE|INFO|DEBUG)\s+-\s+\d{4}-\d{2}-\d{2}|(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+\d{1,2}\s+\d{2}:\d{2}:\d{2}|\S+\s+\S+\s+\S+\s+\[\d{2}\/[A-Za-z]{3}\/\d{4}:\d{2}:\d{2}:\d{2}|\d+\|[^|]+\|\s)/i;
+
+export function isLogEntryStart(line: string): boolean {
+    return LOG_ENTRY_START_REGEX.test(line);
+}
+
+/**
+ * Split raw log output into logical multi-line log entries and return the last `count` entries
+ * (preserving `==> file <==` headers per section when multiple files are tailed).
+ */
+export function extractLastLogEntries(raw: string, count: number): string[] {
+    if (count <= 0 || !raw.trim()) return [];
+    const lines = raw.replace(/\r\n/g, "\n").split("\n");
+
+    const sections: Array<{ header?: string; entries: string[][] }> = [];
+    let currentSection: { header?: string; entries: string[][] } = { entries: [] };
+
+    for (const line of lines) {
+        if (/^==> .+? <==$/.test(line)) {
+            if (currentSection.header || currentSection.entries.length) {
+                sections.push(currentSection);
+            }
+            currentSection = { header: line, entries: [] };
+            continue;
+        }
+
+        if (isLogEntryStart(line) || currentSection.entries.length === 0) {
+            if (line === "" && currentSection.entries.length === 0) continue;
+            currentSection.entries.push([line]);
+        } else {
+            currentSection.entries[currentSection.entries.length - 1].push(line);
+        }
+    }
+
+    if (currentSection.header || currentSection.entries.length) {
+        sections.push(currentSection);
+    }
+
+    const result: string[] = [];
+    for (const sec of sections) {
+        const nonEmpty = sec.entries.filter((e) => e.some((l) => l.trim() !== ""));
+        const sliced = nonEmpty.slice(-count);
+        if (sec.header && sliced.length) {
+            result.push(sec.header);
+        }
+        for (const entry of sliced) {
+            result.push(entry.join("\n").replace(/\n+$/, ""));
+        }
+    }
+    return result;
+}
 
 export interface RemoteLogFile {
     path: string;
@@ -43,6 +138,7 @@ export async function logs(opts: {
     env?: string;
     follow?: boolean;
     lines?: string | number;
+    entries?: string | number;
     file?: string;
     type?: "app" | "nginx" | "pm2" | "systemd" | string;
     latest?: boolean;
@@ -88,21 +184,48 @@ export async function logs(opts: {
         sudoPrefix = "sudo -n ";
     }
 
-    const lineCount = Number(opts.lines) || 50;
     const isFollow = opts.follow ?? false;
+    const entriesCount = opts.entries !== undefined ? Math.max(1, Number(opts.entries) || 4) : 0;
+    const lineCount = entriesCount > 0 && !isFollow ? Math.max(entriesCount * 80, 1000) : Number(opts.lines) || 50;
 
     // Connect to server early so we can scan directories if needed
-    log.info(`Connecting to ${connConfig.username}@${connConfig.host} to inspect logs...`);
-    const bundle = await connect(connConfig);
+    const connSpin = log.spinner(`Connecting to ${connConfig.username}@${connConfig.host} to inspect logs...`);
+    let bundle;
+    try {
+        bundle = await connect(connConfig);
+        connSpin.succeed(`Connected to ${connConfig.host}`);
+    } catch (err) {
+        connSpin.fail(`Failed to connect to ${connConfig.host}`);
+        throw err;
+    }
 
     let targetCmd: string;
 
-    // Support configurable log path in deploy.config.yml:
-    const configuredLogPath = (env as any).logsPath || (env as any).logPath || (env as any).logs?.app;
+    const requestedType = opts.type || "app";
+    const builtInTypes = new Set(["app", "nginx", "pm2", "systemd"]);
+    const customLogTarget = !builtInTypes.has(requestedType)
+        ? resolveConfiguredLogPath(env, cfg, requestedType)
+        : undefined;
+
+    if (!builtInTypes.has(requestedType) && !customLogTarget && !opts.file) {
+        const customKeys = Object.keys({
+            ...((cfg as any).logs || {}),
+            ...((env as any).logs || {}),
+        });
+        const available = ["app", "nginx", "pm2", "systemd", ...customKeys].filter(
+            (v, i, a) => a.indexOf(v) === i
+        );
+        await close(bundle);
+        throw new Error(
+            `Unknown log type '${requestedType}'. Available types: ${available.join(", ")}`
+        );
+    }
+
+    const configuredLogPath = customLogTarget || resolveConfiguredLogPath(env, cfg, "app");
 
     if (opts.file) {
         targetCmd = `${sudoPrefix}tail -n ${lineCount} ${isFollow ? "-f " : ""}${escapeShellArg(opts.file)}`;
-    } else if (opts.type === "nginx") {
+    } else if (requestedType === "nginx") {
         const domain = env.domain || (env.domains && env.domains[0]) || cfg.domain || (cfg.domains && cfg.domains[0]);
         if (domain) {
             const domainErrorLog = escapeShellArg(`/var/log/nginx/${domain}.error.log`);
@@ -111,29 +234,43 @@ export async function logs(opts: {
         } else {
             targetCmd = `${sudoPrefix}tail -n ${lineCount} ${isFollow ? "-f " : ""}/var/log/nginx/error.log /var/log/nginx/access.log 2>/dev/null || ${sudoPrefix}tail -n ${lineCount} ${isFollow ? "-f " : ""}/var/log/nginx/error.log`;
         }
-    } else if (opts.type === "pm2") {
+    } else if (requestedType === "pm2") {
         const appName = cfg.name || "all";
         targetCmd = `${sudoPrefix}pm2 logs ${appName} --lines ${lineCount} ${isFollow ? "" : "--nostream"}`;
-    } else if (opts.type === "systemd") {
+    } else if (requestedType === "systemd") {
         const serviceName = cfg.name ? `${cfg.name}.service` : "";
         targetCmd = `${sudoPrefix}journalctl -n ${lineCount} ${isFollow ? "-f " : ""}${serviceName ? `-u ${serviceName}` : ""}`;
+    } else if (customLogTarget && /\.(log|txt|php)$/i.test(customLogTarget.trim())) {
+        const resolvedFile = customLogTarget.startsWith("/")
+            ? customLogTarget
+            : posixJoin(env.deployTo.trim(), "current", customLogTarget);
+        log.info(`Tailing configured '${requestedType}' log file: ${resolvedFile}`);
+        targetCmd = `${sudoPrefix}tail -n ${lineCount} ${isFollow ? "-f " : ""}${escapeShellArg(resolvedFile)}`;
     } else {
-        // App logs: scan candidate directories for daily or rotating log files
-        const candidateDirs = [
-            configuredLogPath
-                ? (configuredLogPath.startsWith("/") ? configuredLogPath : posixJoin(env.deployTo.trim(), "current", configuredLogPath))
-                : null,
-            posixJoin(env.deployTo.trim(), "current", "writable", "logs"), // CodeIgniter 4
-            posixJoin(env.deployTo.trim(), "current", "storage", "logs"),  // Laravel
-            posixJoin(env.deployTo.trim(), "shared", "logs"),             // Shared logs
-            posixJoin(env.deployTo.trim(), "logs"),                       // Standard logs
-        ].filter(Boolean) as string[];
+        // App or custom directory logs: scan candidate directories for daily or rotating log files
+        const candidateDirs = customLogTarget
+            ? [
+                  customLogTarget.startsWith("/")
+                      ? customLogTarget
+                      : posixJoin(env.deployTo.trim(), "current", customLogTarget),
+              ]
+            : ([
+                  configuredLogPath
+                      ? (configuredLogPath.startsWith("/") ? configuredLogPath : posixJoin(env.deployTo.trim(), "current", configuredLogPath))
+                      : null,
+                  posixJoin(env.deployTo.trim(), "current", "writable", "logs"), // CodeIgniter 4
+                  posixJoin(env.deployTo.trim(), "current", "storage", "logs"),  // Laravel
+                  posixJoin(env.deployTo.trim(), "shared", "logs"),             // Shared logs
+                  posixJoin(env.deployTo.trim(), "logs"),                       // Standard logs
+              ].filter(Boolean) as string[]);
 
         const scanScript = candidateDirs.map((dir) =>
             `if [ -d ${escapeShellArg(dir)} ]; then ls -lt ${escapeShellArg(dir)}/*.log ${escapeShellArg(dir)}/log-*.php ${escapeShellArg(dir)}/*.txt 2>/dev/null; fi`
         ).join("; ");
 
+        const scanSpin = log.spinner("Scanning remote log directories...");
         const scanRes = await exec(bundle.ssh, `${sudoPrefix}bash -c ${escapeShellArg(scanScript)} 2>/dev/null || true`);
+        scanSpin.stop();
         const foundFiles: RemoteLogFile[] = [];
         for (const line of scanRes.stdout.split(/\r?\n/)) {
             const parsed = parseLsLtLine(line);
@@ -162,6 +299,7 @@ export async function logs(opts: {
                 value: "__ALL__",
             });
 
+            const { default: inquirer } = await import("inquirer");
             const ans = await inquirer.prompt([
                 {
                     type: "list",
@@ -191,15 +329,46 @@ export async function logs(opts: {
                 return reject(err);
             }
 
+            let lineBuffer = "";
+            let collectedStdout = "";
             stream.on("data", (data: Buffer) => {
-                process.stdout.write(data);
+                if (entriesCount > 0 && !isFollow) {
+                    collectedStdout += data.toString();
+                    return;
+                }
+                lineBuffer += data.toString();
+                const lines = lineBuffer.split(/\r?\n/);
+                lineBuffer = lines.pop() ?? "";
+                for (const line of lines) {
+                    process.stdout.write(`${colorizeLogLine(line)}\n`);
+                }
             });
 
             stream.stderr.on("data", (data: Buffer) => {
-                process.stderr.write(data);
+                process.stderr.write(chalk.red(data.toString()));
             });
 
+            const flushRemaining = () => {
+                if (entriesCount > 0 && !isFollow) {
+                    if (collectedStdout) {
+                        const entries = extractLastLogEntries(collectedStdout, entriesCount);
+                        for (const entry of entries) {
+                            for (const l of entry.split("\n")) {
+                                process.stdout.write(`${colorizeLogLine(l)}\n`);
+                            }
+                        }
+                        collectedStdout = "";
+                    }
+                    return;
+                }
+                if (lineBuffer) {
+                    process.stdout.write(colorizeLogLine(lineBuffer));
+                    lineBuffer = "";
+                }
+            };
+
             const cleanup = async () => {
+                flushRemaining();
                 try {
                     stream.end();
                     await close(bundle);
@@ -210,6 +379,7 @@ export async function logs(opts: {
             process.on("SIGINT", cleanup);
 
             stream.on("close", async () => {
+                flushRemaining();
                 process.off("SIGINT", cleanup);
                 await close(bundle);
                 resolve();
