@@ -97,8 +97,14 @@ export async function logs(opts: {
 
     let targetCmd: string;
 
-    // Support configurable log path in deploy.config.yml:
-    const configuredLogPath = (env as any).logsPath || (env as any).logPath || (env as any).logs?.app;
+    // Support configurable log path in deploy.config.yml (environment-level or top-level fallback):
+    const configuredLogPath =
+        (env as any).logsPath ||
+        (env as any).logPath ||
+        (env as any).logs?.app ||
+        (cfg as any).logsPath ||
+        (cfg as any).logPath ||
+        (cfg as any).logs?.app;
 
     if (opts.file) {
         targetCmd = `${sudoPrefix}tail -n ${lineCount} ${isFollow ? "-f " : ""}${escapeShellArg(opts.file)}`;
