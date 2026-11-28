@@ -219,8 +219,10 @@ dploy env edit [--editor <cmd>] [--force]           # Edit in local editor with 
 ### `dploy logs`, `dploy ssh`, `dploy run`, `dploy down`, `dploy up`
 ```bash
 dploy logs -e production -f -n 100                  # Stream last 100 lines of app logs
+dploy logs -e production --entries 4                # Show last 4 complete log entries (with full stack traces)
 dploy logs -e production --latest                   # Auto-pick newest daily log file
 dploy logs -e production --type nginx -A            # Tail site-specific Nginx error + access logs
+dploy logs -e production --type system              # Tail custom `logs.system` path from deploy.config.yml
 dploy ssh -e production                             # Open SSH shell in <deployTo>/current
 dploy run "php artisan migrate --force" -e production
 dploy down -e production -m "Upgrading database" --retry 300

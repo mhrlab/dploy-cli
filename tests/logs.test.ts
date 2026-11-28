@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import chalk from "chalk";
-import { parseLsLtLine, resolveConfiguredLogPath, colorizeLogLine } from "../src/commands/logs.js";
+import { parseLsLtLine, resolveConfiguredLogPath, colorizeLogLine, extractLastLogEntries } from "../src/commands/logs.js";
 
 test("parseLsLtLine parses standard linux ls -lt output", () => {
     const line = "-rw-r--r-- 1 www-data www-data 1048576 Nov 24 22:30 /var/www/app/writable/logs/log-2026-11-24.php";
@@ -66,4 +66,50 @@ test("colorizeLogLine highlights error headers in red and access headers in blue
     } finally {
         chalk.level = prevLevel;
     }
+});
+
+test("extractLastLogEntries returns last N multi-line log entries including stack traces", () => {
+    const raw = [
+        "[2026-11-28 08:00:01] local.INFO: First entry",
+        "[2026-11-28 08:01:02] local.ERROR: Second entry failed",
+        "Stack trace:",
+        "#0 /var/www/app/Index.php(10): run()",
+        "#1 /var/www/app/Kernel.php(20): handle()",
+        "[2026-11-28 08:02:03] local.WARNING: Third entry",
+        "[2026-11-28 08:03:04] local.ERROR: Fourth entry",
+        "#0 /var/www/app/Auth.php(42): check()",
+    ].join("\n");
+
+    const last2 = extractLastLogEntries(raw, 2);
+    assert.equal(last2.length, 2);
+    assert.match(last2[0], /Third entry/);
+    assert.match(last2[1], /Fourth entry[\s\S]*Auth\.php\(42\)/);
+
+    const last3 = extractLastLogEntries(raw, 3);
+    assert.equal(last3.length, 3);
+    assert.match(last3[0], /Second entry failed[\s\S]*Kernel\.php\(20\)/);
+});
+
+test("extractLastLogEntries slices both Nginx error.log and access.log sections", () => {
+    const raw = [
+        "==> /var/log/nginx/example.com.error.log <==",
+        "2026/11/28 08:00:01 [error] 101#101: *1 first error",
+        "2026/11/28 08:01:02 [error] 101#101: *2 second error",
+        "2026/11/28 08:02:03 [error] 101#101: *3 third error",
+        "",
+        "==> /var/log/nginx/example.com.access.log <==",
+        '10.0.0.1 - - [28/Nov/2026:08:00:01 +0530] "GET /1 HTTP/2.0" 200 100 "-" "curl"',
+        '10.0.0.2 - - [28/Nov/2026:08:01:02 +0530] "GET /2 HTTP/2.0" 200 100 "-" "curl"',
+        '10.0.0.3 - - [28/Nov/2026:08:02:03 +0530] "GET /3 HTTP/2.0" 200 100 "-" "curl"',
+    ].join("\n");
+
+    const out = extractLastLogEntries(raw, 2);
+    assert.deepEqual(out, [
+        "==> /var/log/nginx/example.com.error.log <==",
+        "2026/11/28 08:01:02 [error] 101#101: *2 second error",
+        "2026/11/28 08:02:03 [error] 101#101: *3 third error",
+        "==> /var/log/nginx/example.com.access.log <==",
+        '10.0.0.2 - - [28/Nov/2026:08:01:02 +0530] "GET /2 HTTP/2.0" 200 100 "-" "curl"',
+        '10.0.0.3 - - [28/Nov/2026:08:02:03 +0530] "GET /3 HTTP/2.0" 200 100 "-" "curl"',
+    ]);
 });

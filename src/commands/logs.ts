@@ -47,6 +47,59 @@ export function resolveConfiguredLogPath(
     return envAny.logs?.[logType] || cfgAny.logs?.[logType];
 }
 
+const LOG_ENTRY_START_REGEX =
+    /^(?:\[\d{4}-\d{2}-\d{2}[T\s]\d{2}:\d{2}:\d{2}|\d{4}[/-]\d{2}[/-]\d{2}[T\s]\d{2}:\d{2}:\d{2}|(?:EMERGENCY|ALERT|CRITICAL|ERROR|WARNING|NOTICE|INFO|DEBUG)\s+-\s+\d{4}-\d{2}-\d{2}|(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+\d{1,2}\s+\d{2}:\d{2}:\d{2}|\S+\s+\S+\s+\S+\s+\[\d{2}\/[A-Za-z]{3}\/\d{4}:\d{2}:\d{2}:\d{2}|\d+\|[^|]+\|\s)/i;
+
+export function isLogEntryStart(line: string): boolean {
+    return LOG_ENTRY_START_REGEX.test(line);
+}
+
+/**
+ * Split raw log output into logical multi-line log entries and return the last `count` entries
+ * (preserving `==> file <==` headers per section when multiple files are tailed).
+ */
+export function extractLastLogEntries(raw: string, count: number): string[] {
+    if (count <= 0 || !raw.trim()) return [];
+    const lines = raw.replace(/\r\n/g, "\n").split("\n");
+
+    const sections: Array<{ header?: string; entries: string[][] }> = [];
+    let currentSection: { header?: string; entries: string[][] } = { entries: [] };
+
+    for (const line of lines) {
+        if (/^==> .+? <==$/.test(line)) {
+            if (currentSection.header || currentSection.entries.length) {
+                sections.push(currentSection);
+            }
+            currentSection = { header: line, entries: [] };
+            continue;
+        }
+
+        if (isLogEntryStart(line) || currentSection.entries.length === 0) {
+            if (line === "" && currentSection.entries.length === 0) continue;
+            currentSection.entries.push([line]);
+        } else {
+            currentSection.entries[currentSection.entries.length - 1].push(line);
+        }
+    }
+
+    if (currentSection.header || currentSection.entries.length) {
+        sections.push(currentSection);
+    }
+
+    const result: string[] = [];
+    for (const sec of sections) {
+        const nonEmpty = sec.entries.filter((e) => e.some((l) => l.trim() !== ""));
+        const sliced = nonEmpty.slice(-count);
+        if (sec.header && sliced.length) {
+            result.push(sec.header);
+        }
+        for (const entry of sliced) {
+            result.push(entry.join("\n").replace(/\n+$/, ""));
+        }
+    }
+    return result;
+}
+
 export interface RemoteLogFile {
     path: string;
     name: string;
@@ -86,6 +139,7 @@ export async function logs(opts: {
     env?: string;
     follow?: boolean;
     lines?: string | number;
+    entries?: string | number;
     file?: string;
     type?: "app" | "nginx" | "pm2" | "systemd" | string;
     latest?: boolean;
@@ -131,8 +185,9 @@ export async function logs(opts: {
         sudoPrefix = "sudo -n ";
     }
 
-    const lineCount = Number(opts.lines) || 50;
     const isFollow = opts.follow ?? false;
+    const entriesCount = opts.entries !== undefined ? Math.max(1, Number(opts.entries) || 4) : 0;
+    const lineCount = entriesCount > 0 && !isFollow ? Math.max(entriesCount * 80, 1000) : Number(opts.lines) || 50;
 
     // Connect to server early so we can scan directories if needed
     log.info(`Connecting to ${connConfig.username}@${connConfig.host} to inspect logs...`);
@@ -266,7 +321,12 @@ export async function logs(opts: {
             }
 
             let lineBuffer = "";
+            let collectedStdout = "";
             stream.on("data", (data: Buffer) => {
+                if (entriesCount > 0 && !isFollow) {
+                    collectedStdout += data.toString();
+                    return;
+                }
                 lineBuffer += data.toString();
                 const lines = lineBuffer.split(/\r?\n/);
                 lineBuffer = lines.pop() ?? "";
@@ -280,6 +340,18 @@ export async function logs(opts: {
             });
 
             const flushRemaining = () => {
+                if (entriesCount > 0 && !isFollow) {
+                    if (collectedStdout) {
+                        const entries = extractLastLogEntries(collectedStdout, entriesCount);
+                        for (const entry of entries) {
+                            for (const l of entry.split("\n")) {
+                                process.stdout.write(`${colorizeLogLine(l)}\n`);
+                            }
+                        }
+                        collectedStdout = "";
+                    }
+                    return;
+                }
                 if (lineBuffer) {
                     process.stdout.write(colorizeLogLine(lineBuffer));
                     lineBuffer = "";

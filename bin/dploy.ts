@@ -379,7 +379,8 @@ async function main() {
             .description("Stream or tail remote application/server logs")
             .option("-f, --follow", "Follow log output (stream real-time)")
             .option("-n, --lines <count>", "Number of lines to show (default: 50)")
-            .option("--type <type>", "Log type: app, nginx, pm2, or systemd")
+            .option("--entries <count>", "Show last N logical log entries (including multi-line stack traces)")
+            .option("--type <type>", "Log type: app, nginx, pm2, systemd, or custom logs.<type>")
             .option("--file <path>", "Specific remote log file to tail")
             .option("--latest", "Automatically pick the newest daily log file without prompting")
             .option("--sudo", "Execute log reading command with sudo privileges"),
