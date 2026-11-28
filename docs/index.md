@@ -11,7 +11,7 @@ Welcome to the `dploy-cli` documentation. `dploy-cli` is a zero-downtime deploym
 | **[Getting Started](./getting-started.md)** | Prerequisites, installation, `dploy init` templates, `.env.dploy` secrets, and first deploy |
 | **[Architecture Overview](./architecture/overview.md)** | Layered architecture (`bin/` → `commands/` → `features/` → `core/`), module map, and design decisions |
 | **[Deployment Lifecycle](./architecture/deployment-lifecycle.md)** | End-to-end build, upload, SHA-256 verification, shared linking, cutover, health gate, and rollback flow |
-| **[CLI Commands Reference](./cli-reference.md)** | Global options, grouped commands, short aliases, hidden legacy aliases, and all flags |
+| **[CLI Commands Reference](./cli-reference.md)** | Global flags, grouped commands (`doctor`, `tui`, `site service`), short aliases, and full options |
 | **[Configuration Guide](./configuration.md)** | Full `deploy.config.yml` / `.json` schema, `extends`, `${VAR:-default}` interpolation, and `.dployignore` |
 | **[Server Provisioning & SSL](./server-provisioning.md)** | `dploy provision`, `dploy setup`, `dploy site add`, Cloudflare Origin CA / Flexible SSL, and Laravel permissions |
 | **[Cluster Deployments](./cluster-deployments.md)** | Multi-host `parallel` and `rolling` deployment orchestration |

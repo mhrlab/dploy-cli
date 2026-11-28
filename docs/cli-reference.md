@@ -30,6 +30,7 @@ You can pass global flags **before or after** any command name:
 - `dploy init [template]` — Create `deploy.config.yml` and `.env.dploy.example`
 - `dploy setup` — Full first-time VPS wizard (user, sudoers, Nginx, systemd, SSL)
 - `dploy provision` *(alias: `prov`)* — Create `<deployTo>` directories, shared paths, and permissions
+- `dploy doctor` *(aliases: `check`, `test`)* — Validate config, env vars, SSH keys, and build files
 
 ### Deployment Lifecycle
 - `dploy build` — Package your app locally into a `.tar.gz` archive
@@ -38,6 +39,7 @@ You can pass global flags **before or after** any command name:
 - `dploy clean` — Delete old releases beyond `keepVersions`
 
 ### Monitoring & Operations
+- `dploy tui` *(aliases: `ui`, `menu`)* — Guided interactive terminal menu for beginners
 - `dploy status` *(alias: `st`)* — Show active release and deployment metadata
 - `dploy list` *(aliases: `ls`, `releases`)* — List releases stored on the server
 - `dploy health` — Check your app's HTTP health endpoint
@@ -137,8 +139,20 @@ dploy provision -e production --only dirs --dry-run
 - `--force`: Re-run all steps even if directories/files already exist.
 - `--skip-checks`: Skip verifying remote tools (`tar`, `curl`, runtime versions).
 - `--only <step>`: Run only one step: `prereqs`, `dirs`, `shared`, `permissions`, or `service`.
+- `-A, --as-admin`, `--admin-user`, `--admin-key`, `--admin-password`: Connect using `env.admin` credentials.
 - `--json`: Output JSON provisioning report.
 - `-n, --dry-run`: Preview planned actions (works offline if SSH cannot connect).
+
+---
+
+### `dploy doctor` *(aliases: `check`, `test`)*
+Validates `deploy.config.yml` syntax/schema, unresolved `${VAR}` placeholders, local SSH key paths, and `build` file matching before deploying.
+```bash
+dploy doctor -e production
+dploy doctor -e production --ssh --json
+```
+- `--ssh`: Also test live SSH authentication and `<deployTo>` directory presence without modifying the server.
+- `--json`: Output machine-readable JSON check results.
 
 ---
 
@@ -176,6 +190,7 @@ Manage websites on your server without re-running full user/sudoers setup.
 | :--- | :--- |
 | `dploy site add` | Add a 2nd+ domain/app to an existing VPS (same Nginx/SSL/systemd flags as `setup`, skips user & sudoers creation). Uses `-D, --domain <domain>`. |
 | `dploy site info` | Inspect Nginx vhost, syntax check, systemd/worker status, SSL expiry/mode, and current release. Flag: `-D, --domain <domain>`. |
+| `dploy site service [name] [action]` *(alias: `services`)* | Auto-discover and manage systemd units (`app`, `worker`, `nginx`, `php*-fpm`). Actions: `start`, `stop`, `restart`, `reload`, `enable`, `disable`, `status`, `logs` (or interactive menu with `<- Back`). |
 | `dploy site ssl` | Switch SSL mode (`--ssl <certbot\|cloudflare-flexible\|cloudflare-origin\|none>`, `--cloudflare`, `--certbot`, `-D, --domain`, `-n, --dry-run`). |
 | `dploy site backup` | Download a `.tar.gz` snapshot of Nginx config, systemd units, sudoers rule, and `shared/.env`. Flags: `-D, --domain`, `-o, --output <dir>`. |
 | `dploy site remove` *(aliases: `rm`, `delete`)* | Safely remove Nginx vhost, systemd units, and sudoers rule. Flags: `-D, --domain`, `-f, --force`, `--no-backup`, `--purge-ssl`, `--purge-files`, `-n, --dry-run`. |
@@ -216,8 +231,9 @@ dploy env edit [--editor <cmd>] [--force]           # Edit in local editor with 
 
 ---
 
-### `dploy logs`, `dploy ssh`, `dploy run`, `dploy down`, `dploy up`
+### `dploy tui`, `dploy logs`, `dploy ssh`, `dploy run`, `dploy down`, `dploy up`
 ```bash
+dploy tui -e production                             # Launch guided interactive menu
 dploy logs -e production -f -n 100                  # Stream last 100 lines of app logs
 dploy logs -e production --entries 4                # Show last 4 complete log entries (with full stack traces)
 dploy logs -e production --latest                   # Auto-pick newest daily log file
